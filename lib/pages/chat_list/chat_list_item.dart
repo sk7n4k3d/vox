@@ -80,117 +80,141 @@ class ChatListItem extends StatelessWidget {
                   duration: FluffyThemes.animationDuration,
                   curve: FluffyThemes.animationCurve,
                   scale: hovered ? 1.1 : 1.0,
-                  child: SizedBox(
-                    width: Avatar.defaultSize,
-                    height: Avatar.defaultSize,
-                    child: Stack(
-                      clipBehavior: Clip.none,
-                      children: [
-                        if (space != null)
-                          Positioned(
-                            top: 0,
-                            left: 0,
-                            child: Avatar(
-                              shapeBorder: RoundedSuperellipseBorder(
-                                side: BorderSide(
-                                  width: 2,
-                                  color:
-                                      backgroundColor ??
-                                      theme.colorScheme.surface,
+                  // Shared element transition: matches the Hero with the
+                  // same tag in `chat_liquid_glass_app_bar.dart` so opening
+                  // this room animates the avatar from its row position to
+                  // the AppBar (M3 shared element motion).
+                  child: Hero(
+                    tag: 'avatar_${room.id}',
+                    flightShuttleBuilder: (
+                      flightContext,
+                      animation,
+                      direction,
+                      fromContext,
+                      toContext,
+                    ) {
+                      // Render the destination Hero's child during flight so
+                      // the avatar lands cleanly at the AppBar size (40)
+                      // from the list size (48). Flutter scales the rect
+                      // automatically; we only need to pick which subtree
+                      // wins the visual style for the in-flight frame.
+                      final toHero = toContext.widget as Hero;
+                      return toHero.child;
+                    },
+                    child: SizedBox(
+                      width: Avatar.defaultSize,
+                      height: Avatar.defaultSize,
+                      child: Stack(
+                        clipBehavior: Clip.none,
+                        children: [
+                          if (space != null)
+                            Positioned(
+                              top: 0,
+                              left: 0,
+                              child: Avatar(
+                                shapeBorder: RoundedSuperellipseBorder(
+                                  side: BorderSide(
+                                    width: 2,
+                                    color:
+                                        backgroundColor ??
+                                        theme.colorScheme.surface,
+                                  ),
+                                  borderRadius: BorderRadius.circular(
+                                    AppConfig.spaceBorderRadius * 0.75,
+                                  ),
                                 ),
                                 borderRadius: BorderRadius.circular(
                                   AppConfig.spaceBorderRadius * 0.75,
                                 ),
+                                mxContent: space.avatar,
+                                size: Avatar.defaultSize * 0.75,
+                                name: space.getLocalizedDisplayname(),
+                                onTap: () => onLongPress?.call(context),
                               ),
-                              borderRadius: BorderRadius.circular(
-                                AppConfig.spaceBorderRadius * 0.75,
-                              ),
-                              mxContent: space.avatar,
-                              size: Avatar.defaultSize * 0.75,
-                              name: space.getLocalizedDisplayname(),
-                              onTap: () => onLongPress?.call(context),
                             ),
-                          ),
-                        // When this is the avatar of the room inside a space
-                        // (space != null) we keep the legacy square-stacked
-                        // Avatar to preserve the parent-space hint visual.
-                        // Otherwise we wrap with the status ring.
-                        Positioned(
-                          bottom: 0,
-                          right: 0,
-                          child: space != null
-                              ? Avatar(
-                                  shapeBorder: RoundedRectangleBorder(
-                                    side: BorderSide(
-                                      width: 2,
-                                      color:
-                                          backgroundColor ??
-                                          theme.colorScheme.surface,
+                          // When this is the avatar of the room inside a
+                          // space (space != null) we keep the legacy
+                          // square-stacked Avatar to preserve the
+                          // parent-space hint visual. Otherwise we wrap
+                          // with the status ring.
+                          Positioned(
+                            bottom: 0,
+                            right: 0,
+                            child: space != null
+                                ? Avatar(
+                                    shapeBorder: RoundedRectangleBorder(
+                                      side: BorderSide(
+                                        width: 2,
+                                        color:
+                                            backgroundColor ??
+                                            theme.colorScheme.surface,
+                                      ),
+                                      borderRadius: BorderRadius.circular(
+                                        Avatar.defaultSize,
+                                      ),
                                     ),
-                                    borderRadius: BorderRadius.circular(
-                                      Avatar.defaultSize,
-                                    ),
-                                  ),
-                                  mxContent: room.avatar,
-                                  size: Avatar.defaultSize * 0.75,
-                                  name: displayname,
-                                  presenceUserId: directChatMatrixId,
-                                  presenceBackgroundColor: backgroundColor,
-                                  onTap: () => onLongPress?.call(context),
-                                )
-                              : AvatarWithStatusRing(
-                                  mxContent: room.avatar,
-                                  name: displayname,
-                                  // Inner avatar shrunk by 10px so the ring
-                                  // (2px stroke + 3px gap on each side)
-                                  // fits inside the parent SizedBox without
-                                  // being clipped.
-                                  size: Avatar.defaultSize - 10,
-                                  presenceUserId: isDirectChat
-                                      ? directChatMatrixId
-                                      : null,
-                                  encrypted: room.encrypted,
-                                  isSpace: room.isSpace,
-                                  shapeBorder: room.isSpace
-                                      ? RoundedSuperellipseBorder(
-                                          side: BorderSide(
-                                            width: 1,
-                                            color: theme.dividerColor,
-                                          ),
-                                          borderRadius: BorderRadius.circular(
+                                    mxContent: room.avatar,
+                                    size: Avatar.defaultSize * 0.75,
+                                    name: displayname,
+                                    presenceUserId: directChatMatrixId,
+                                    presenceBackgroundColor: backgroundColor,
+                                    onTap: () => onLongPress?.call(context),
+                                  )
+                                : AvatarWithStatusRing(
+                                    mxContent: room.avatar,
+                                    name: displayname,
+                                    // Inner avatar shrunk by 10px so the
+                                    // ring (2px stroke + 3px gap on each
+                                    // side) fits inside the parent SizedBox
+                                    // without being clipped.
+                                    size: Avatar.defaultSize - 10,
+                                    presenceUserId: isDirectChat
+                                        ? directChatMatrixId
+                                        : null,
+                                    encrypted: room.encrypted,
+                                    isSpace: room.isSpace,
+                                    shapeBorder: room.isSpace
+                                        ? RoundedSuperellipseBorder(
+                                            side: BorderSide(
+                                              width: 1,
+                                              color: theme.dividerColor,
+                                            ),
+                                            borderRadius:
+                                                BorderRadius.circular(
+                                              AppConfig.spaceBorderRadius,
+                                            ),
+                                          )
+                                        : null,
+                                    borderRadius: room.isSpace
+                                        ? BorderRadius.circular(
                                             AppConfig.spaceBorderRadius,
-                                          ),
-                                        )
-                                      : null,
-                                  borderRadius: room.isSpace
-                                      ? BorderRadius.circular(
-                                          AppConfig.spaceBorderRadius,
-                                        )
-                                      : null,
-                                  onTap: () => onLongPress?.call(context),
-                                ),
-                        ),
-                        Positioned(
-                          top: 0,
-                          right: 0,
-                          child: GestureDetector(
-                            onTap: () => onLongPress?.call(context),
-                            child: AnimatedScale(
-                              duration: FluffyThemes.animationDuration,
-                              curve: FluffyThemes.animationCurve,
-                              scale: listTileHovered ? 1.0 : 0.0,
-                              child: Material(
-                                color: backgroundColor,
-                                borderRadius: BorderRadius.circular(16),
-                                child: const Icon(
-                                  Icons.arrow_drop_down_circle_outlined,
-                                  size: 18,
+                                          )
+                                        : null,
+                                    onTap: () => onLongPress?.call(context),
+                                  ),
+                          ),
+                          Positioned(
+                            top: 0,
+                            right: 0,
+                            child: GestureDetector(
+                              onTap: () => onLongPress?.call(context),
+                              child: AnimatedScale(
+                                duration: FluffyThemes.animationDuration,
+                                curve: FluffyThemes.animationCurve,
+                                scale: listTileHovered ? 1.0 : 0.0,
+                                child: Material(
+                                  color: backgroundColor,
+                                  borderRadius: BorderRadius.circular(16),
+                                  child: const Icon(
+                                    Icons.arrow_drop_down_circle_outlined,
+                                    size: 18,
+                                  ),
                                 ),
                               ),
                             ),
                           ),
-                        ),
-                      ],
+                        ],
+                      ),
                     ),
                   ),
                 ),

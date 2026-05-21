@@ -178,11 +178,20 @@ class ChatLiquidGlassAppBar extends StatelessWidget
               : () => FluffyThemes.isThreeColumnMode(context)
                   ? controller.toggleDisplayChatDetailsColumn()
                   : context.go('/rooms/${room.id}/details'),
-          child: _AvatarWithRing(
-            room: room,
-            isDirectChat: isDirectChat,
-            isEncrypted: isEncrypted,
-            cyber: cyber,
+          // Outer Hero matches the chat list row avatar so opening a room
+          // animates the avatar from its row position up to the AppBar
+          // (M3 shared element motion). The inner `content_banner` Hero is
+          // preserved for the chat -> chat_details transition; tag conflict
+          // is avoided because each Hero only matches against the other
+          // route's matching tag.
+          child: Hero(
+            tag: 'avatar_${room.id}',
+            child: _AvatarWithRing(
+              room: room,
+              isDirectChat: isDirectChat,
+              isEncrypted: isEncrypted,
+              cyber: cyber,
+            ),
           ),
         ),
         const SizedBox(width: 12),
