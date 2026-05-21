@@ -12,6 +12,7 @@ import 'package:fluffychat/widgets/avatar.dart';
 import 'package:fluffychat/widgets/matrix.dart';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
+import 'package:markdown/markdown.dart' as md;
 import 'package:matrix/encryption.dart';
 import 'package:matrix/matrix.dart';
 
@@ -253,7 +254,7 @@ class MessageContent extends StatelessWidget {
             }
             var html = AppSettings.renderHtml.value && event.isRichMessage
                 ? event.formattedText
-                : event.body.replaceAll('<', '&lt;').replaceAll('>', '&gt;');
+                : _renderPlainBodyAsHtml(event.body);
             if (event.messageType == MessageTypes.Emote) {
               html = '* $html';
             }
@@ -406,5 +407,22 @@ class _ButtonContent extends StatelessWidget {
         ),
       ),
     );
+  }
+}
+
+final _markdownMarkers = RegExp(r'```|`[^`\n]+`|\*\*[^*\n]+\*\*|^#{1,6} |^\s*[-*+] |^\s*\d+\. |^> ', multiLine: true);
+
+String _renderPlainBodyAsHtml(String body) {
+  if (!_markdownMarkers.hasMatch(body)) {
+    return body.replaceAll('<', '&lt;').replaceAll('>', '&gt;');
+  }
+  try {
+    return md.markdownToHtml(
+      body,
+      extensionSet: md.ExtensionSet.gitHubFlavored,
+      inlineSyntaxes: [md.InlineHtmlSyntax()],
+    );
+  } catch (_) {
+    return body.replaceAll('<', '&lt;').replaceAll('>', '&gt;');
   }
 }

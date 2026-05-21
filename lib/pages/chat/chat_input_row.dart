@@ -68,7 +68,7 @@ class _ChatInputRowState extends State<ChatInputRow> {
     return RecordingViewModel(
       builder: (context, recordingViewModel) {
         Widget content;
-        if (recordingViewModel.isRecording) {
+        if (recordingViewModel.isRecording && recordingViewModel.isLocked) {
           content = RecordingInputRow(
             state: recordingViewModel,
             onSend: controller.onVoiceMessageSend,
