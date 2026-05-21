@@ -678,25 +678,76 @@ class _MdTable extends StatelessWidget {
       );
     }).toList();
 
+    final table = Table(
+      defaultColumnWidth: const IntrinsicColumnWidth(),
+      border: TableBorder.all(
+        color: scheme.outlineVariant,
+        width: 0.5,
+        borderRadius: BorderRadius.circular(8),
+      ),
+      children: rows,
+    );
+
     return Container(
       margin: const EdgeInsets.symmetric(vertical: 8),
-      child: SingleChildScrollView(
-        scrollDirection: Axis.horizontal,
-        child: ConstrainedBox(
-          constraints: BoxConstraints(
-            minWidth: MediaQuery.sizeOf(context).width * 0.4,
-          ),
-          child: Table(
-            defaultColumnWidth: const IntrinsicColumnWidth(),
-            border: TableBorder.all(
-              color: scheme.outlineVariant,
-              width: 0.5,
-              borderRadius: BorderRadius.circular(8),
+      child: GestureDetector(
+        onTap: () => _openZoomableTable(context, table),
+        child: SingleChildScrollView(
+          scrollDirection: Axis.horizontal,
+          child: ConstrainedBox(
+            constraints: BoxConstraints(
+              minWidth: MediaQuery.sizeOf(context).width * 0.4,
             ),
-            children: rows,
+            child: table,
           ),
         ),
       ),
+    );
+  }
+
+  void _openZoomableTable(BuildContext context, Widget table) {
+    showDialog<void>(
+      context: context,
+      barrierColor: Colors.black87,
+      builder: (dialogContext) {
+        final theme = Theme.of(dialogContext);
+        return Dialog.fullscreen(
+          backgroundColor: theme.colorScheme.surface,
+          child: SafeArea(
+            child: Stack(
+              children: [
+                Positioned.fill(
+                  child: InteractiveViewer(
+                    boundaryMargin: const EdgeInsets.all(80),
+                    minScale: 0.5,
+                    maxScale: 6.0,
+                    panEnabled: true,
+                    scaleEnabled: true,
+                    child: Center(
+                      child: Padding(
+                        padding: const EdgeInsets.all(16),
+                        child: table,
+                      ),
+                    ),
+                  ),
+                ),
+                Positioned(
+                  top: 8,
+                  right: 8,
+                  child: Material(
+                    color: theme.colorScheme.surfaceContainerHigh,
+                    shape: const CircleBorder(),
+                    child: IconButton(
+                      icon: const Icon(Icons.close),
+                      onPressed: () => Navigator.of(dialogContext).pop(),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
     );
   }
 }
