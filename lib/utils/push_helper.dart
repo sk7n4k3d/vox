@@ -154,7 +154,9 @@ Future<void> _tryPushHelper(
     // The channel id is suffixed by the ringtone choice so Android keeps a
     // distinct channel per sound (it caches the sound at channel creation
     // and ignores subsequent updates within the same channel id).
-    final channelId = 'incoming_calls_$ringtone';
+    // v2 suffix forces a fresh channel after switching the audio stream
+    // from USAGE_NOTIFICATION (very low volume) to USAGE_NOTIFICATION_RINGTONE.
+    final channelId = 'incoming_calls_v2_$ringtone';
     final AndroidNotificationSound? channelSound = switch (ringtone) {
       'jarvis' => const RawResourceAndroidNotificationSound('jarvis_call'),
       'silent' => null,
@@ -168,6 +170,10 @@ Future<void> _tryPushHelper(
       playSound: ringtone != 'silent',
       sound: channelSound,
       enableVibration: true,
+      // Route through the ringtone stream so the volume follows the
+      // phone-call volume slider instead of the (much quieter) default
+      // notification stream.
+      audioAttributesUsage: AudioAttributesUsage.notificationRingtone,
     );
     await flutterLocalNotificationsPlugin
         .resolvePlatformSpecificImplementation<
@@ -187,6 +193,7 @@ Future<void> _tryPushHelper(
       autoCancel: false,
       playSound: ringtone != 'silent',
       sound: channelSound,
+      audioAttributesUsage: AudioAttributesUsage.notificationRingtone,
       ticker: '${l10n.voiceCall} — $callerDisplayName',
     );
     await flutterLocalNotificationsPlugin.show(
