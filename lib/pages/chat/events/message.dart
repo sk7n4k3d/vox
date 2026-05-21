@@ -15,7 +15,6 @@ import 'package:fluffychat/widgets/member_actions_popup_menu_button.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:matrix/matrix.dart';
-import 'package:swipe_to_action/swipe_to_action.dart';
 
 import '../../../config/app_config.dart';
 import 'message_content.dart';
@@ -23,6 +22,7 @@ import 'message_quick_react_picker.dart';
 import 'message_reactions.dart';
 import 'reply_content.dart';
 import 'state_message.dart';
+import 'swipe_to_reply.dart';
 
 class Message extends StatelessWidget {
   final Event event;
@@ -224,16 +224,10 @@ class Message extends StatelessWidget {
     return _AnimateIn(
       animateIn: animateIn,
       child: Center(
-        child: Swipeable(
+        child: SwipeToReply(
           key: ValueKey(event.eventId),
-          background: const Padding(
-            padding: EdgeInsets.symmetric(horizontal: 12.0),
-            child: Center(child: Icon(Icons.check_outlined)),
-          ),
-          direction: AppSettings.swipeRightToLeftToReply.value
-              ? SwipeDirection.endToStart
-              : SwipeDirection.startToEnd,
-          onSwipe: (_) => onSwipe(),
+          reverse: AppSettings.swipeRightToLeftToReply.value,
+          onReply: onSwipe,
           child: Container(
             constraints: const BoxConstraints(
               maxWidth: FluffyThemes.maxTimelineWidth,
