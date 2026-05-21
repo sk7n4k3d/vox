@@ -4,6 +4,7 @@ import 'package:emoji_picker_flutter/emoji_picker_flutter.dart';
 import 'package:fluffychat/config/setting_keys.dart';
 import 'package:fluffychat/config/themes.dart';
 import 'package:fluffychat/l10n/l10n.dart';
+import 'package:fluffychat/pages/chat/chat.dart';
 import 'package:fluffychat/utils/adaptive_bottom_sheet.dart';
 import 'package:fluffychat/utils/author_color.dart';
 import 'package:fluffychat/utils/date_time_extension.dart';
@@ -18,6 +19,7 @@ import 'package:matrix/matrix.dart';
 
 import '../../../config/app_config.dart';
 import 'message_content.dart';
+import 'message_context_overlay.dart';
 import 'message_quick_react_picker.dart';
 import 'message_reactions.dart';
 import 'reply_content.dart';
@@ -48,6 +50,7 @@ class Message extends StatelessWidget {
   final void Function()? onExpand;
   final bool isCollapsed;
   final Set<String> bigEmojis;
+  final ChatController? controller;
 
   const Message(
     this.event, {
@@ -73,6 +76,7 @@ class Message extends StatelessWidget {
     this.onExpand,
     required this.enterThread,
     this.isCollapsed = false,
+    this.controller,
     super.key,
   });
 
@@ -218,6 +222,141 @@ class Message extends StatelessWidget {
         context: ctx,
         event: event,
         bubbleRect: rect,
+      );
+    }
+
+    /// Build the bubble visual once so we can reuse it inline (with the
+    /// GlobalKey, for hit-testing + position resolution) and pass a clone
+    /// (without the key) to [MessageContextOverlay] as the lifted hero.
+    Widget buildBubbleVisual({Key? key}) {
+      return Container(
+        key: key,
+        decoration: BoxDecoration(
+          color: noBubble ? Colors.transparent : color,
+          borderRadius: borderRadius,
+        ),
+        clipBehavior: Clip.antiAlias,
+        child: BubbleBackground(
+          colors: colors,
+          ignore:
+              noBubble || !ownMessage || MediaQuery.highContrastOf(context),
+          scrollController: scrollController,
+          child: Container(
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(AppConfig.borderRadius),
+            ),
+            constraints: const BoxConstraints(
+              maxWidth: FluffyThemes.columnWidth * 1.5,
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: <Widget>[
+                if (event.inReplyToEventId(includingFallback: false) != null)
+                  FutureBuilder<Event?>(
+                    future: event.getReplyEvent(timeline),
+                    builder: (BuildContext context, snapshot) {
+                      final replyEvent = snapshot.hasData
+                          ? snapshot.data!
+                          : Event(
+                              eventId: event.inReplyToEventId() ??
+                                  '\$fake_event_id',
+                              content: const {
+                                'msgtype': 'm.text',
+                                'body': '...',
+                              },
+                              senderId: event.senderId,
+                              type: 'm.room.message',
+                              room: event.room,
+                              status: EventStatus.sent,
+                              originServerTs: DateTime.now(),
+                            );
+                      return Padding(
+                        padding: const EdgeInsets.only(
+                          left: 16,
+                          right: 16,
+                          top: 8,
+                        ),
+                        child: Material(
+                          color: Colors.transparent,
+                          borderRadius: ReplyContent.borderRadius,
+                          child: InkWell(
+                            borderRadius: ReplyContent.borderRadius,
+                            onTap: () => scrollToEventId(replyEvent.eventId),
+                            child: AbsorbPointer(
+                              child: ReplyContent(
+                                replyEvent,
+                                ownMessage: ownMessage,
+                                timeline: timeline,
+                              ),
+                            ),
+                          ),
+                        ),
+                      );
+                    },
+                  ),
+                MessageContent(
+                  displayEvent,
+                  textColor: textColor,
+                  linkColor: linkColor,
+                  onInfoTab: onInfoTab,
+                  borderRadius: borderRadius,
+                  timeline: timeline,
+                  selected: selected,
+                  bigEmojis: bigEmojis,
+                ),
+                if (event.hasAggregatedEvents(timeline, RelationshipTypes.edit))
+                  Padding(
+                    padding: const EdgeInsets.only(
+                      bottom: 8.0,
+                      left: 16.0,
+                      right: 16.0,
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      spacing: 4.0,
+                      children: [
+                        Icon(
+                          Icons.edit_outlined,
+                          color: textColor.withAlpha(164),
+                          size: 14,
+                        ),
+                        Text(
+                          displayEvent.originServerTs.localizedTimeShort(
+                            context,
+                          ),
+                          style: TextStyle(
+                            color: textColor.withAlpha(164),
+                            fontSize: 11,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+              ],
+            ),
+          ),
+        ),
+      );
+    }
+
+    void showContextOverlay() {
+      final ctrl = controller;
+      if (ctrl == null) {
+        // Fallback: legacy selection mode if controller wasn't wired in.
+        HapticFeedback.heavyImpact();
+        onSelect(event);
+        return;
+      }
+      if (event.redacted) return;
+      // ignore: unawaited_futures
+      MessageContextOverlay.show(
+        context: context,
+        event: event,
+        controller: ctrl,
+        bubbleKey: bubbleKey,
+        bubbleContent: buildBubbleVisual(),
+        ownMessage: ownMessage,
       );
     }
 
@@ -455,159 +594,11 @@ class Message extends StatelessWidget {
                                 child: GestureDetector(
                                   onLongPress: longPressSelect
                                       ? null
-                                      : () {
-                                          HapticFeedback.heavyImpact();
-                                          onSelect(event);
-                                        },
+                                      : showContextOverlay,
                                   onDoubleTap: longPressSelect
                                       ? null
                                       : showQuickReactPicker,
-                                  child: Container(
-                                    key: bubbleKey,
-                                    decoration: BoxDecoration(
-                                      color: noBubble
-                                          ? Colors.transparent
-                                          : color,
-                                      borderRadius: borderRadius,
-                                    ),
-                                    clipBehavior: Clip.antiAlias,
-                                    child: BubbleBackground(
-                                      colors: colors,
-                                      ignore:
-                                          noBubble ||
-                                          !ownMessage ||
-                                          MediaQuery.highContrastOf(context),
-                                      scrollController: scrollController,
-                                      child: Container(
-                                        decoration: BoxDecoration(
-                                          borderRadius: BorderRadius.circular(
-                                            AppConfig.borderRadius,
-                                          ),
-                                        ),
-                                        constraints: const BoxConstraints(
-                                          maxWidth:
-                                              FluffyThemes.columnWidth * 1.5,
-                                        ),
-                                        child: Column(
-                                          mainAxisSize: .min,
-                                          crossAxisAlignment:
-                                              CrossAxisAlignment.start,
-                                          children: <Widget>[
-                                            if (event.inReplyToEventId(
-                                                  includingFallback: false,
-                                                ) !=
-                                                null)
-                                              FutureBuilder<Event?>(
-                                                future: event.getReplyEvent(
-                                                  timeline,
-                                                ),
-                                                builder: (BuildContext context, snapshot) {
-                                                  final replyEvent =
-                                                      snapshot.hasData
-                                                      ? snapshot.data!
-                                                      : Event(
-                                                          eventId:
-                                                              event
-                                                                  .inReplyToEventId() ??
-                                                              '\$fake_event_id',
-                                                          content: {
-                                                            'msgtype': 'm.text',
-                                                            'body': '...',
-                                                          },
-                                                          senderId:
-                                                              event.senderId,
-                                                          type:
-                                                              'm.room.message',
-                                                          room: event.room,
-                                                          status:
-                                                              EventStatus.sent,
-                                                          originServerTs:
-                                                              DateTime.now(),
-                                                        );
-                                                  return Padding(
-                                                    padding:
-                                                        const EdgeInsets.only(
-                                                          left: 16,
-                                                          right: 16,
-                                                          top: 8,
-                                                        ),
-                                                    child: Material(
-                                                      color: Colors.transparent,
-                                                      borderRadius: ReplyContent
-                                                          .borderRadius,
-                                                      child: InkWell(
-                                                        borderRadius:
-                                                            ReplyContent
-                                                                .borderRadius,
-                                                        onTap: () =>
-                                                            scrollToEventId(
-                                                              replyEvent
-                                                                  .eventId,
-                                                            ),
-                                                        child: AbsorbPointer(
-                                                          child: ReplyContent(
-                                                            replyEvent,
-                                                            ownMessage:
-                                                                ownMessage,
-                                                            timeline: timeline,
-                                                          ),
-                                                        ),
-                                                      ),
-                                                    ),
-                                                  );
-                                                },
-                                              ),
-                                            MessageContent(
-                                              displayEvent,
-                                              textColor: textColor,
-                                              linkColor: linkColor,
-                                              onInfoTab: onInfoTab,
-                                              borderRadius: borderRadius,
-                                              timeline: timeline,
-                                              selected: selected,
-                                              bigEmojis: bigEmojis,
-                                            ),
-                                            if (event.hasAggregatedEvents(
-                                              timeline,
-                                              RelationshipTypes.edit,
-                                            ))
-                                              Padding(
-                                                padding: const EdgeInsets.only(
-                                                  bottom: 8.0,
-                                                  left: 16.0,
-                                                  right: 16.0,
-                                                ),
-                                                child: Row(
-                                                  mainAxisSize:
-                                                      MainAxisSize.min,
-                                                  spacing: 4.0,
-                                                  children: [
-                                                    Icon(
-                                                      Icons.edit_outlined,
-                                                      color: textColor
-                                                          .withAlpha(164),
-                                                      size: 14,
-                                                    ),
-                                                    Text(
-                                                      displayEvent
-                                                          .originServerTs
-                                                          .localizedTimeShort(
-                                                            context,
-                                                          ),
-                                                      style: TextStyle(
-                                                        color: textColor
-                                                            .withAlpha(164),
-                                                        fontSize: 11,
-                                                      ),
-                                                    ),
-                                                  ],
-                                                ),
-                                              ),
-                                          ],
-                                        ),
-                                      ),
-                                    ),
-                                  ),
+                                  child: buildBubbleVisual(key: bubbleKey),
                                 ),
                               ),
                               Align(
