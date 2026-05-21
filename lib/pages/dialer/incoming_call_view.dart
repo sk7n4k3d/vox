@@ -18,6 +18,7 @@ class IncomingCallView extends StatefulWidget {
   final bool encrypted;
   final VoidCallback onAnswer;
   final VoidCallback onDecline;
+  final Future<void> Function(String message)? onReplyAndDecline;
 
   const IncomingCallView({
     required this.room,
@@ -25,6 +26,7 @@ class IncomingCallView extends StatefulWidget {
     required this.encrypted,
     required this.onAnswer,
     required this.onDecline,
+    this.onReplyAndDecline,
     super.key,
   });
 
@@ -61,6 +63,115 @@ class _IncomingCallViewState extends State<IncomingCallView>
     _ripple.dispose();
     _dots.dispose();
     super.dispose();
+  }
+
+  Future<void> _openCustomReply(BuildContext context) async {
+    HapticFeedback.selectionClick();
+    final controller = TextEditingController();
+    final scheme = Theme.of(context).colorScheme;
+    final result = await showModalBottomSheet<String>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (sheetContext) {
+        return Padding(
+          padding: EdgeInsets.only(
+            bottom: MediaQuery.viewInsetsOf(sheetContext).bottom,
+          ),
+          child: ClipRRect(
+            borderRadius: const BorderRadius.vertical(
+              top: Radius.circular(24),
+            ),
+            child: BackdropFilter(
+              filter: ImageFilter.blur(sigmaX: 24, sigmaY: 24),
+              child: Container(
+                decoration: BoxDecoration(
+                  color: scheme.surfaceContainerHigh.withValues(alpha: 0.92),
+                  border: Border.all(
+                    color: Colors.white.withValues(alpha: 0.12),
+                  ),
+                ),
+                padding: const EdgeInsets.fromLTRB(20, 16, 20, 24),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    Center(
+                      child: Container(
+                        width: 36,
+                        height: 4,
+                        margin: const EdgeInsets.only(bottom: 12),
+                        decoration: BoxDecoration(
+                          color: Colors.white.withValues(alpha: 0.25),
+                          borderRadius: BorderRadius.circular(2),
+                        ),
+                      ),
+                    ),
+                    Text(
+                      'Répondre par message',
+                      style: TextStyle(
+                        color: scheme.onSurface,
+                        fontSize: 18,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    const SizedBox(height: 14),
+                    TextField(
+                      controller: controller,
+                      autofocus: true,
+                      maxLines: 4,
+                      minLines: 2,
+                      style: TextStyle(color: scheme.onSurface),
+                      decoration: InputDecoration(
+                        hintText: 'Tape un message qui sera envoyé puis '
+                            'l\'appel sera décliné',
+                        hintStyle: TextStyle(
+                          color: scheme.onSurfaceVariant.withValues(
+                            alpha: 0.7,
+                          ),
+                        ),
+                        filled: true,
+                        fillColor: scheme.surfaceContainerHighest
+                            .withValues(alpha: 0.6),
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(16),
+                          borderSide: BorderSide.none,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 14),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: OutlinedButton(
+                            onPressed: () => Navigator.pop(sheetContext),
+                            child: const Text('Annuler'),
+                          ),
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: FilledButton(
+                            onPressed: () {
+                              final text = controller.text.trim();
+                              if (text.isEmpty) return;
+                              Navigator.pop(sheetContext, text);
+                            },
+                            child: const Text('Envoyer & décliner'),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        );
+      },
+    );
+    if (result != null && result.isNotEmpty && mounted) {
+      await widget.onReplyAndDecline?.call(result);
+    }
   }
 
   @override
@@ -125,29 +236,10 @@ class _IncomingCallViewState extends State<IncomingCallView>
                             offset: 0.66,
                             color: scheme.primary,
                           ),
-                          Container(
-                            width: 180,
-                            height: 180,
-                            decoration: BoxDecoration(
-                              shape: BoxShape.circle,
-                              boxShadow: [
-                                BoxShadow(
-                                  color: scheme.primary.withValues(alpha: 0.35),
-                                  blurRadius: 32,
-                                  spreadRadius: 4,
-                                ),
-                              ],
-                              border: Border.all(
-                                color: Colors.white.withValues(alpha: 0.18),
-                                width: 1.5,
-                              ),
-                            ),
-                            clipBehavior: Clip.antiAlias,
-                            child: Avatar(
-                              mxContent: avatarUrl,
-                              name: displayName,
-                              size: 180,
-                            ),
+                          _CallerAvatar(
+                            avatarUrl: avatarUrl,
+                            displayName: displayName,
+                            accent: scheme.primary,
                           ),
                         ],
                       ),
@@ -194,6 +286,16 @@ class _IncomingCallViewState extends State<IncomingCallView>
                     },
                   ),
                   const Spacer(flex: 2),
+                  if (widget.onReplyAndDecline != null)
+                    _ReplyTemplatesRow(
+                      onPick: (msg) async {
+                        HapticFeedback.selectionClick();
+                        await widget.onReplyAndDecline!(msg);
+                      },
+                      onCustom: () => _openCustomReply(context),
+                    ),
+                  if (widget.onReplyAndDecline != null)
+                    const SizedBox(height: 20),
                   Row(
                     mainAxisAlignment: MainAxisAlignment.spaceEvenly,
                     children: [
@@ -428,6 +530,256 @@ class _CallActionButtonState extends State<_CallActionButton>
           ),
         ),
       ],
+    );
+  }
+}
+
+/// Avatar XL avec fallback cyberpunk gradient quand l'appelant n'a pas
+/// d'avatar mxc. Le hash du displayName décide de la palette pour rester
+/// stable entre appels.
+class _CallerAvatar extends StatelessWidget {
+  final Uri? avatarUrl;
+  final String displayName;
+  final Color accent;
+
+  const _CallerAvatar({
+    required this.avatarUrl,
+    required this.displayName,
+    required this.accent,
+  });
+
+  static const List<List<Color>> _palettes = [
+    [Color(0xFF7B2FF7), Color(0xFFF107A3)], // violet → pink
+    [Color(0xFF00DBDE), Color(0xFFFC00FF)], // cyan → magenta
+    [Color(0xFF4158D0), Color(0xFFC850C0)], // indigo → fuchsia
+    [Color(0xFF0093E9), Color(0xFF80D0C7)], // azure → mint
+    [Color(0xFFFA8BFF), Color(0xFF2BD2FF)], // pink → cyan
+    [Color(0xFFFF3CAC), Color(0xFF562B7C)], // hot pink → purple
+  ];
+
+  @override
+  Widget build(BuildContext context) {
+    final outer = Container(
+      width: 180,
+      height: 180,
+      decoration: BoxDecoration(
+        shape: BoxShape.circle,
+        boxShadow: [
+          BoxShadow(
+            color: accent.withValues(alpha: 0.35),
+            blurRadius: 32,
+            spreadRadius: 4,
+          ),
+        ],
+        border: Border.all(
+          color: Colors.white.withValues(alpha: 0.18),
+          width: 1.5,
+        ),
+      ),
+      clipBehavior: Clip.antiAlias,
+      child: avatarUrl != null
+          ? Avatar(
+              mxContent: avatarUrl,
+              name: displayName,
+              size: 180,
+            )
+          : _CyberpunkFallback(seed: displayName),
+    );
+    return outer;
+  }
+}
+
+/// Fallback when no avatar is set: cyberpunk-ish radial gradient + the
+/// caller initial in a glowing serif-like font.
+class _CyberpunkFallback extends StatelessWidget {
+  final String seed;
+
+  const _CyberpunkFallback({required this.seed});
+
+  int _seedIndex() {
+    var hash = 0;
+    for (final code in seed.runes) {
+      hash = (hash * 31 + code) & 0x7fffffff;
+    }
+    return hash % _CallerAvatar._palettes.length;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final palette = _CallerAvatar._palettes[_seedIndex()];
+    final initial = seed.runes.isEmpty
+        ? '?'
+        : String.fromCharCode(seed.runes.first).toUpperCase();
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        gradient: RadialGradient(
+          center: const Alignment(-0.3, -0.3),
+          radius: 1.1,
+          colors: [palette[0], palette[1], const Color(0xFF0F0A1E)],
+          stops: const [0.0, 0.55, 1.0],
+        ),
+      ),
+      child: Stack(
+        alignment: Alignment.center,
+        children: [
+          // Subtle scanline overlay for neon vibe.
+          const Opacity(
+            opacity: 0.08,
+            child: DecoratedBox(
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  begin: Alignment.topCenter,
+                  end: Alignment.bottomCenter,
+                  colors: [Colors.transparent, Colors.white, Colors.transparent],
+                  stops: [0.0, 0.5, 1.0],
+                ),
+              ),
+              child: SizedBox.expand(),
+            ),
+          ),
+          Text(
+            initial,
+            style: TextStyle(
+              color: Colors.white,
+              fontSize: 96,
+              fontWeight: FontWeight.w800,
+              letterSpacing: -2,
+              shadows: [
+                Shadow(
+                  color: palette[1].withValues(alpha: 0.8),
+                  blurRadius: 24,
+                ),
+                Shadow(
+                  color: palette[0].withValues(alpha: 0.6),
+                  blurRadius: 12,
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _ReplyTemplatesRow extends StatelessWidget {
+  final Future<void> Function(String message) onPick;
+  final VoidCallback onCustom;
+
+  const _ReplyTemplatesRow({required this.onPick, required this.onCustom});
+
+  static const List<_ReplyTemplate> _templates = [
+    _ReplyTemplate(
+      icon: Icons.access_time,
+      label: 'Je te rappelle',
+      message: 'Pas dispo là, je te rappelle dès que possible.',
+    ),
+    _ReplyTemplate(
+      icon: Icons.event_busy,
+      label: 'En réunion',
+      message: 'En réunion, je te recontacte plus tard.',
+    ),
+    _ReplyTemplate(
+      icon: Icons.directions_car,
+      label: 'Au volant',
+      message: 'Au volant, je te rappelle dès que je peux.',
+    ),
+  ];
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      height: 44,
+      child: ListView(
+        scrollDirection: Axis.horizontal,
+        padding: const EdgeInsets.symmetric(horizontal: 16),
+        children: [
+          for (final t in _templates) ...[
+            _ReplyChip(
+              icon: t.icon,
+              label: t.label,
+              onTap: () => onPick(t.message),
+            ),
+            const SizedBox(width: 8),
+          ],
+          _ReplyChip(
+            icon: Icons.edit_outlined,
+            label: 'Custom…',
+            onTap: onCustom,
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _ReplyTemplate {
+  final IconData icon;
+  final String label;
+  final String message;
+
+  const _ReplyTemplate({
+    required this.icon,
+    required this.label,
+    required this.message,
+  });
+}
+
+class _ReplyChip extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final VoidCallback onTap;
+
+  const _ReplyChip({
+    required this.icon,
+    required this.label,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(22),
+      child: BackdropFilter(
+        filter: ImageFilter.blur(sigmaX: 16, sigmaY: 16),
+        child: Material(
+          color: Colors.white.withValues(alpha: 0.1),
+          child: InkWell(
+            onTap: onTap,
+            child: Container(
+              padding:
+                  const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+              decoration: BoxDecoration(
+                border: Border.all(
+                  color: Colors.white.withValues(alpha: 0.18),
+                  width: 0.5,
+                ),
+                borderRadius: BorderRadius.circular(22),
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(
+                    icon,
+                    size: 16,
+                    color: Colors.white.withValues(alpha: 0.9),
+                  ),
+                  const SizedBox(width: 6),
+                  Text(
+                    label,
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 13,
+                      fontWeight: FontWeight.w500,
+                      letterSpacing: 0.2,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
     );
   }
 }

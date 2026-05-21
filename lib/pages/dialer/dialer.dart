@@ -456,6 +456,14 @@ class MyCallingPage extends State<Calling> {
               encrypted: call.room.encrypted,
               onAnswer: _answerCall,
               onDecline: _hangUp,
+              onReplyAndDecline: (message) async {
+                try {
+                  await call.room.sendTextEvent(message);
+                } catch (e) {
+                  Logs().w('reply-and-decline: send failed: $e');
+                }
+                _hangUp();
+              },
             ),
           );
         }
