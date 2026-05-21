@@ -54,6 +54,10 @@ android {
             keyPassword = "dummyPassword"
             storeFile = file("dummy.keystore")
             storePassword = "dummyStorePassword"
+            enableV1Signing = true
+            enableV2Signing = true
+            enableV3Signing = true
+            enableV4Signing = true
         }
     }
 
@@ -70,7 +74,7 @@ android {
     }
 
     defaultConfig {
-        applicationId = "chat.fluffy.fluffychat"
+        applicationId = "chat.fluffy.fluffychat.bastien_fork"
         minSdk = flutter.minSdkVersion
         targetSdk = flutter.targetSdkVersion
         versionCode = flutter.versionCode

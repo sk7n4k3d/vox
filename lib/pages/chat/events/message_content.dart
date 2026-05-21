@@ -252,9 +252,12 @@ class MessageContent extends StatelessWidget {
                 fontSize: fontSize,
               );
             }
-            var html = AppSettings.renderHtml.value && event.isRichMessage
+            final renderRich = AppSettings.renderHtml.value;
+            var html = renderRich && event.isRichMessage
                 ? event.formattedText
-                : _renderPlainBodyAsHtml(event.body);
+                : renderRich
+                ? _renderPlainBodyAsHtml(event.body)
+                : _escapeHtml(event.body);
             if (event.messageType == MessageTypes.Emote) {
               html = '* $html';
             }
@@ -410,19 +413,27 @@ class _ButtonContent extends StatelessWidget {
   }
 }
 
-final _markdownMarkers = RegExp(r'```|`[^`\n]+`|\*\*[^*\n]+\*\*|^#{1,6} |^\s*[-*+] |^\s*\d+\. |^> ', multiLine: true);
+final _markdownMarkers = RegExp(
+  r'```|`[^`\n]+`|\*\*[^*\n]+\*\*|^#{1,6} |^\s*[-*+] |^\s*\d+\. |^> ',
+  multiLine: true,
+);
+final _dangerousScheme = RegExp(
+  r'href\s*=\s*"(?:\s*(?:javascript|data|vbscript|file)\s*:)',
+  caseSensitive: false,
+);
+
+String _escapeHtml(String body) =>
+    body.replaceAll('<', '&lt;').replaceAll('>', '&gt;');
 
 String _renderPlainBodyAsHtml(String body) {
-  if (!_markdownMarkers.hasMatch(body)) {
-    return body.replaceAll('<', '&lt;').replaceAll('>', '&gt;');
-  }
+  if (!_markdownMarkers.hasMatch(body)) return _escapeHtml(body);
   try {
-    return md.markdownToHtml(
+    final rendered = md.markdownToHtml(
       body,
       extensionSet: md.ExtensionSet.gitHubFlavored,
-      inlineSyntaxes: [md.InlineHtmlSyntax()],
     );
+    return rendered.replaceAllMapped(_dangerousScheme, (_) => 'href="#');
   } catch (_) {
-    return body.replaceAll('<', '&lt;').replaceAll('>', '&gt;');
+    return _escapeHtml(body);
   }
 }

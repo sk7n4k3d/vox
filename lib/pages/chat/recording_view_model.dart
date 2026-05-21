@@ -140,7 +140,9 @@ class RecordingViewModelState extends State<RecordingViewModel> {
     _recorderSubscription = Timer.periodic(const Duration(milliseconds: 100), (
       _,
     ) async {
+      if (!mounted || _audioRecorder == null) return;
       final amplitude = await _audioRecorder!.getAmplitude();
+      if (!mounted) return;
       var value = 100 + amplitude.current * 2;
       value = value < 1 ? 1 : value;
       amplitudeTimeline.add(value);
@@ -153,8 +155,9 @@ class RecordingViewModelState extends State<RecordingViewModel> {
   void _reset() {
     WakelockPlus.disable();
     _recorderSubscription?.cancel();
-    _audioRecorder?.stop();
+    final recorder = _audioRecorder;
     _audioRecorder = null;
+    unawaited(recorder?.stop());
     isSending = false;
     fileName = null;
     duration = Duration.zero;
@@ -165,6 +168,10 @@ class RecordingViewModelState extends State<RecordingViewModel> {
   }
 
   void cancel() {
+    if (!mounted) {
+      _reset();
+      return;
+    }
     setState(_reset);
   }
 

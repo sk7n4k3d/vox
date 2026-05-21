@@ -31,43 +31,31 @@ class MiniAudioPlayer extends StatelessWidget {
         final roomId = controller.roomId;
         final visible = eventId != null && !controller.sourceVisible;
 
-        return AnimatedSlide(
-          offset: visible ? Offset.zero : const Offset(0, -1),
+        return AnimatedSize(
           duration: const Duration(milliseconds: 250),
           curve: Curves.easeOutCubic,
-          child: AnimatedOpacity(
-            opacity: visible ? 1.0 : 0.0,
-            duration: const Duration(milliseconds: 200),
-            child: IgnorePointer(
-              ignoring: !visible,
-              child: Material(
-                color: theme.colorScheme.surfaceContainerHigh,
-                elevation: 4,
-                child: InkWell(
-                  onTap: () => _onTap(context, eventId, roomId),
-                  child: SafeArea(
-                    bottom: false,
+          alignment: Alignment.topCenter,
+          child: !visible
+              ? const SizedBox(width: double.infinity, height: 0)
+              : Material(
+                  color: theme.colorScheme.surfaceContainerHigh,
+                  elevation: 4,
+                  child: InkWell(
+                    onTap: () => _onTap(context, eventId, roomId),
                     child: SizedBox(
                       height: 64,
                       child: AnimatedSwitcher(
                         duration: const Duration(milliseconds: 200),
-                        transitionBuilder: (child, animation) => FadeTransition(
-                          opacity: animation,
-                          child: child,
+                        transitionBuilder: (child, animation) =>
+                            FadeTransition(opacity: animation, child: child),
+                        child: _MiniAudioPlayerContent(
+                          key: ValueKey(eventId),
+                          controller: controller,
                         ),
-                        child: eventId == null
-                            ? const SizedBox.shrink(key: ValueKey('empty'))
-                            : _MiniAudioPlayerContent(
-                                key: ValueKey(eventId),
-                                controller: controller,
-                              ),
                       ),
                     ),
                   ),
                 ),
-              ),
-            ),
-          ),
         );
       },
     );

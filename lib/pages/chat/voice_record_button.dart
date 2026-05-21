@@ -3,6 +3,7 @@ import 'package:fluffychat/pages/chat/chat.dart';
 import 'package:fluffychat/pages/chat/chat_input_row.dart';
 import 'package:fluffychat/pages/chat/recording_view_model.dart';
 import 'package:fluffychat/pages/chat/voice_record_gesture_state.dart';
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
@@ -28,12 +29,14 @@ class VoiceRecordButton extends StatefulWidget {
 
 class _VoiceRecordButtonState extends State<VoiceRecordButton> {
   Offset _origin = Offset.zero;
+  bool _pressActive = false;
 
   void _showTooltipSnackBar() {
+    final bottomInset = MediaQuery.viewInsetsOf(context).bottom;
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         margin: EdgeInsets.only(
-          bottom: ChatInputRow.height + 16,
+          bottom: ChatInputRow.height + 16 + bottomInset,
           left: 16,
           right: 16,
           top: 16,
@@ -44,11 +47,18 @@ class _VoiceRecordButtonState extends State<VoiceRecordButton> {
     );
   }
 
-  Future<void> _handleLongPressStart(LongPressStartDetails details) async {
+  void _handleLongPressDown(LongPressDownDetails details) {
     _origin = details.globalPosition;
+  }
+
+  Future<void> _handleLongPressStart(LongPressStartDetails details) async {
+    _pressActive = true;
     widget.gestureNotifier.value = VoiceRecordGestureState.zero;
     HapticFeedback.lightImpact();
     await widget.recordingState.startRecording(widget.controller.room);
+    if (!_pressActive && widget.recordingState.isRecording) {
+      widget.recordingState.cancel();
+    }
   }
 
   void _handleLongPressMove(LongPressMoveUpdateDetails details) {
@@ -70,7 +80,7 @@ class _VoiceRecordButtonState extends State<VoiceRecordButton> {
       HapticFeedback.mediumImpact();
       state.markCancelling(true);
       Future.delayed(const Duration(milliseconds: 200), () {
-        if (!mounted) return;
+        if (!mounted || !state.mounted) return;
         if (state.isRecording) state.cancel();
         widget.gestureNotifier.value = VoiceRecordGestureState.zero;
       });
@@ -78,6 +88,7 @@ class _VoiceRecordButtonState extends State<VoiceRecordButton> {
   }
 
   void _handleLongPressEnd(LongPressEndDetails details) {
+    _pressActive = false;
     final state = widget.recordingState;
     if (!state.isRecording) {
       widget.gestureNotifier.value = VoiceRecordGestureState.zero;
@@ -100,7 +111,7 @@ class _VoiceRecordButtonState extends State<VoiceRecordButton> {
     if (offset.dx <= -screenWidth * kCancelThresholdRatio) {
       state.markCancelling(true);
       Future.delayed(const Duration(milliseconds: 200), () {
-        if (!mounted) return;
+        if (!mounted || !state.mounted) return;
         if (state.isRecording) state.cancel();
         widget.gestureNotifier.value = VoiceRecordGestureState.zero;
       });
@@ -112,11 +123,9 @@ class _VoiceRecordButtonState extends State<VoiceRecordButton> {
   }
 
   void _handleLongPressCancel() {
-    final state = widget.recordingState;
+    if (!_pressActive) return;
+    _pressActive = false;
     widget.gestureNotifier.value = VoiceRecordGestureState.zero;
-    if (state.isRecording && !state.isLocked && !state.isCancelling) {
-      state.stopAndSend(widget.controller.onVoiceMessageSend);
-    }
   }
 
   Future<void> _handleTapAccessible() async {
@@ -152,6 +161,7 @@ class _VoiceRecordButtonState extends State<VoiceRecordButton> {
     return GestureDetector(
       behavior: HitTestBehavior.opaque,
       onTap: _showTooltipSnackBar,
+      onLongPressDown: _handleLongPressDown,
       onLongPressStart: _handleLongPressStart,
       onLongPressMoveUpdate: _handleLongPressMove,
       onLongPressEnd: _handleLongPressEnd,

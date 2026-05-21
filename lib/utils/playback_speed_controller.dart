@@ -33,23 +33,33 @@ class PlaybackSpeedController extends ChangeNotifier
     if (clamped == _speed) return;
     _speed = clamped;
     unawaited(AppSettings.audioPlaybackSpeed.setItem(clamped));
-    for (final player in _attachedPlayers) {
-      unawaited(player.setSpeed(clamped));
+    final disposed = <AudioPlayer>[];
+    for (final player in _attachedPlayers.toList(growable: false)) {
+      try {
+        unawaited(
+          player.setSpeed(clamped).catchError((_) {
+            disposed.add(player);
+          }),
+        );
+      } catch (_) {
+        disposed.add(player);
+      }
     }
+    _attachedPlayers.removeAll(disposed);
     notifyListeners();
   }
 
   Future<void> cycle() async {
-    final currentIndex = cyclePresets.indexWhere((s) => s >= _speed);
-    final nextIndex = currentIndex < 0 || currentIndex >= cyclePresets.length - 1
-        ? 0
-        : currentIndex + 1;
-    await setSpeed(cyclePresets[nextIndex]);
+    final indexExact = cyclePresets.indexOf(_speed);
+    final next = indexExact < 0
+        ? cyclePresets.first
+        : cyclePresets[(indexExact + 1) % cyclePresets.length];
+    await setSpeed(next);
   }
 
   VoidCallback attachPlayer(AudioPlayer player) {
     _attachedPlayers.add(player);
-    unawaited(player.setSpeed(_speed));
+    unawaited(player.setSpeed(_speed).catchError((_) {}));
     return () => _attachedPlayers.remove(player);
   }
 }

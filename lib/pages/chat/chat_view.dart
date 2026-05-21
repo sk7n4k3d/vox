@@ -332,6 +332,7 @@ class ChatView extends StatelessWidget {
                     SafeArea(
                       child: Column(
                         children: <Widget>[
+                          MiniAudioPlayer(chatController: controller),
                           Expanded(
                             child: GestureDetector(
                               onTap: controller.clearSingleSelectedEvent,
@@ -406,12 +407,6 @@ class ChatView extends StatelessWidget {
                             ),
                         ],
                       ),
-                    ),
-                    Positioned(
-                      top: 0,
-                      left: 0,
-                      right: 0,
-                      child: MiniAudioPlayer(chatController: controller),
                     ),
                     if (controller.dragging)
                       Container(

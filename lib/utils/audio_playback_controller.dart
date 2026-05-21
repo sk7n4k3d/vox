@@ -55,12 +55,19 @@ class AudioPlaybackController extends ChangeNotifier {
     _senderId = sender.id;
     _senderDisplayName = sender.calcDisplayname();
     _senderAvatarUrl = sender.avatarUrl;
-    // New track => assume source bubble visible until told otherwise.
     _sourceVisible = true;
     if (player != null) {
+      final boundEventId = event.eventId;
       _playerStateSub = player.playerStateStream.listen(
-        (_) => notifyListeners(),
+        (_) {
+          if (_eventId != boundEventId) return;
+          notifyListeners();
+        },
         onError: (_) {},
+        onDone: () {
+          if (_eventId != boundEventId) return;
+          _detachPlayerStateSub();
+        },
       );
     }
     notifyListeners();
