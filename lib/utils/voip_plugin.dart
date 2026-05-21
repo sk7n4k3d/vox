@@ -3,6 +3,7 @@ import 'dart:core';
 import 'package:fluffychat/pages/chat_list/chat_list.dart';
 import 'package:fluffychat/pages/dialer/dialer.dart';
 import 'package:fluffychat/utils/platform_infos.dart';
+import 'package:fluffychat/widgets/fluffy_chat_app.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_foreground_task/flutter_foreground_task.dart';
@@ -38,17 +39,24 @@ class VoipPlugin with WidgetsBindingObserver implements WebRTCDelegate {
   }
 
   void addCallingOverlay(String callId, CallSession call) {
+    // Prefer the navigator key context — it always sits under a Navigator
+    // so Overlay.of() resolves. matrix.context can point to a parent of
+    // the MaterialApp without an Overlay, leading to a "Null check operator
+    // used on a null value" crash inside Overlay.of() (Flutter 3.41 bug).
+    final navContext =
+        FluffyChatApp.router.routerDelegate.navigatorKey.currentContext;
     final context = kIsWeb
         ? ChatList.contextForVoip!
-        : this.context; // web is weird
+        : (navContext ?? this.context);
 
     if (overlayEntry != null) {
       Logs().e('[VOIP] addCallingOverlay: The call session already exists?');
       overlayEntry!.remove();
     }
-    // Overlay.of(context) is broken on web
-    // falling back on a dialog
-    if (kIsWeb) {
+    // Fallback to a dialog when no Overlay ancestor is reachable (web, or
+    // cold-start before the router has mounted its navigator).
+    final overlay = Overlay.maybeOf(context, rootOverlay: true);
+    if (kIsWeb || overlay == null) {
       showDialog(
         context: context,
         builder: (context) => Calling(
@@ -72,7 +80,7 @@ class VoipPlugin with WidgetsBindingObserver implements WebRTCDelegate {
           },
         ),
       );
-      Overlay.of(context).insert(overlayEntry!);
+      overlay.insert(overlayEntry!);
     }
   }
 
@@ -133,14 +141,20 @@ class VoipPlugin with WidgetsBindingObserver implements WebRTCDelegate {
 
   @override
   Future<void> handleCallEnded(CallSession session) async {
-    if (overlayEntry != null) {
-      overlayEntry!.remove();
-      overlayEntry = null;
-      if (PlatformInfos.isAndroid) {
+    try {
+      overlayEntry?.remove();
+    } catch (e) {
+      Logs().w('[VOIP] handleCallEnded: failed to remove overlay: $e');
+    }
+    overlayEntry = null;
+    if (PlatformInfos.isAndroid) {
+      try {
         FlutterForegroundTask.setOnLockScreenVisibility(false);
         FlutterForegroundTask.stopService();
         final wasForeground = matrix.store.getString('wasForeground');
         if (wasForeground == 'false') FlutterForegroundTask.minimizeApp();
+      } catch (e) {
+        Logs().w('[VOIP] handleCallEnded: foreground task cleanup failed: $e');
       }
     }
   }

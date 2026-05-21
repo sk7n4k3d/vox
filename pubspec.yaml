@@ -118,3 +118,8 @@ dependency_overrides:
     git:
       url: https://github.com/google/webcrypto.dart.git
       ref: master
+  # Bastien fork: patched matrix-dart-sdk v6.2.0 with try/catch around
+  # sqflite get/getAll so a transient SQLITE_MISUSE on a single room does
+  # not abort the whole sync (including m.call.invite delivery).
+  matrix:
+    path: ../matrix-dart-sdk-patched
