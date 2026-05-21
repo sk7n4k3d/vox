@@ -28,6 +28,12 @@ class LiquidGlassAppBar extends StatelessWidget
   /// Called when the user taps the new-chat icon.
   final VoidCallback? onNewChatTap;
 
+  /// Called when the user taps the settings icon (avatar pill on the left).
+  final VoidCallback? onSettingsTap;
+
+  /// Optional avatar to show as a settings entry point (left of the title).
+  final Widget? leadingAvatar;
+
   /// Whether to render a greeting line ("Bonjour, $userName") under the title.
   final bool showGreeting;
 
@@ -35,6 +41,8 @@ class LiquidGlassAppBar extends StatelessWidget
     super.key,
     this.onSearchTap,
     this.onNewChatTap,
+    this.onSettingsTap,
+    this.leadingAvatar,
     this.showGreeting = false,
   });
 
@@ -82,6 +90,14 @@ class LiquidGlassAppBar extends StatelessWidget
                         height: _barHeight,
                         child: Row(
                           children: [
+                            if (leadingAvatar != null) ...[
+                              InkWell(
+                                onTap: onSettingsTap,
+                                customBorder: const CircleBorder(),
+                                child: leadingAvatar,
+                              ),
+                              const SizedBox(width: 12),
+                            ],
                             Expanded(
                               child: Text(
                                 L10n.of(context).chats,
@@ -105,6 +121,14 @@ class LiquidGlassAppBar extends StatelessWidget
                               tooltip: L10n.of(context).newChat,
                               onPressed: onNewChatTap,
                             ),
+                            if (leadingAvatar == null) ...[
+                              const SizedBox(width: 4),
+                              _AppBarIconButton(
+                                icon: Icons.settings_outlined,
+                                tooltip: L10n.of(context).settings,
+                                onPressed: onSettingsTap,
+                              ),
+                            ],
                           ],
                         ),
                       ),

@@ -56,6 +56,7 @@ class ChatListView extends StatelessWidget {
                         onSearchTap: controller.startSearch,
                         onNewChatTap: () =>
                             context.go('/rooms/newprivatechat'),
+                        onSettingsTap: () => context.go('/rooms/settings'),
                       )
                     : null,
                 body: ChatListViewBody(controller),
