@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:audio_session/audio_session.dart';
 import 'package:just_audio/just_audio.dart';
 
@@ -12,7 +14,15 @@ class UserMediaManager {
 
   AudioPlayer? _player;
 
+  /// Non-blocking: fires the ringtone setup on the background queue so the
+  /// caller (VoIP.onCallInvite) can immediately move on to handleNewCall
+  /// and render the incoming-call overlay without waiting for audio_session
+  /// to finish configuring (which can take 500-2000ms on cold start).
   Future<void> startRingingTone() async {
+    unawaited(_startRingingToneAsync());
+  }
+
+  Future<void> _startRingingToneAsync() async {
     await stopRingingTone();
     try {
       final session = await AudioSession.instance;
