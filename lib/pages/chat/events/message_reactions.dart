@@ -1,11 +1,17 @@
+import 'dart:ui';
+
 import 'package:collection/collection.dart' show IterableExtension;
-import 'package:fluffychat/config/app_config.dart';
 import 'package:fluffychat/widgets/avatar.dart';
 import 'package:fluffychat/widgets/future_loading_dialog.dart';
 import 'package:fluffychat/widgets/matrix.dart';
 import 'package:fluffychat/widgets/mxc_image.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:matrix/matrix.dart';
+
+/// Maximum number of distinct reaction pills displayed before they are
+/// collapsed under a "+N" overflow chip.
+const int _kMaxVisibleReactions = 3;
 
 class MessageReactions extends StatelessWidget {
   final Event event;
@@ -44,17 +50,23 @@ class MessageReactions extends StatelessWidget {
     final reactionList = reactionMap.values.toList();
     reactionList.sort((a, b) => b.count - a.count > 0 ? 1 : -1);
     final ownMessage = event.senderId == event.room.client.userID;
+
+    final visible = reactionList.take(_kMaxVisibleReactions).toList();
+    final hiddenCount = reactionList.length - visible.length;
+    final isSending = allReactionEvents.any((e) => e.status.isSending);
+
     return Wrap(
       spacing: 4.0,
       runSpacing: 4.0,
       alignment: ownMessage ? WrapAlignment.end : WrapAlignment.start,
       children: [
-        ...reactionList.map(
+        ...visible.map(
           (r) => _Reaction(
             reactionKey: r.key,
             count: r.count,
             reacted: r.reacted,
             onTap: () {
+              HapticFeedback.lightImpact();
               if (r.reacted) {
                 final evt = allReactionEvents.firstWhereOrNull(
                   (e) =>
@@ -77,7 +89,16 @@ class MessageReactions extends StatelessWidget {
             ).show(context),
           ),
         ),
-        if (allReactionEvents.any((e) => e.status.isSending))
+        if (hiddenCount > 0)
+          _OverflowChip(
+            count: hiddenCount,
+            onTap: () => _showAllReactionsSheet(
+              context,
+              reactionList,
+              allReactionEvents,
+            ),
+          ),
+        if (isSending)
           const SizedBox(
             width: 24,
             height: 24,
@@ -89,9 +110,60 @@ class MessageReactions extends StatelessWidget {
       ],
     );
   }
+
+  void _showAllReactionsSheet(
+    BuildContext context,
+    List<_ReactionEntry> all,
+    Set<Event> allReactionEvents,
+  ) {
+    showModalBottomSheet<void>(
+      context: context,
+      showDragHandle: true,
+      builder: (sheetContext) {
+        return SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.all(12.0),
+            child: Wrap(
+              spacing: 6,
+              runSpacing: 6,
+              children: [
+                for (final r in all)
+                  _Reaction(
+                    reactionKey: r.key,
+                    count: r.count,
+                    reacted: r.reacted,
+                    onTap: () {
+                      HapticFeedback.lightImpact();
+                      Navigator.of(sheetContext).pop();
+                      if (r.reacted) {
+                        final evt = allReactionEvents.firstWhereOrNull(
+                          (e) =>
+                              e.senderId == e.room.client.userID &&
+                              e.content.tryGetMap('m.relates_to')?['key'] ==
+                                  r.key,
+                        );
+                        if (evt != null) {
+                          showFutureLoadingDialog(
+                            context: context,
+                            future: evt.redactEvent,
+                          );
+                        }
+                      } else {
+                        event.room.sendReaction(event.eventId, r.key);
+                      }
+                    },
+                    onLongPress: null,
+                  ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
 }
 
-class _Reaction extends StatelessWidget {
+class _Reaction extends StatefulWidget {
   final String reactionKey;
   final int count;
   final bool? reacted;
@@ -107,66 +179,196 @@ class _Reaction extends StatelessWidget {
   });
 
   @override
+  State<_Reaction> createState() => _ReactionState();
+}
+
+class _ReactionState extends State<_Reaction>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _controller;
+  late final Animation<double> _scale;
+  int _lastCount = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    _lastCount = widget.count;
+    _controller = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 350),
+    );
+    _scale = Tween<double>(begin: 0.7, end: 1.0).animate(
+      CurvedAnimation(parent: _controller, curve: Curves.elasticOut),
+    );
+    // Entry animation when the pill first appears.
+    _controller.forward();
+  }
+
+  @override
+  void didUpdateWidget(covariant _Reaction oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.count > _lastCount) {
+      _controller.forward(from: 0);
+    }
+    _lastCount = widget.count;
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final reacted = widget.reacted == true;
+
+    final bgColor = reacted
+        ? theme.colorScheme.primaryContainer.withValues(alpha: 0.4)
+        : theme.colorScheme.surfaceContainerHighest.withValues(alpha: 0.6);
+    final borderColor = reacted
+        ? theme.colorScheme.primary.withValues(alpha: 0.5)
+        : theme.colorScheme.outlineVariant.withValues(alpha: 0.3);
+    final borderWidth = reacted ? 1.0 : 0.5;
 
     Widget content;
-    if (reactionKey.startsWith('mxc://')) {
+    if (widget.reactionKey.startsWith('mxc://')) {
       content = Row(
-        mainAxisSize: .min,
+        mainAxisSize: MainAxisSize.min,
         children: <Widget>[
           MxcImage(
-            uri: Uri.parse(reactionKey),
-            width: 20,
-            height: 20,
+            uri: Uri.parse(widget.reactionKey),
+            width: 16,
+            height: 16,
             animated: false,
             isThumbnail: false,
           ),
-          if (count > 1) ...[
+          if (widget.count > 1) ...[
             const SizedBox(width: 4),
             Text(
-              count.toString(),
+              widget.count.toString(),
               textAlign: TextAlign.center,
               style: TextStyle(
-                color: theme.colorScheme.onSurface,
-                fontSize: DefaultTextStyle.of(context).style.fontSize,
+                color: theme.colorScheme.onSurfaceVariant,
+                fontSize: 12,
+                fontWeight: FontWeight.w600,
               ),
             ),
           ],
         ],
       );
     } else {
-      var renderKey = Characters(reactionKey);
+      var renderKey = Characters(widget.reactionKey);
       if (renderKey.length > 10) {
         renderKey = renderKey.getRange(0, 9) + Characters('…');
       }
-      content = Text(
-        renderKey.toString() + (count > 1 ? ' $count' : ''),
-        style: TextStyle(
-          color: theme.colorScheme.onSurface,
-          fontSize: DefaultTextStyle.of(context).style.fontSize,
-        ),
+      content = Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text(
+            renderKey.toString(),
+            style: const TextStyle(fontSize: 16),
+          ),
+          if (widget.count > 1) ...[
+            const SizedBox(width: 4),
+            Text(
+              widget.count.toString(),
+              style: TextStyle(
+                color: theme.colorScheme.onSurfaceVariant,
+                fontSize: 12,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ],
+        ],
       );
     }
-    return InkWell(
-      onTap: () => onTap != null ? onTap!() : null,
-      onLongPress: () => onLongPress != null ? onLongPress!() : null,
-      borderRadius: BorderRadius.circular(AppConfig.borderRadius / 2),
-      child: Container(
-        decoration: BoxDecoration(
-          color: reacted == true
-              ? theme.colorScheme.primaryContainer
-              : theme.colorScheme.surfaceContainerHigh,
-          border: Border.all(
-            color: reacted == true
-                ? theme.colorScheme.primary
-                : theme.colorScheme.surfaceContainerHigh,
-            width: 1,
+
+    return ScaleTransition(
+      scale: _scale,
+      child: Material(
+        color: Colors.transparent,
+        borderRadius: BorderRadius.circular(16),
+        clipBehavior: Clip.antiAlias,
+        child: InkWell(
+          onTap: widget.onTap,
+          onLongPress: widget.onLongPress,
+          borderRadius: BorderRadius.circular(16),
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(16),
+            child: BackdropFilter(
+              filter: ImageFilter.blur(sigmaX: 8, sigmaY: 8),
+              child: Container(
+                decoration: BoxDecoration(
+                  color: bgColor,
+                  border: Border.all(
+                    color: borderColor,
+                    width: borderWidth,
+                  ),
+                  borderRadius: BorderRadius.circular(16),
+                ),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 8,
+                  vertical: 4,
+                ),
+                child: content,
+              ),
+            ),
           ),
-          borderRadius: BorderRadius.circular(AppConfig.borderRadius / 2),
         ),
-        padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
-        child: content,
+      ),
+    );
+  }
+}
+
+class _OverflowChip extends StatelessWidget {
+  final int count;
+  final VoidCallback onTap;
+
+  const _OverflowChip({required this.count, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Material(
+      color: Colors.transparent,
+      borderRadius: BorderRadius.circular(16),
+      clipBehavior: Clip.antiAlias,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(16),
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(16),
+          child: BackdropFilter(
+            filter: ImageFilter.blur(sigmaX: 8, sigmaY: 8),
+            child: Container(
+              decoration: BoxDecoration(
+                color: theme.colorScheme.surfaceContainerHighest.withValues(
+                  alpha: 0.6,
+                ),
+                border: Border.all(
+                  color: theme.colorScheme.outlineVariant.withValues(
+                    alpha: 0.3,
+                  ),
+                  width: 0.5,
+                ),
+                borderRadius: BorderRadius.circular(16),
+              ),
+              padding: const EdgeInsets.symmetric(
+                horizontal: 8,
+                vertical: 4,
+              ),
+              child: Text(
+                '+$count',
+                style: TextStyle(
+                  color: theme.colorScheme.onSurfaceVariant,
+                  fontSize: 12,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ),
+          ),
+        ),
       ),
     );
   }

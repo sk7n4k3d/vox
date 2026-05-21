@@ -19,6 +19,7 @@ import 'package:swipe_to_action/swipe_to_action.dart';
 
 import '../../../config/app_config.dart';
 import 'message_content.dart';
+import 'message_quick_react_picker.dart';
 import 'message_reactions.dart';
 import 'reply_content.dart';
 import 'state_message.dart';
@@ -202,6 +203,23 @@ class Message extends StatelessWidget {
 
     final enterThread = this.enterThread;
     final sender = event.senderFromMemoryOrFallback;
+    final bubbleKey = GlobalKey();
+
+    void showQuickReactPicker() {
+      if (!event.room.canSendDefaultMessages) return;
+      final ctx = bubbleKey.currentContext;
+      if (ctx == null) return;
+      final renderBox = ctx.findRenderObject() as RenderBox?;
+      if (renderBox == null || !renderBox.attached) return;
+      final offset = renderBox.localToGlobal(Offset.zero);
+      final rect = offset & renderBox.size;
+      HapticFeedback.mediumImpact();
+      MessageQuickReactPicker.show(
+        context: ctx,
+        event: event,
+        bubbleRect: rect,
+      );
+    }
 
     return _AnimateIn(
       animateIn: animateIn,
@@ -447,7 +465,11 @@ class Message extends StatelessWidget {
                                           HapticFeedback.heavyImpact();
                                           onSelect(event);
                                         },
+                                  onDoubleTap: longPressSelect
+                                      ? null
+                                      : showQuickReactPicker,
                                   child: Container(
+                                    key: bubbleKey,
                                     decoration: BoxDecoration(
                                       color: noBubble
                                           ? Colors.transparent
