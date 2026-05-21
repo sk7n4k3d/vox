@@ -142,6 +142,67 @@ Future<void> _tryPushHelper(
   l10n ??= await L10n.delegate.load(PlatformDispatcher.instance.locale);
   final matrixLocals = MatrixLocals(l10n);
 
+  // Incoming voice call: post a full-screen-intent notification so Android
+  // forces the call UI to the foreground even when the app is in the
+  // background or the screen is locked. Without this, on Android 14+ the
+  // ActivityTaskManager blocks the call overlay launch with
+  // "Background activity launch blocked! goo.gle/android-bal".
+  if (event.type == EventTypes.CallInvite && PlatformInfos.isAndroid) {
+    final callerDisplayName =
+        event.senderFromMemoryOrFallback.calcDisplayname();
+    final ringtone = AppSettings.callRingtone.value;
+    // The channel id is suffixed by the ringtone choice so Android keeps a
+    // distinct channel per sound (it caches the sound at channel creation
+    // and ignores subsequent updates within the same channel id).
+    final channelId = 'incoming_calls_$ringtone';
+    final AndroidNotificationSound? channelSound = switch (ringtone) {
+      'jarvis' => const RawResourceAndroidNotificationSound('jarvis_call'),
+      'silent' => null,
+      _ => null, // "system" -> let Android use channel default ringtone
+    };
+    final callChannel = AndroidNotificationChannel(
+      channelId,
+      'Incoming calls',
+      description: 'Ringer for incoming Matrix voice calls',
+      importance: Importance.max,
+      playSound: ringtone != 'silent',
+      sound: channelSound,
+      enableVibration: true,
+    );
+    await flutterLocalNotificationsPlugin
+        .resolvePlatformSpecificImplementation<
+          AndroidFlutterLocalNotificationsPlugin
+        >()
+        ?.createNotificationChannel(callChannel);
+    final callDetails = AndroidNotificationDetails(
+      callChannel.id,
+      callChannel.name,
+      channelDescription: callChannel.description,
+      importance: Importance.max,
+      priority: Priority.max,
+      category: AndroidNotificationCategory.call,
+      visibility: NotificationVisibility.public,
+      fullScreenIntent: true,
+      ongoing: true,
+      autoCancel: false,
+      playSound: ringtone != 'silent',
+      sound: channelSound,
+      ticker: '${l10n.voiceCall} — $callerDisplayName',
+    );
+    await flutterLocalNotificationsPlugin.show(
+      id: event.eventId.hashCode,
+      title: l10n.voiceCall,
+      body: callerDisplayName,
+      notificationDetails: NotificationDetails(android: callDetails),
+      payload: jsonEncode({
+        'event_id': event.eventId,
+        'room_id': event.roomId,
+        'call': true,
+      }),
+    );
+    return;
+  }
+
   // Calculate the body
   final body = event.type == EventTypes.Encrypted
       ? l10n.newMessageInFluffyChat

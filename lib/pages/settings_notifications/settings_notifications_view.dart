@@ -1,6 +1,8 @@
+import 'package:fluffychat/config/setting_keys.dart';
 import 'package:fluffychat/config/themes.dart';
 import 'package:fluffychat/l10n/l10n.dart';
 import 'package:fluffychat/pages/settings_notifications/push_rule_extensions.dart';
+import 'package:fluffychat/utils/adaptive_bottom_sheet.dart';
 import 'package:fluffychat/widgets/layouts/max_width_body.dart';
 import 'package:flutter/material.dart';
 import 'package:matrix/matrix.dart';
@@ -107,6 +109,8 @@ class SettingsNotificationsView extends StatelessWidget {
                         ),
                       Divider(color: theme.dividerColor),
                     ],
+                  const _CallRingtoneTile(),
+                  Divider(color: theme.dividerColor),
                   ListTile(
                     title: Text(
                       L10n.of(context).devices,
@@ -164,6 +168,67 @@ class SettingsNotificationsView extends StatelessWidget {
           },
         ),
       ),
+    );
+  }
+}
+
+const _ringtoneOptions = <String, String>{
+  'jarvis': 'Jarvis (intégrée)',
+  'system': 'Sonnerie système Android',
+  'silent': 'Silencieux (vibration seule)',
+};
+
+class _CallRingtoneTile extends StatefulWidget {
+  const _CallRingtoneTile();
+
+  @override
+  State<_CallRingtoneTile> createState() => _CallRingtoneTileState();
+}
+
+class _CallRingtoneTileState extends State<_CallRingtoneTile> {
+  String _current = AppSettings.callRingtone.value;
+
+  Future<void> _pick() async {
+    final selected = await showAdaptiveBottomSheet<String>(
+      context: context,
+      builder: (sheetContext) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ListTile(
+              title: Text(
+                'Sonnerie appel entrant',
+                style: TextStyle(
+                  fontWeight: FontWeight.bold,
+                  color: Theme.of(sheetContext).colorScheme.secondary,
+                ),
+              ),
+            ),
+            for (final entry in _ringtoneOptions.entries)
+              RadioListTile<String>(
+                title: Text(entry.value),
+                value: entry.key,
+                groupValue: _current,
+                onChanged: (value) => Navigator.of(sheetContext).pop(value),
+              ),
+            const SizedBox(height: 8),
+          ],
+        ),
+      ),
+    );
+    if (selected == null || selected == _current) return;
+    await AppSettings.callRingtone.setItem(selected);
+    if (!mounted) return;
+    setState(() => _current = selected);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return ListTile(
+      leading: const Icon(Icons.phone_in_talk_outlined),
+      title: const Text('Sonnerie appel entrant'),
+      subtitle: Text(_ringtoneOptions[_current] ?? _current),
+      onTap: _pick,
     );
   }
 }

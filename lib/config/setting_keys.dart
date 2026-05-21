@@ -70,7 +70,12 @@ enum AppSettings<T> {
   lastSeenSupportBanner<int>('chat.fluffy.last_seen_support_banner', 0),
   supportBannerOptOut<bool>('chat.fluffy.support_banner_opt_out', false),
   audioPlaybackSpeed<double>('chat.fluffy.audio_playback_speed', 1.0),
-  colorfulSenderNames<bool>('chat.fluffy.colorful_sender_names', true);
+  colorfulSenderNames<bool>('chat.fluffy.colorful_sender_names', true),
+  // Ringtone for incoming Matrix voice calls.
+  //   "jarvis" — bundled phone.ogg asset (res/raw/jarvis_call.ogg)
+  //   "system" — Android default ringtone
+  //   "silent" — no sound (notification + vibration only)
+  callRingtone<String>('chat.fluffy.call_ringtone', 'jarvis');
 
   final String key;
   final T defaultValue;
