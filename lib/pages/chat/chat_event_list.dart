@@ -2,6 +2,7 @@ import 'package:collection/collection.dart';
 import 'package:fluffychat/config/themes.dart';
 import 'package:fluffychat/l10n/l10n.dart';
 import 'package:fluffychat/pages/chat/chat.dart';
+import 'package:fluffychat/pages/chat/chat_date_separator.dart';
 import 'package:fluffychat/pages/chat/events/message.dart';
 import 'package:fluffychat/pages/chat/seen_by_row.dart';
 import 'package:fluffychat/pages/chat/typing_indicators.dart';
@@ -134,49 +135,73 @@ class ChatEventList extends StatelessWidget {
                 previousEvent?.isCollapsedState == true &&
                 !controller.expandedEventIds.contains(event.eventId);
 
+            // Floating date separator: rendered above the first message of a
+            // new calendar day. The list is reverse=true so events[i+1] is the
+            // older neighbour — we compare it to event to detect a day flip.
+            // For the oldest visible event (no older neighbour available) we
+            // still show the separator so the top of the timeline is labelled.
+            final eventDate = event.originServerTs.toLocal();
+            final olderNeighbour = nextEvent?.originServerTs.toLocal();
+            final showDateSeparator = olderNeighbour == null
+                ? i == events.length - 1
+                : !ChatDateSeparator.sameCalendarDay(
+                    eventDate,
+                    olderNeighbour,
+                  );
+
+            final messageWidget = Message(
+              event,
+              bigEmojis: controller.bigEmojis,
+              animateIn: animateIn,
+              onSwipe: () => controller.replyAction(replyTo: event),
+              onInfoTab: controller.showEventInfo,
+              onMention: () => controller.sendController.text +=
+                  '${event.senderFromMemoryOrFallback.mention} ',
+              highlightMarker:
+                  controller.scrollToEventIdMarker == event.eventId,
+              onSelect: controller.onSelectMessage,
+              scrollToEventId: controller.scrollToEventId,
+              longPressSelect: controller.selectedEvents.isNotEmpty,
+              selected: controller.selectedEvents.any(
+                (e) => e.eventId == event.eventId,
+              ),
+              singleSelected:
+                  controller.selectedEvents.singleOrNull?.eventId ==
+                  event.eventId,
+              onEdit: controller.editSelectedEventAction,
+              timeline: timeline,
+              displayReadMarker:
+                  i > 0 && controller.readMarkerEventId == event.eventId,
+              nextEvent: nextEvent,
+              previousEvent: previousEvent,
+              wallpaperMode: hasWallpaper,
+              scrollController: controller.scrollController,
+              colors: colors,
+              isCollapsed: isCollapsed,
+              enterThread: controller.activeThreadId == null
+                  ? controller.enterThread
+                  : null,
+              onExpand: canExpand
+                  ? () => controller.expandEventsFrom(
+                      event,
+                      !controller.expandedEventIds.contains(event.eventId),
+                    )
+                  : null,
+            );
+
             return AutoScrollTag(
               key: ValueKey(event.transactionId ?? event.eventId),
               index: i,
               controller: controller.scrollController,
-              child: Message(
-                event,
-                bigEmojis: controller.bigEmojis,
-                animateIn: animateIn,
-                onSwipe: () => controller.replyAction(replyTo: event),
-                onInfoTab: controller.showEventInfo,
-                onMention: () => controller.sendController.text +=
-                    '${event.senderFromMemoryOrFallback.mention} ',
-                highlightMarker:
-                    controller.scrollToEventIdMarker == event.eventId,
-                onSelect: controller.onSelectMessage,
-                scrollToEventId: controller.scrollToEventId,
-                longPressSelect: controller.selectedEvents.isNotEmpty,
-                selected: controller.selectedEvents.any(
-                  (e) => e.eventId == event.eventId,
-                ),
-                singleSelected:
-                    controller.selectedEvents.singleOrNull?.eventId ==
-                    event.eventId,
-                onEdit: controller.editSelectedEventAction,
-                timeline: timeline,
-                displayReadMarker:
-                    i > 0 && controller.readMarkerEventId == event.eventId,
-                nextEvent: nextEvent,
-                previousEvent: previousEvent,
-                wallpaperMode: hasWallpaper,
-                scrollController: controller.scrollController,
-                colors: colors,
-                isCollapsed: isCollapsed,
-                enterThread: controller.activeThreadId == null
-                    ? controller.enterThread
-                    : null,
-                onExpand: canExpand
-                    ? () => controller.expandEventsFrom(
-                        event,
-                        !controller.expandedEventIds.contains(event.eventId),
-                      )
-                    : null,
-              ),
+              child: showDateSeparator
+                  ? Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        ChatDateSeparator(date: eventDate),
+                        messageWidget,
+                      ],
+                    )
+                  : messageWidget,
             );
           },
           childCount: events.length + 2,
