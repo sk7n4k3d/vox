@@ -34,23 +34,42 @@ class ChatListFilterPills extends StatelessWidget {
 
     return SizedBox(
       height: height,
-      child: ListView.separated(
-        scrollDirection: Axis.horizontal,
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-        itemCount: effectiveFilters.length,
-        separatorBuilder: (_, _) => const SizedBox(width: 8),
-        itemBuilder: (context, index) {
-          final filter = effectiveFilters[index];
-          final selected = filter == controller.activeFilter;
-          return _FilterPill(
-            label: filter.toLocalizedString(context),
-            selected: selected,
-            onTap: () {
-              HapticFeedback.selectionClick();
-              controller.setActiveFilter(filter);
-            },
-          );
-        },
+      child: ShaderMask(
+        // Fade horizontal edges so partially-visible pills look intentional
+        // instead of brutally clipped.
+        shaderCallback: (rect) => const LinearGradient(
+          begin: Alignment.centerLeft,
+          end: Alignment.centerRight,
+          colors: [
+            Colors.transparent,
+            Colors.black,
+            Colors.black,
+            Colors.transparent,
+          ],
+          stops: [0.0, 0.03, 0.97, 1.0],
+        ).createShader(rect),
+        blendMode: BlendMode.dstIn,
+        child: ListView.separated(
+          scrollDirection: Axis.horizontal,
+          physics: const BouncingScrollPhysics(
+            parent: AlwaysScrollableScrollPhysics(),
+          ),
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+          itemCount: effectiveFilters.length,
+          separatorBuilder: (_, _) => const SizedBox(width: 8),
+          itemBuilder: (context, index) {
+            final filter = effectiveFilters[index];
+            final selected = filter == controller.activeFilter;
+            return _FilterPill(
+              label: filter.toLocalizedString(context),
+              selected: selected,
+              onTap: () {
+                HapticFeedback.selectionClick();
+                controller.setActiveFilter(filter);
+              },
+            );
+          },
+        ),
       ),
     );
   }

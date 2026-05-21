@@ -141,7 +141,11 @@ class ChatListItem extends StatelessWidget {
                               : AvatarWithStatusRing(
                                   mxContent: room.avatar,
                                   name: displayname,
-                                  size: Avatar.defaultSize,
+                                  // Inner avatar shrunk by 10px so the ring
+                                  // (2px stroke + 3px gap on each side)
+                                  // fits inside the parent SizedBox without
+                                  // being clipped.
+                                  size: Avatar.defaultSize - 10,
                                   presenceUserId: isDirectChat
                                       ? directChatMatrixId
                                       : null,
@@ -588,8 +592,11 @@ class _HybridUnreadBadge extends StatelessWidget {
     final theme = Theme.of(context);
     final cyber = theme.extension<CyberpunkTheme>();
     final isMention = room.highlightCount > 0;
-    final hasUnread =
-        room.notificationCount > 0 || room.markedUnread || room.hasNewMessages;
+    // Only show the dot when the room is actually waiting for attention.
+    // `room.hasNewMessages` is too noisy (it stays true on muted/read rooms
+    // until the next sync delta) and was causing a permanent cyan dot on
+    // every row.
+    final hasUnread = room.notificationCount > 0 || room.markedUnread;
 
     if (isMention) {
       final magenta = cyber?.magenta ?? theme.colorScheme.error;
