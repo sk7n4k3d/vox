@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Force AGP shrinkResources to keep the bundled call ringtone even
+     though no Kotlin/Java code references R.raw.jarvis_call directly
+     (it is loaded by name from Dart via flutter_local_notifications'
+     RawResourceAndroidNotificationSound). Without this, release builds
+     drop the file and notifications fall back to the short system
+     notification_sound. -->
+<resources xmlns:tools="http://schemas.android.com/tools"
+           tools:keep="@raw/jarvis_call" />
