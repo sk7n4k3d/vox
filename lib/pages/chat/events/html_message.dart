@@ -1,4 +1,5 @@
 import 'package:collection/collection.dart';
+import 'package:fluffychat/pages/chat/events/code_block_widget.dart';
 import 'package:fluffychat/utils/code_highlight_theme.dart';
 import 'package:fluffychat/utils/event_checkbox_extension.dart';
 import 'package:fluffychat/widgets/avatar.dart';
@@ -336,8 +337,26 @@ class HtmlMessage extends StatelessWidget {
             ),
           ),
         );
+      case 'pre':
+        final codeChild = node.children.firstWhereOrNull(
+          (child) => child.localName == 'code',
+        );
+        final codeElement = codeChild ?? node;
+        final rawCode = codeElement.text;
+        final language = codeChild == null
+            ? null
+            : CodeBlockWidget.extractLanguage(codeChild);
+        return WidgetSpan(
+          child: CodeBlockWidget(
+            rawCode: rawCode,
+            language: language,
+            fontSize: fontSize,
+          ),
+        );
       case 'code':
-        final isInline = node.parent?.localName != 'pre';
+        if (node.parent?.localName == 'pre') {
+          return const TextSpan();
+        }
         final lang =
             node.className
                 .split(' ')
@@ -363,9 +382,7 @@ class HtmlMessage extends StatelessWidget {
               borderRadius: BorderRadius.circular(4),
             ),
             child: Padding(
-              padding: isInline
-                  ? const EdgeInsets.symmetric(horizontal: 4.0)
-                  : const EdgeInsets.symmetric(horizontal: 8.0, vertical: 4.0),
+              padding: const EdgeInsets.symmetric(horizontal: 4.0),
               child: Text.rich(
                 TextSpan(children: [_renderCodeBlockNode(element)]),
                 selectionColor: hightlightTextColor.withAlpha(128),
