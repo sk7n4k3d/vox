@@ -1,9 +1,13 @@
+import 'dart:ui';
+
+import 'package:fluffychat/config/cyberpunk_theme_extension.dart';
 import 'package:fluffychat/l10n/l10n.dart';
 import 'package:fluffychat/utils/fluffy_share.dart';
 import 'package:fluffychat/widgets/avatar.dart';
 import 'package:fluffychat/widgets/matrix.dart';
 import 'package:fluffychat/widgets/mxc_image_viewer.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:matrix/matrix.dart';
 
 import 'settings.dart';
@@ -102,33 +106,28 @@ class SettingsProfileHeader extends StatelessWidget {
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
                   Expanded(
-                    child: FilledButton.tonalIcon(
-                      onPressed: controller.setDisplaynameAction,
-                      icon: const Icon(Icons.edit_outlined, size: 18),
-                      label: Text(l10n.editDisplayname),
-                      style: FilledButton.styleFrom(
-                        padding: const EdgeInsets.symmetric(vertical: 14),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(14),
-                        ),
-                      ),
+                    child: _GlassActionButton(
+                      icon: Icons.edit_outlined,
+                      label: l10n.editDisplayname,
+                      accent: theme.extension<CyberpunkTheme>()?.cyan ??
+                          theme.colorScheme.primary,
+                      onTap: () {
+                        HapticFeedback.selectionClick();
+                        controller.setDisplaynameAction();
+                      },
                     ),
                   ),
                   const SizedBox(width: 12),
                   Expanded(
-                    child: OutlinedButton.icon(
-                      onPressed: () => FluffyShare.share(mxid, context),
-                      icon: const Icon(Icons.qr_code_outlined, size: 18),
-                      label: Text(l10n.share),
-                      style: OutlinedButton.styleFrom(
-                        padding: const EdgeInsets.symmetric(vertical: 14),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(14),
-                        ),
-                        side: BorderSide(
-                          color: theme.colorScheme.outlineVariant,
-                        ),
-                      ),
+                    child: _GlassActionButton(
+                      icon: Icons.qr_code_outlined,
+                      label: l10n.share,
+                      accent: theme.extension<CyberpunkTheme>()?.magenta ??
+                          theme.colorScheme.secondary,
+                      onTap: () {
+                        HapticFeedback.selectionClick();
+                        FluffyShare.share(mxid, context);
+                      },
                     ),
                   ),
                 ],
@@ -207,6 +206,93 @@ class _AvatarBlock extends StatelessWidget {
             ),
           ),
         ],
+      ),
+    );
+  }
+}
+
+/// Glass pill button matching the cyberpunk + Liquid Glass aesthetic of the
+/// rest of the settings screen. Accent-colored icon + label on a frosted
+/// surface, with a thin border tinted by the accent so the action reads as
+/// a primary call-to-action without the heavy tonal fill of FilledButton.
+class _GlassActionButton extends StatefulWidget {
+  final IconData icon;
+  final String label;
+  final Color accent;
+  final VoidCallback onTap;
+
+  const _GlassActionButton({
+    required this.icon,
+    required this.label,
+    required this.accent,
+    required this.onTap,
+  });
+
+  @override
+  State<_GlassActionButton> createState() => _GlassActionButtonState();
+}
+
+class _GlassActionButtonState extends State<_GlassActionButton> {
+  bool _down = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return GestureDetector(
+      onTapDown: (_) => setState(() => _down = true),
+      onTapUp: (_) => setState(() => _down = false),
+      onTapCancel: () => setState(() => _down = false),
+      onTap: widget.onTap,
+      child: AnimatedScale(
+        scale: _down ? 0.96 : 1.0,
+        duration: const Duration(milliseconds: 180),
+        curve: Curves.easeOutCubic,
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(16),
+          child: BackdropFilter(
+            filter: ImageFilter.blur(sigmaX: 12, sigmaY: 12),
+            child: Container(
+              padding:
+                  const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+              decoration: BoxDecoration(
+                color: widget.accent.withValues(alpha: 0.12),
+                borderRadius: BorderRadius.circular(16),
+                border: Border.all(
+                  color: widget.accent.withValues(alpha: 0.45),
+                  width: 1,
+                ),
+                boxShadow: [
+                  BoxShadow(
+                    color: widget.accent.withValues(alpha: 0.22),
+                    blurRadius: 14,
+                    spreadRadius: -2,
+                  ),
+                ],
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Icon(widget.icon, size: 18, color: widget.accent),
+                  const SizedBox(width: 8),
+                  Flexible(
+                    child: Text(
+                      widget.label,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        fontSize: 14,
+                        fontWeight: FontWeight.w600,
+                        letterSpacing: 0.2,
+                        color: theme.colorScheme.onSurface,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
       ),
     );
   }
