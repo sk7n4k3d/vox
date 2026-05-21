@@ -18,9 +18,9 @@ import 'package:just_audio/just_audio.dart';
 import 'package:matrix/matrix.dart';
 import 'package:opus_caf_converter_dart/opus_caf_converter_dart.dart';
 import 'package:path_provider/path_provider.dart';
+import 'package:visibility_detector/visibility_detector.dart';
 
 import '../../../utils/matrix_sdk_extensions/event_extension.dart';
-import '../../../widgets/fluffy_chat_app.dart';
 import '../../../widgets/matrix.dart';
 
 class AudioPlayerWidget extends StatefulWidget {
@@ -62,78 +62,24 @@ class AudioPlayerState extends State<AudioPlayerWidget> {
     final audioPlayer = matrix.voiceMessageEventId.value != widget.event.eventId
         ? null
         : matrix.audioPlayer;
-    if (audioPlayer != null) {
-      if (audioPlayer.playing && !audioPlayer.isAtEndPosition) {
-        WidgetsBinding.instance.addPostFrameCallback((_) {
-          ScaffoldMessenger.of(matrix.context).showMaterialBanner(
-            MaterialBanner(
-              padding: EdgeInsets.zero,
-              leading: StreamBuilder(
-                stream: audioPlayer.playerStateStream.asBroadcastStream(),
-                builder: (context, _) => IconButton(
-                  onPressed: () {
-                    if (audioPlayer.isAtEndPosition) {
-                      audioPlayer.seek(Duration.zero);
-                    } else if (audioPlayer.playing) {
-                      audioPlayer.pause();
-                    } else {
-                      audioPlayer.play();
-                    }
-                  },
-                  icon: audioPlayer.playing && !audioPlayer.isAtEndPosition
-                      ? const Icon(Icons.pause_outlined)
-                      : const Icon(Icons.play_arrow_outlined),
-                ),
-              ),
-              content: StreamBuilder(
-                stream: audioPlayer.positionStream.asBroadcastStream(),
-                builder: (context, _) => GestureDetector(
-                  onTap: () => FluffyChatApp.router.go(
-                    '/rooms/${widget.event.room.id}?event=${widget.event.eventId}',
-                  ),
-                  child: Text(
-                    '🎙️ ${audioPlayer.position.minuteSecondString} / ${audioPlayer.duration?.minuteSecondString} - ${widget.event.senderFromMemoryOrFallback.calcDisplayname()}',
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                ),
-              ),
-              actions: [
-                IconButton(
-                  onPressed: () {
-                    audioPlayer.pause();
-                    audioPlayer.dispose();
-                    _detachSpeedListener?.call();
-                    _detachSpeedListener = null;
-                    matrix.voiceMessageEventId.value = matrix.audioPlayer =
-                        null;
-
-                    WidgetsBinding.instance.addPostFrameCallback((_) {
-                      ScaffoldMessenger.of(
-                        matrix.context,
-                      ).clearMaterialBanners();
-                    });
-                  },
-                  icon: const Icon(Icons.close_outlined),
-                ),
-              ],
-            ),
-          );
-        });
-        return;
-      }
-      audioPlayer.pause();
-      audioPlayer.dispose();
-      _detachSpeedListener?.call();
-      _detachSpeedListener = null;
-      matrix.voiceMessageEventId.value = matrix.audioPlayer = null;
+    if (audioPlayer == null) return;
+    // Still playing — leave the player alive so the sticky [MiniAudioPlayer]
+    // can keep controlling it. Mark the source as off-screen so the mini
+    // player slides in immediately.
+    if (audioPlayer.playing && !audioPlayer.isAtEndPosition) {
+      matrix.audioPlayback.setSourceVisible(false, widget.event.eventId);
+      return;
     }
+    // Stopped / finished — tear down.
+    audioPlayer.pause();
+    audioPlayer.dispose();
+    _detachSpeedListener?.call();
+    _detachSpeedListener = null;
+    matrix.voiceMessageEventId.value = matrix.audioPlayer = null;
+    matrix.audioPlayback.stop();
   }
 
   Future<void> _onButtonTap() async {
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      ScaffoldMessenger.of(matrix.context).clearMaterialBanners();
-    });
     final currentPlayer =
         matrix.voiceMessageEventId.value != widget.event.eventId
         ? null
@@ -153,6 +99,9 @@ class AudioPlayerState extends State<AudioPlayerWidget> {
     matrix.audioPlayer
       ?..stop()
       ..dispose();
+    // Clear previous track metadata on the shared controller; a new one
+    // will be published once the player is ready below.
+    matrix.audioPlayback.stop();
     File? file;
     MatrixFile? matrixFile;
 
@@ -209,6 +158,11 @@ class AudioPlayerState extends State<AudioPlayerWidget> {
 
     final audioPlayer = matrix.audioPlayer = AudioPlayer();
     _detachSpeedListener = playbackSpeedController.attachPlayer(audioPlayer);
+    matrix.audioPlayback.play(
+      player: audioPlayer,
+      event: widget.event,
+      room: widget.event.room,
+    );
 
     if (file != null) {
       audioPlayer.setFilePath(file.path);
@@ -257,10 +211,13 @@ class AudioPlayerState extends State<AudioPlayerWidget> {
     matrix = Matrix.of(context);
     _waveform = _getWaveform();
 
+    // If we're rebuilding the bubble for the currently active track, the
+    // source bubble is back in the timeline — let the controller know so
+    // the mini player slides out.
     if (matrix.voiceMessageEventId.value == widget.event.eventId &&
         matrix.audioPlayer != null) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
-        ScaffoldMessenger.of(matrix.context).clearMaterialBanners();
+        matrix.audioPlayback.setSourceVisible(true, widget.event.eventId);
       });
     }
 
@@ -278,9 +235,18 @@ class AudioPlayerState extends State<AudioPlayerWidget> {
     final theme = Theme.of(context);
     final waveform = _waveform;
 
-    return ValueListenableBuilder(
-      valueListenable: matrix.voiceMessageEventId,
-      builder: (context, eventId, _) {
+    return VisibilityDetector(
+      key: Key('audio-${widget.event.eventId}'),
+      onVisibilityChanged: (info) {
+        if (!mounted) return;
+        matrix.audioPlayback.setSourceVisible(
+          info.visibleFraction >= 0.3,
+          widget.event.eventId,
+        );
+      },
+      child: ValueListenableBuilder(
+        valueListenable: matrix.voiceMessageEventId,
+        builder: (context, eventId, _) {
         final audioPlayer = eventId != widget.event.eventId
             ? null
             : matrix.audioPlayer;
@@ -513,7 +479,8 @@ class AudioPlayerState extends State<AudioPlayerWidget> {
             );
           },
         );
-      },
+        },
+      ),
     );
   }
 }

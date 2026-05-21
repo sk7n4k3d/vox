@@ -11,6 +11,7 @@ import 'package:fluffychat/pages/chat/chat_app_bar_title.dart';
 import 'package:fluffychat/pages/chat/chat_event_list.dart';
 import 'package:fluffychat/pages/chat/encryption_button.dart';
 import 'package:fluffychat/pages/chat/jitsi_popup_button.dart';
+import 'package:fluffychat/pages/chat/mini_audio_player.dart';
 import 'package:fluffychat/pages/chat/pinned_events.dart';
 import 'package:fluffychat/pages/chat/reply_display.dart';
 import 'package:fluffychat/utils/account_config.dart';
@@ -405,6 +406,12 @@ class ChatView extends StatelessWidget {
                             ),
                         ],
                       ),
+                    ),
+                    Positioned(
+                      top: 0,
+                      left: 0,
+                      right: 0,
+                      child: MiniAudioPlayer(chatController: controller),
                     ),
                     if (controller.dragging)
                       Container(

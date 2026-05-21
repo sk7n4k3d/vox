@@ -4,6 +4,7 @@ import 'dart:convert';
 import 'package:collection/collection.dart';
 import 'package:desktop_notifications/desktop_notifications.dart';
 import 'package:fluffychat/l10n/l10n.dart';
+import 'package:fluffychat/utils/audio_playback_controller.dart';
 import 'package:fluffychat/utils/client_manager.dart';
 import 'package:fluffychat/utils/init_with_restore.dart';
 import 'package:fluffychat/utils/matrix_sdk_extensions/matrix_file_extension.dart';
@@ -141,6 +142,7 @@ class MatrixState extends State<Matrix> with WidgetsBindingObserver {
 
   AudioPlayer? audioPlayer;
   final ValueNotifier<String?> voiceMessageEventId = ValueNotifier(null);
+  late final AudioPlaybackController audioPlayback = AudioPlaybackController();
 
   Future<Client> getLoginClient() async {
     if (widget.clients.isNotEmpty && !client.isLogged()) {
@@ -372,6 +374,8 @@ class MatrixState extends State<Matrix> with WidgetsBindingObserver {
     onNotification.values.map((s) => s.cancel());
 
     linuxNotifications?.close();
+
+    audioPlayback.dispose();
 
     super.dispose();
   }
