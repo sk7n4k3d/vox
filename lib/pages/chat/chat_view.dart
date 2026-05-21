@@ -176,13 +176,22 @@ class ChatView extends StatelessWidget {
                         ),
                       ),
                     SafeArea(
+                      // Top is already covered by the AppBar's own internal
+                      // SafeArea (status bar) — adding another SafeArea(top:
+                      // true) on the body stacked an extra ~50dp gap on the
+                      // Pixel 9 Pro Fold.
+                      top: false,
                       child: Column(
                         children: <Widget>[
                           // Reserve space for the Liquid Glass app bar, which
                           // sits *above* the body via extendBodyBehindAppBar.
-                          // 64dp app bar + any banner (pinned events, thread
-                          // anchor, jump-to-unread pill).
-                          SizedBox(height: 64.0 + appbarBottomHeight),
+                          // Status bar + 64dp AppBar + any banner (pinned
+                          // events, thread anchor, jump-to-unread pill).
+                          SizedBox(
+                            height: MediaQuery.paddingOf(context).top +
+                                64.0 +
+                                appbarBottomHeight,
+                          ),
                           MiniAudioPlayer(chatController: controller),
                           Expanded(
                             child: GestureDetector(
