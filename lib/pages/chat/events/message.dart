@@ -5,10 +5,10 @@ import 'package:fluffychat/config/setting_keys.dart';
 import 'package:fluffychat/config/themes.dart';
 import 'package:fluffychat/l10n/l10n.dart';
 import 'package:fluffychat/utils/adaptive_bottom_sheet.dart';
+import 'package:fluffychat/utils/author_color.dart';
 import 'package:fluffychat/utils/date_time_extension.dart';
 import 'package:fluffychat/utils/file_description.dart';
 import 'package:fluffychat/utils/matrix_sdk_extensions/matrix_locals.dart';
-import 'package:fluffychat/utils/string_color.dart';
 import 'package:fluffychat/widgets/avatar.dart';
 import 'package:fluffychat/widgets/matrix.dart';
 import 'package:fluffychat/widgets/member_actions_popup_menu_button.dart';
@@ -384,18 +384,35 @@ class Message extends StatelessWidget {
                                                       snapshot.data
                                                           ?.calcDisplayname() ??
                                                       sender.calcDisplayname();
+                                                  final highContrast =
+                                                      MediaQuery.highContrastOf(
+                                                        context,
+                                                      );
+                                                  final Color nameColor;
+                                                  if (highContrast) {
+                                                    nameColor = theme
+                                                        .colorScheme
+                                                        .onSurface;
+                                                  } else if (!AppSettings
+                                                      .colorfulSenderNames
+                                                      .value) {
+                                                    nameColor = theme
+                                                        .colorScheme
+                                                        .primary;
+                                                  } else {
+                                                    nameColor =
+                                                        AuthorColors.forUserId(
+                                                          event.senderId,
+                                                          theme.brightness,
+                                                        );
+                                                  }
                                                   return Text(
                                                     displayname,
                                                     style: TextStyle(
                                                       fontSize: 11,
                                                       fontWeight:
                                                           FontWeight.bold,
-                                                      color:
-                                                          (theme.brightness ==
-                                                              Brightness.light
-                                                          ? displayname.color
-                                                          : displayname
-                                                                .lightColorText),
+                                                      color: nameColor,
                                                       shadows: !wallpaperMode
                                                           ? null
                                                           : [

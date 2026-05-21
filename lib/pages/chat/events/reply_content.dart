@@ -1,5 +1,6 @@
 import 'package:fluffychat/config/setting_keys.dart';
 import 'package:fluffychat/l10n/l10n.dart';
+import 'package:fluffychat/utils/author_color.dart';
 import 'package:fluffychat/utils/matrix_sdk_extensions/matrix_locals.dart';
 import 'package:flutter/material.dart';
 import 'package:matrix/matrix.dart';
@@ -39,6 +40,22 @@ class ReplyContent extends StatelessWidget {
         ? theme.colorScheme.tertiaryContainer
         : theme.colorScheme.tertiary;
 
+    final isDirectChat = displayEvent.room.isDirectChat;
+    final highContrast = MediaQuery.highContrastOf(context);
+    final Color senderNameColor;
+    if (ownMessage || isDirectChat) {
+      senderNameColor = color;
+    } else if (highContrast) {
+      senderNameColor = theme.colorScheme.onSurface;
+    } else if (!AppSettings.colorfulSenderNames.value) {
+      senderNameColor = theme.colorScheme.primary;
+    } else {
+      senderNameColor = AuthorColors.forUserId(
+        displayEvent.senderId,
+        theme.brightness,
+      );
+    }
+
     return Material(
       color: Colors.transparent,
       borderRadius: borderRadius,
@@ -69,7 +86,7 @@ class ReplyContent extends StatelessWidget {
                       overflow: TextOverflow.ellipsis,
                       style: TextStyle(
                         fontWeight: FontWeight.bold,
-                        color: color,
+                        color: senderNameColor,
                         fontSize: fontSize,
                       ),
                     );

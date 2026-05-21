@@ -69,7 +69,8 @@ enum AppSettings<T> {
   sendTimelineEventTimeout<int>('chat.fluffy.send_timeline_event_timeout', 15),
   lastSeenSupportBanner<int>('chat.fluffy.last_seen_support_banner', 0),
   supportBannerOptOut<bool>('chat.fluffy.support_banner_opt_out', false),
-  audioPlaybackSpeed<double>('chat.fluffy.audio_playback_speed', 1.0);
+  audioPlaybackSpeed<double>('chat.fluffy.audio_playback_speed', 1.0),
+  colorfulSenderNames<bool>('chat.fluffy.colorful_sender_names', true);
 
   final String key;
   final T defaultValue;
