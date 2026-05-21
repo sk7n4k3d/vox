@@ -2821,5 +2821,40 @@
     "@playbackSpeedDescription": {
         "type": "String",
         "placeholders": {}
+    },
+    "nowPlaying": "Now playing",
+    "@nowPlaying": {
+        "type": "String",
+        "placeholders": {}
+    },
+    "stopPlayback": "Stop playback",
+    "@stopPlayback": {
+        "type": "String",
+        "placeholders": {}
+    },
+    "voiceMessageSlideToCancel": "Slide to cancel",
+    "@voiceMessageSlideToCancel": {
+        "type": "String",
+        "placeholders": {}
+    },
+    "voiceMessageSlideUpToLock": "Slide up to lock",
+    "@voiceMessageSlideUpToLock": {
+        "type": "String",
+        "placeholders": {}
+    },
+    "voiceMessageReleaseToSend": "Release to send",
+    "@voiceMessageReleaseToSend": {
+        "type": "String",
+        "placeholders": {}
+    },
+    "voiceMessageLocked": "Recording locked",
+    "@voiceMessageLocked": {
+        "type": "String",
+        "placeholders": {}
+    },
+    "voiceMessageCancelled": "Voice message cancelled",
+    "@voiceMessageCancelled": {
+        "type": "String",
+        "placeholders": {}
     }
 }

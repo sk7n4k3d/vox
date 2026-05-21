@@ -40,6 +40,25 @@ class RecordingViewModelState extends State<RecordingViewModel> {
 
   bool isPaused = false;
 
+  bool isLocked = false;
+
+  bool isCancelling = false;
+
+  void lock() {
+    if (!mounted || isLocked) return;
+    setState(() => isLocked = true);
+  }
+
+  void unlock() {
+    if (!mounted || !isLocked) return;
+    setState(() => isLocked = false);
+  }
+
+  void markCancelling(bool value) {
+    if (!mounted || isCancelling == value) return;
+    setState(() => isCancelling = value);
+  }
+
   Future<void> startRecording(Room room) async {
     room.client.getConfig(); // Preload server file configuration.
     if (PlatformInfos.isAndroid) {
@@ -141,6 +160,8 @@ class RecordingViewModelState extends State<RecordingViewModel> {
     duration = Duration.zero;
     amplitudeTimeline.clear();
     isPaused = false;
+    isLocked = false;
+    isCancelling = false;
   }
 
   void cancel() {

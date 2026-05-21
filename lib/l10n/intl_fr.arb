@@ -2775,5 +2775,40 @@
     "@playbackSpeedDescription": {
         "type": "String",
         "placeholders": {}
+    },
+    "nowPlaying": "En cours de lecture",
+    "@nowPlaying": {
+        "type": "String",
+        "placeholders": {}
+    },
+    "stopPlayback": "Arrêter la lecture",
+    "@stopPlayback": {
+        "type": "String",
+        "placeholders": {}
+    },
+    "voiceMessageSlideToCancel": "Glisser pour annuler",
+    "@voiceMessageSlideToCancel": {
+        "type": "String",
+        "placeholders": {}
+    },
+    "voiceMessageSlideUpToLock": "Glisser vers le haut pour verrouiller",
+    "@voiceMessageSlideUpToLock": {
+        "type": "String",
+        "placeholders": {}
+    },
+    "voiceMessageReleaseToSend": "Relâcher pour envoyer",
+    "@voiceMessageReleaseToSend": {
+        "type": "String",
+        "placeholders": {}
+    },
+    "voiceMessageLocked": "Enregistrement verrouillé",
+    "@voiceMessageLocked": {
+        "type": "String",
+        "placeholders": {}
+    },
+    "voiceMessageCancelled": "Message vocal annulé",
+    "@voiceMessageCancelled": {
+        "type": "String",
+        "placeholders": {}
     }
 }

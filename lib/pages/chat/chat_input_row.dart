@@ -3,10 +3,12 @@ import 'package:fluffychat/config/setting_keys.dart';
 import 'package:fluffychat/l10n/l10n.dart';
 import 'package:fluffychat/pages/chat/recording_input_row.dart';
 import 'package:fluffychat/pages/chat/recording_view_model.dart';
+import 'package:fluffychat/pages/chat/voice_record_button.dart';
+import 'package:fluffychat/pages/chat/voice_record_gesture_state.dart';
+import 'package:fluffychat/pages/chat/voice_recording_overlay.dart';
 import 'package:fluffychat/utils/other_party_can_receive.dart';
 import 'package:fluffychat/utils/platform_infos.dart';
 import 'package:fluffychat/widgets/avatar.dart';
-import 'package:fluffychat/widgets/hover_builder.dart';
 import 'package:fluffychat/widgets/matrix.dart';
 import 'package:flutter/material.dart';
 import 'package:matrix/matrix.dart';
@@ -15,12 +17,28 @@ import '../../config/themes.dart';
 import 'chat.dart';
 import 'input_bar.dart';
 
-class ChatInputRow extends StatelessWidget {
+class ChatInputRow extends StatefulWidget {
   final ChatController controller;
 
   static const double height = 56.0;
 
   const ChatInputRow(this.controller, {super.key});
+
+  @override
+  State<ChatInputRow> createState() => _ChatInputRowState();
+}
+
+class _ChatInputRowState extends State<ChatInputRow> {
+  final ValueNotifier<VoiceRecordGestureState> _gestureNotifier =
+      ValueNotifier(VoiceRecordGestureState.zero);
+
+  ChatController get controller => widget.controller;
+
+  @override
+  void dispose() {
+    _gestureNotifier.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -49,13 +67,44 @@ class ChatInputRow extends StatelessWidget {
 
     return RecordingViewModel(
       builder: (context, recordingViewModel) {
+        Widget content;
         if (recordingViewModel.isRecording) {
-          return RecordingInputRow(
+          content = RecordingInputRow(
             state: recordingViewModel,
             onSend: controller.onVoiceMessageSend,
           );
+        } else {
+          content = _buildEditRow(
+            context,
+            recordingViewModel,
+            theme,
+            textMessageOnly,
+            selectedTextButtonStyle,
+          );
         }
-        return Row(
+        return Stack(
+          clipBehavior: Clip.none,
+          children: [
+            content,
+            if (recordingViewModel.isRecording && !recordingViewModel.isLocked)
+              VoiceRecordingOverlay(
+                state: recordingViewModel,
+                gestureNotifier: _gestureNotifier,
+              ),
+          ],
+        );
+      },
+    );
+  }
+
+  Widget _buildEditRow(
+    BuildContext context,
+    RecordingViewModelState recordingViewModel,
+    ThemeData theme,
+    bool textMessageOnly,
+    ButtonStyle selectedTextButtonStyle,
+  ) {
+    return Row(
           crossAxisAlignment: .end,
           mainAxisAlignment: .spaceBetween,
           children: controller.selectMode
@@ -64,7 +113,7 @@ class ChatInputRow extends StatelessWidget {
                     (event) => event.status == EventStatus.error,
                   ))
                     SizedBox(
-                      height: height,
+                      height: ChatInputRow.height,
                       child: TextButton(
                         style: TextButton.styleFrom(
                           foregroundColor: theme.colorScheme.error,
@@ -80,7 +129,7 @@ class ChatInputRow extends StatelessWidget {
                     )
                   else
                     SizedBox(
-                      height: height,
+                      height: ChatInputRow.height,
                       child: TextButton(
                         style: selectedTextButtonStyle,
                         onPressed: controller.forwardEventsAction,
@@ -98,7 +147,7 @@ class ChatInputRow extends StatelessWidget {
                                 .status
                                 .isSent
                             ? SizedBox(
-                                height: height,
+                                height: ChatInputRow.height,
                                 child: TextButton(
                                   style: selectedTextButtonStyle,
                                   onPressed: controller.replyAction,
@@ -111,7 +160,7 @@ class ChatInputRow extends StatelessWidget {
                                 ),
                               )
                             : SizedBox(
-                                height: height,
+                                height: ChatInputRow.height,
                                 child: TextButton(
                                   style: selectedTextButtonStyle,
                                   onPressed: controller.sendAgainAction,
@@ -132,7 +181,7 @@ class ChatInputRow extends StatelessWidget {
                     duration: FluffyThemes.animationDuration,
                     curve: FluffyThemes.animationCurve,
                     width: textMessageOnly ? 0 : 48,
-                    height: height,
+                    height: ChatInputRow.height,
                     alignment: Alignment.center,
                     decoration: const BoxDecoration(),
                     clipBehavior: Clip.hardEdge,
@@ -223,7 +272,7 @@ class ChatInputRow extends StatelessWidget {
                       duration: FluffyThemes.animationDuration,
                       curve: FluffyThemes.animationCurve,
                       width: textMessageOnly ? 0 : 48,
-                      height: height,
+                      height: ChatInputRow.height,
                       alignment: Alignment.center,
                       decoration: const BoxDecoration(),
                       clipBehavior: Clip.hardEdge,
@@ -265,7 +314,7 @@ class ChatInputRow extends StatelessWidget {
                       ),
                     ),
                   Container(
-                    height: height,
+                    height: ChatInputRow.height,
                     width: 48,
                     alignment: Alignment.center,
                     child: IconButton(
@@ -284,7 +333,7 @@ class ChatInputRow extends StatelessWidget {
                       Matrix.of(context).hasComplexBundles &&
                       Matrix.of(context).currentBundle!.length > 1)
                     Container(
-                      height: height,
+                      height: ChatInputRow.height,
                       width: 48,
                       alignment: Alignment.center,
                       child: _ChatAccountPicker(controller),
@@ -338,50 +387,22 @@ class ChatInputRow extends StatelessWidget {
                     ),
                   ),
                   Container(
-                    height: height,
-                    width: height,
+                    height: ChatInputRow.height,
+                    width: ChatInputRow.height,
                     alignment: Alignment.center,
                     child:
                         PlatformInfos.platformCanRecord &&
                             !controller.sendController.text.isNotEmpty &&
                             controller.editEvent == null
-                        ? HoverBuilder(
-                            builder: (context, hovered) => IconButton(
-                              tooltip: L10n.of(context).voiceMessage,
-                              onPressed: hovered
-                                  ? () => recordingViewModel.startRecording(
-                                      controller.room,
-                                    )
-                                  : () => ScaffoldMessenger.of(context)
-                                        .showSnackBar(
-                                          SnackBar(
-                                            margin: EdgeInsets.only(
-                                              bottom: height + 16,
-                                              left: 16,
-                                              right: 16,
-                                              top: 16,
-                                            ),
-                                            showCloseIcon: true,
-                                            content: Text(
-                                              L10n.of(
-                                                context,
-                                              ).longPressToRecordVoiceMessage,
-                                            ),
-                                          ),
-                                        ),
-                              onLongPress: () => recordingViewModel
-                                  .startRecording(controller.room),
-                              style: IconButton.styleFrom(
-                                backgroundColor: theme.bubbleColor,
-                                foregroundColor: theme.onBubbleColor,
-                              ),
-                              icon: Icon(
-                                hovered ? Icons.mic : Icons.mic_none_outlined,
-                              ),
-                            ),
+                        ? VoiceRecordButton(
+                            controller: controller,
+                            recordingState: recordingViewModel,
+                            gestureNotifier: _gestureNotifier,
+                            backgroundColor: theme.bubbleColor,
+                            foregroundColor: theme.onBubbleColor,
                           )
                         : IconButton(
-                            key: Key('send_button'),
+                            key: const Key('send_button'),
                             tooltip: L10n.of(context).send,
                             onPressed: controller.send,
                             style: IconButton.styleFrom(
@@ -393,8 +414,6 @@ class ChatInputRow extends StatelessWidget {
                   ),
                 ],
         );
-      },
-    );
   }
 }
 
