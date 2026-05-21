@@ -35,7 +35,11 @@ class CodeBlockWidget extends StatefulWidget {
 }
 
 class _CodeBlockWidgetState extends State<CodeBlockWidget> {
+  static const int _maxHighlightLength = 4096;
+  static const int _maxLinesBeforeCollapse = 12;
+
   bool _justCopied = false;
+  bool _expanded = false;
 
   Future<void> _copy(BuildContext context) async {
     final l10n = L10n.of(context);
@@ -66,6 +70,9 @@ class _CodeBlockWidgetState extends State<CodeBlockWidget> {
   }
 
   TextSpan _buildHighlighted(Map<String, TextStyle> theme) {
+    if (widget.rawCode.length > _maxHighlightLength) {
+      return TextSpan(text: widget.rawCode, style: theme['root']);
+    }
     List<hl.Node>? nodes;
     final lang = widget.language;
     try {
@@ -108,6 +115,26 @@ class _CodeBlockWidgetState extends State<CodeBlockWidget> {
       color: palette['root']?.color,
     );
 
+    final lineCount = '\n'.allMatches(widget.rawCode).length + 1;
+    final canCollapse = lineCount > _maxLinesBeforeCollapse;
+    final approxLineHeight = widget.fontSize * 1.35;
+    final collapsedHeight =
+        approxLineHeight * _maxLinesBeforeCollapse + 24;
+
+    final codeArea = Padding(
+      padding: const EdgeInsets.fromLTRB(12, 12, 12, 12),
+      child: SingleChildScrollView(
+        scrollDirection: Axis.horizontal,
+        child: SelectableText.rich(
+          TextSpan(
+            style: codeStyle,
+            children: [_buildHighlighted(palette)],
+          ),
+          style: codeStyle,
+        ),
+      ),
+    );
+
     return Container(
       margin: const EdgeInsets.symmetric(vertical: 4.0),
       decoration: BoxDecoration(
@@ -116,19 +143,42 @@ class _CodeBlockWidgetState extends State<CodeBlockWidget> {
       ),
       child: Stack(
         children: [
-          Padding(
-            padding: const EdgeInsets.fromLTRB(12, 12, 12, 12),
-            child: SingleChildScrollView(
-              scrollDirection: Axis.horizontal,
-              child: SelectableText.rich(
-                TextSpan(
-                  style: codeStyle,
-                  children: [_buildHighlighted(palette)],
+          if (canCollapse && !_expanded)
+            SizedBox(
+              height: collapsedHeight,
+              child: ClipRect(
+                child: OverflowBox(
+                  alignment: Alignment.topLeft,
+                  maxHeight: double.infinity,
+                  child: codeArea,
                 ),
-                style: codeStyle,
+              ),
+            )
+          else
+            codeArea,
+          if (canCollapse)
+            Positioned(
+              left: 0,
+              right: 0,
+              bottom: 0,
+              child: Material(
+                color: background.withAlpha(230),
+                borderRadius: const BorderRadius.vertical(
+                  bottom: Radius.circular(12),
+                ),
+                child: InkWell(
+                  onTap: () => setState(() => _expanded = !_expanded),
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 4),
+                    child: Icon(
+                      _expanded ? Icons.expand_less : Icons.expand_more,
+                      size: 20,
+                      color: pillForeground,
+                    ),
+                  ),
+                ),
               ),
             ),
-          ),
           PositionedDirectional(
             top: 4,
             end: 4,

@@ -1,6 +1,5 @@
 import 'package:collection/collection.dart';
 import 'package:fluffychat/pages/chat/events/code_block_widget.dart';
-import 'package:fluffychat/utils/code_highlight_theme.dart';
 import 'package:fluffychat/utils/event_checkbox_extension.dart';
 import 'package:fluffychat/widgets/avatar.dart';
 import 'package:fluffychat/widgets/future_loading_dialog.dart';
@@ -8,7 +7,6 @@ import 'package:fluffychat/widgets/mxc_image.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_linkify/flutter_linkify.dart';
-import 'package:highlight/highlight.dart' show highlight;
 import 'package:html/dom.dart' as dom;
 import 'package:html/parser.dart' as parser;
 import 'package:matrix/matrix.dart';
@@ -135,20 +133,6 @@ class HtmlMessage extends StatelessWidget {
         ],
       ],
     ];
-  }
-
-  InlineSpan _renderCodeBlockNode(dom.Node node) {
-    if (node is! dom.Element) {
-      return TextSpan(text: node.text);
-    }
-    final style =
-        atomOneDarkTheme[node.className.split('-').last] ??
-        atomOneDarkTheme['root'];
-
-    return TextSpan(
-      children: node.nodes.map(_renderCodeBlockNode).toList(),
-      style: style,
-    );
   }
 
   /// Transforms a Node to an InlineSpan.
@@ -337,6 +321,25 @@ class HtmlMessage extends StatelessWidget {
             ),
           ),
         );
+      case 'table':
+        return WidgetSpan(
+          alignment: PlaceholderAlignment.top,
+          child: _MdTable(
+            element: node,
+            renderHtml: _renderHtml,
+            renderWithLineBreaks: _renderWithLineBreaks,
+            fontSize: fontSize,
+            textColor: textColor,
+            depth: depth,
+          ),
+        );
+      case 'thead':
+      case 'tbody':
+      case 'tr':
+      case 'td':
+      case 'th':
+      case 'caption':
+        return const TextSpan();
       case 'pre':
         final codeChild = node.children.firstWhereOrNull(
           (child) => child.localName == 'code',
@@ -357,35 +360,22 @@ class HtmlMessage extends StatelessWidget {
         if (node.parent?.localName == 'pre') {
           return const TextSpan();
         }
-        final lang =
-            node.className
-                .split(' ')
-                .singleWhereOrNull(
-                  (className) => className.startsWith('language-'),
-                )
-                ?.split('language-')
-                .last ??
-            'md';
-        final highlightedHtml = highlight
-            .parse(node.text, language: lang)
-            .toHtml();
-        final element = parser.parse(highlightedHtml).body;
-        if (element == null) {
-          return const TextSpan(text: 'Unable to render code block!');
-        }
-
+        final scheme = Theme.of(context).colorScheme;
         return WidgetSpan(
-          child: Material(
-            color: atomOneBackgroundColor,
-            shape: RoundedRectangleBorder(
-              side: const BorderSide(color: hightlightTextColor),
+          alignment: PlaceholderAlignment.middle,
+          child: Container(
+            decoration: BoxDecoration(
+              color: scheme.surfaceContainerHigh,
+              border: Border.all(color: scheme.outlineVariant, width: 0.5),
               borderRadius: BorderRadius.circular(4),
             ),
-            child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 4.0),
-              child: Text.rich(
-                TextSpan(children: [_renderCodeBlockNode(element)]),
-                selectionColor: hightlightTextColor.withAlpha(128),
+            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
+            child: Text(
+              node.text,
+              style: TextStyle(
+                fontFamily: 'monospace',
+                fontSize: fontSize * 0.92,
+                color: scheme.onSurfaceVariant,
               ),
             ),
           ),
@@ -456,6 +446,19 @@ class HtmlMessage extends StatelessWidget {
                 style: TextStyle(fontSize: fontSize, color: textColor),
               ),
             ),
+          ),
+        );
+      case 'font':
+        final fontColor = (node.attributes['color'] ??
+                node.attributes['data-mx-color'])
+            ?.hexToColor;
+        final fontBg = node.attributes['data-mx-bg-color']?.hexToColor;
+        return TextSpan(
+          style: TextStyle(color: fontColor, backgroundColor: fontBg),
+          children: _renderWithLineBreaks(
+            node.nodes,
+            context,
+            depth: depth + 1,
           ),
         );
       case 'span':
@@ -597,4 +600,103 @@ extension on String {
 
 extension on dom.Element {
   dom.Element get rootElement => parent?.rootElement ?? this;
+}
+
+class _MdTable extends StatelessWidget {
+  final dom.Element element;
+  final InlineSpan Function(dom.Node, BuildContext, {int depth}) renderHtml;
+  final List<InlineSpan> Function(
+    dom.NodeList,
+    BuildContext, {
+    int depth,
+  })
+  renderWithLineBreaks;
+  final double fontSize;
+  final Color textColor;
+  final int depth;
+
+  const _MdTable({
+    required this.element,
+    required this.renderHtml,
+    required this.renderWithLineBreaks,
+    required this.fontSize,
+    required this.textColor,
+    required this.depth,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final trNodes = element.querySelectorAll('tr');
+    if (trNodes.isEmpty) {
+      return const SizedBox.shrink();
+    }
+    final maxCols = trNodes
+        .map(
+          (tr) => tr.children
+              .where((c) => c.localName == 'td' || c.localName == 'th')
+              .length,
+        )
+        .reduce((a, b) => a > b ? a : b);
+    if (maxCols == 0) return const SizedBox.shrink();
+
+    final rows = trNodes.map((tr) {
+      final cells = tr.children
+          .where((c) => c.localName == 'td' || c.localName == 'th')
+          .toList();
+      while (cells.length < maxCols) {
+        cells.add(dom.Element.tag('td'));
+      }
+      return TableRow(
+        children: cells.map((cell) {
+          final isHeader = cell.localName == 'th';
+          return TableCell(
+            child: Padding(
+              padding: const EdgeInsets.symmetric(
+                horizontal: 8,
+                vertical: 6,
+              ),
+              child: Text.rich(
+                TextSpan(
+                  style: TextStyle(
+                    fontSize: fontSize,
+                    fontWeight: isHeader
+                        ? FontWeight.w600
+                        : FontWeight.normal,
+                    color: textColor,
+                  ),
+                  children: renderWithLineBreaks(
+                    cell.nodes,
+                    context,
+                    depth: depth + 1,
+                  ),
+                ),
+              ),
+            ),
+          );
+        }).toList(),
+      );
+    }).toList();
+
+    return Container(
+      margin: const EdgeInsets.symmetric(vertical: 8),
+      child: SingleChildScrollView(
+        scrollDirection: Axis.horizontal,
+        child: ConstrainedBox(
+          constraints: BoxConstraints(
+            minWidth: MediaQuery.sizeOf(context).width * 0.4,
+          ),
+          child: Table(
+            defaultColumnWidth: const IntrinsicColumnWidth(),
+            border: TableBorder.all(
+              color: scheme.outlineVariant,
+              width: 0.5,
+              borderRadius: BorderRadius.circular(8),
+            ),
+            children: rows,
+          ),
+        ),
+      ),
+    );
+  }
 }
