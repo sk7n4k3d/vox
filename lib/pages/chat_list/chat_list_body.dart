@@ -16,6 +16,7 @@ import 'package:matrix/matrix.dart';
 import '../../config/themes.dart';
 import '../../widgets/adaptive_dialogs/user_dialog.dart';
 import '../../widgets/matrix.dart';
+import 'chat_list_filter_pills.dart';
 import 'chat_list_header.dart';
 
 class ChatListViewBody extends StatelessWidget {
@@ -65,11 +66,34 @@ class ChatListViewBody extends StatelessWidget {
       builder: (context, _) {
         final rooms = controller.filteredRooms;
 
+        // The LiquidGlassAppBar is shown by the parent Scaffold only when
+        // not in search mode and no active space. In that case the body is
+        // rendered *behind* the AppBar (extendBodyBehindAppBar: true), so we
+        // need to reserve room at the top of the scroll view to avoid the
+        // first item being hidden under the blur.
+        final mediaQuery = MediaQuery.of(context);
+        final showLiquidAppBar =
+            !controller.isSearchMode && controller.activeSpaceId == null;
+        final topInset = showLiquidAppBar
+            ? mediaQuery.padding.top + 64.0 + 28.0 // bar + greeting
+            : 0.0;
+
         return SafeArea(
+          top: !showLiquidAppBar,
           child: CustomScrollView(
             controller: controller.scrollController,
             slivers: [
-              ChatListHeader(controller: controller),
+              if (showLiquidAppBar)
+                SliverToBoxAdapter(child: SizedBox(height: topInset)),
+              if (controller.isSearchMode)
+                ChatListHeader(controller: controller),
+              if (showLiquidAppBar)
+                SliverPersistentHeader(
+                  pinned: true,
+                  delegate: ChatListFilterPillsDelegate(
+                    controller: controller,
+                  ),
+                ),
               SliverList(
                 delegate: SliverChildListDelegate([
                   if (controller.isSearchMode) ...[
@@ -127,46 +151,8 @@ class ChatListViewBody extends StatelessWidget {
                         onStatusEdit: controller.setStatus,
                       ),
                     ),
-                  if (client.rooms.isNotEmpty && !controller.isSearchMode)
-                    SizedBox(
-                      height: 64,
-                      child: ListView(
-                        padding: const EdgeInsets.all(12.0),
-                        shrinkWrap: true,
-                        scrollDirection: Axis.horizontal,
-                        children:
-                            [
-                                  ActiveFilter.allChats,
-
-                                  if (spaces.isNotEmpty &&
-                                      !AppSettings
-                                          .displayNavigationRail
-                                          .value &&
-                                      !FluffyThemes.isColumnMode(context))
-                                    ActiveFilter.spaces,
-                                  ActiveFilter.unread,
-                                  ActiveFilter.groups,
-                                  ActiveFilter.messages,
-                                ]
-                                .map(
-                                  (filter) => Padding(
-                                    padding: const EdgeInsets.symmetric(
-                                      horizontal: 4.0,
-                                    ),
-                                    child: FilterChip(
-                                      selected:
-                                          filter == controller.activeFilter,
-                                      onSelected: (_) =>
-                                          controller.setActiveFilter(filter),
-                                      label: Text(
-                                        filter.toLocalizedString(context),
-                                      ),
-                                    ),
-                                  ),
-                                )
-                                .toList(),
-                      ),
-                    ),
+                  // Filter pills moved to a dedicated SliverPersistentHeader
+                  // above; see ChatListFilterPills.
                   if (controller.isSearchMode)
                     SearchTitle(
                       title: L10n.of(context).chats,
