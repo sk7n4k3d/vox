@@ -4,9 +4,12 @@ import 'dart:io';
 import 'package:async/async.dart';
 import 'package:fluffychat/config/app_config.dart';
 import 'package:fluffychat/config/themes.dart';
+import 'package:fluffychat/pages/chat/events/audio_speed_bottom_sheet.dart';
+import 'package:fluffychat/utils/adaptive_bottom_sheet.dart';
 import 'package:fluffychat/utils/error_reporter.dart';
 import 'package:fluffychat/utils/file_description.dart';
 import 'package:fluffychat/utils/localized_exception_extension.dart';
+import 'package:fluffychat/utils/playback_speed_controller.dart';
 import 'package:fluffychat/utils/url_launcher.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
@@ -51,6 +54,7 @@ class AudioPlayerState extends State<AudioPlayerWidget> {
   late final MatrixState matrix;
   List<int>? _waveform;
   String? _durationString;
+  VoidCallback? _detachSpeedListener;
 
   @override
   void dispose() {
@@ -99,6 +103,8 @@ class AudioPlayerState extends State<AudioPlayerWidget> {
                   onPressed: () {
                     audioPlayer.pause();
                     audioPlayer.dispose();
+                    _detachSpeedListener?.call();
+                    _detachSpeedListener = null;
                     matrix.voiceMessageEventId.value = matrix.audioPlayer =
                         null;
 
@@ -118,6 +124,8 @@ class AudioPlayerState extends State<AudioPlayerWidget> {
       }
       audioPlayer.pause();
       audioPlayer.dispose();
+      _detachSpeedListener?.call();
+      _detachSpeedListener = null;
       matrix.voiceMessageEventId.value = matrix.audioPlayer = null;
     }
   }
@@ -140,6 +148,8 @@ class AudioPlayerState extends State<AudioPlayerWidget> {
     }
 
     matrix.voiceMessageEventId.value = widget.event.eventId;
+    _detachSpeedListener?.call();
+    _detachSpeedListener = null;
     matrix.audioPlayer
       ?..stop()
       ..dispose();
@@ -198,6 +208,7 @@ class AudioPlayerState extends State<AudioPlayerWidget> {
     if (matrix.voiceMessageEventId.value != widget.event.eventId) return;
 
     final audioPlayer = matrix.audioPlayer = AudioPlayer();
+    _detachSpeedListener = playbackSpeedController.attachPlayer(audioPlayer);
 
     if (file != null) {
       audioPlayer.setFilePath(file.path);
@@ -214,29 +225,10 @@ class AudioPlayerState extends State<AudioPlayerWidget> {
     );
   }
 
-  Future<void> _toggleSpeed() async {
-    final audioPlayer = matrix.audioPlayer;
-    if (audioPlayer == null) return;
-    switch (audioPlayer.speed) {
-      case 1.0:
-        await audioPlayer.setSpeed(1.25);
-        break;
-      case 1.25:
-        await audioPlayer.setSpeed(1.5);
-        break;
-      case 1.5:
-        await audioPlayer.setSpeed(2.0);
-        break;
-      case 2.0:
-        await audioPlayer.setSpeed(0.5);
-        break;
-      case 0.5:
-      default:
-        await audioPlayer.setSpeed(1.0);
-        break;
-    }
-    setState(() {});
-  }
+  Future<void> _toggleSpeed() => playbackSpeedController.cycle();
+
+  String _formatSpeed(double s) =>
+      s == s.truncateToDouble() ? '${s.toInt()}x' : '${s}x';
 
   List<int>? _getWaveform() {
     final eventWaveForm = widget.event.content
@@ -442,25 +434,37 @@ class AudioPlayerState extends State<AudioPlayerWidget> {
                               color: widget.color,
                             ),
                           ),
-                          secondChild: Material(
-                            color: widget.color.withAlpha(64),
-                            borderRadius: BorderRadius.circular(
-                              AppConfig.borderRadius,
-                            ),
-                            child: InkWell(
+                          secondChild: ValueListenableBuilder<double>(
+                            valueListenable: playbackSpeedController,
+                            builder: (context, speed, _) => Material(
+                              color: widget.color.withAlpha(
+                                speed > 1.0 ? 128 : 64,
+                              ),
                               borderRadius: BorderRadius.circular(
                                 AppConfig.borderRadius,
                               ),
-                              onTap: _toggleSpeed,
-                              child: SizedBox(
-                                width: 32,
-                                height: 20,
-                                child: Center(
-                                  child: Text(
-                                    '${audioPlayer?.speed}x',
-                                    style: TextStyle(
-                                      color: widget.color,
-                                      fontSize: 9,
+                              child: InkWell(
+                                borderRadius: BorderRadius.circular(
+                                  AppConfig.borderRadius,
+                                ),
+                                onTap: _toggleSpeed,
+                                onLongPress: () => showAdaptiveBottomSheet(
+                                  context: context,
+                                  builder: (_) => const AudioSpeedBottomSheet(),
+                                ),
+                                child: SizedBox(
+                                  width: 32,
+                                  height: 20,
+                                  child: Center(
+                                    child: Text(
+                                      _formatSpeed(speed),
+                                      style: TextStyle(
+                                        color: widget.color,
+                                        fontSize: 9,
+                                        fontWeight: speed != 1.0
+                                            ? FontWeight.w600
+                                            : FontWeight.normal,
+                                      ),
                                     ),
                                   ),
                                 ),

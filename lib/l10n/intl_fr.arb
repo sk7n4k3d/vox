@@ -517,6 +517,16 @@
         "type": "String",
         "placeholders": {}
     },
+    "copyCode": "Copier le code",
+    "@copyCode": {
+        "type": "String",
+        "placeholders": {}
+    },
+    "codeCopied": "Code copié dans le presse-papiers",
+    "@codeCopied": {
+        "type": "String",
+        "placeholders": {}
+    },
     "couldNotDecryptMessage": "Impossible de déchiffrer le message : {error}",
     "@couldNotDecryptMessage": {
         "type": "String",
@@ -2436,6 +2446,10 @@
     "@sendReadReceiptsDescription": {},
     "formattedMessages": "Messages formatés",
     "@formattedMessages": {},
+    "colorfulSenderNames": "Noms d'expéditeurs colorés",
+    "@colorfulSenderNames": {},
+    "colorfulSenderNamesDescription": "Attribuer une couleur unique à chaque expéditeur dans les groupes",
+    "@colorfulSenderNamesDescription": {},
     "verifyOtherUser": "🔐 Vérifier l'autre utilisateur/trice",
     "@verifyOtherUser": {},
     "searchMore": "Rechercher davantage...",
@@ -2751,5 +2765,15 @@
     "addLink": "Ajouter un lien",
     "@addLink": {},
     "allowMultipleAnswers": "Autoriser plusieurs réponses",
-    "@allowMultipleAnswers": {}
+    "@allowMultipleAnswers": {},
+    "playbackSpeed": "Vitesse de lecture",
+    "@playbackSpeed": {
+        "type": "String",
+        "placeholders": {}
+    },
+    "playbackSpeedDescription": "Choisir la vitesse de lecture des messages vocaux",
+    "@playbackSpeedDescription": {
+        "type": "String",
+        "placeholders": {}
+    }
 }

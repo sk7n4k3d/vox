@@ -612,6 +612,16 @@
         "type": "String",
         "placeholders": {}
     },
+    "copyCode": "Copy code",
+    "@copyCode": {
+        "type": "String",
+        "placeholders": {}
+    },
+    "codeCopied": "Code copied to clipboard",
+    "@codeCopied": {
+        "type": "String",
+        "placeholders": {}
+    },
     "couldNotDecryptMessage": "Could not decrypt message: {error}",
     "@couldNotDecryptMessage": {
         "type": "String",
@@ -2358,6 +2368,10 @@
     "sendReadReceiptsDescription": "Other participants in a chat can see when you have read a message.",
     "formattedMessages": "Formatted messages",
     "formattedMessagesDescription": "Display rich message content like bold text using markdown.",
+    "colorfulSenderNames": "Colorful sender names",
+    "@colorfulSenderNames": {},
+    "colorfulSenderNamesDescription": "Give each sender a unique color in group chats",
+    "@colorfulSenderNamesDescription": {},
     "verifyOtherUser": "🔐 Verify other user",
     "verifyOtherUserDescription": "If you verify another user, you can be sure that you know who you are really writing to. 💪\n\nWhen you start a verification, you and the other user will see a popup in the app. There you will then see a series of emojis or numbers that you have to compare with each other.\n\nThe best way to do this is to meet up or start a video call. 👭",
     "verifyOtherDevice": "🔐 Verify other device",
@@ -2797,5 +2811,15 @@
     "startVideoCall": "Start video call",
     "joinVoiceCall": "Join voice call",
     "joinVideoCall": "Join video call",
-    "live": "Live"
+    "live": "Live",
+    "playbackSpeed": "Playback speed",
+    "@playbackSpeed": {
+        "type": "String",
+        "placeholders": {}
+    },
+    "playbackSpeedDescription": "Choose audio message playback speed",
+    "@playbackSpeedDescription": {
+        "type": "String",
+        "placeholders": {}
+    }
 }
