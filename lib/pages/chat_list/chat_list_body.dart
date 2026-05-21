@@ -70,12 +70,14 @@ class ChatListViewBody extends StatelessWidget {
         // not in search mode and no active space. In that case the body is
         // rendered *behind* the AppBar (extendBodyBehindAppBar: true), so we
         // need to reserve room at the top of the scroll view to avoid the
-        // first item being hidden under the blur.
-        final mediaQuery = MediaQuery.of(context);
+        // first item being hidden under the blur. The Scaffold already pads
+        // the status bar above the AppBar, so we only reserve the AppBar's
+        // own preferredSize (bar + greeting), NOT the status bar height —
+        // that was doubled up before and produced a phantom gap.
         final showLiquidAppBar =
             !controller.isSearchMode && controller.activeSpaceId == null;
         final topInset = showLiquidAppBar
-            ? mediaQuery.padding.top + 64.0 + 28.0 // bar + greeting
+            ? 64.0 + 28.0 // bar + greeting
             : 0.0;
 
         return SafeArea(
