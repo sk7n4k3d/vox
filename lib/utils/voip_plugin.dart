@@ -170,8 +170,12 @@ class VoipPlugin with WidgetsBindingObserver implements WebRTCDelegate {
   EncryptionKeyProvider? get keyProvider => throw UnimplementedError();
 
   @override
-  Future<void> registerListeners(CallSession session) {
-    // TODO: implement registerListeners
-    throw UnimplementedError();
+  Future<void> registerListeners(CallSession session) async {
+    // Listeners are propagated through onCallStateChanged / onCallEventChanged
+    // streams already consumed by the Calling widget. Upstream FluffyChat
+    // removed its CallKeep wiring (CHANGELOG: "Remove broken callkeep
+    // implementation") without restoring a fallback, so incoming calls would
+    // hit this method and crash the call before handleNewCall could fire.
+    return;
   }
 }
