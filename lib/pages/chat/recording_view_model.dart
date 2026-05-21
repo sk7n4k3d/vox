@@ -44,6 +44,8 @@ class RecordingViewModelState extends State<RecordingViewModel> {
 
   bool isCancelling = false;
 
+  bool isStarting = false;
+
   void lock() {
     if (!mounted || isLocked) return;
     setState(() => isLocked = true);
@@ -60,6 +62,7 @@ class RecordingViewModelState extends State<RecordingViewModel> {
   }
 
   Future<void> startRecording(Room room) async {
+    if (mounted && !isStarting) setState(() => isStarting = true);
     room.client.getConfig(); // Preload server file configuration.
     if (PlatformInfos.isAndroid) {
       final info = await DeviceInfoPlugin().androidInfo;
@@ -95,11 +98,16 @@ class RecordingViewModelState extends State<RecordingViewModel> {
 
       final result = await audioRecorder.hasPermission();
       if (result != true) {
-        showOkAlertDialog(
-          context: context,
-          title: L10n.of(context).oopsSomethingWentWrong,
-          message: L10n.of(context).noPermission,
-        );
+        if (mounted) {
+          showOkAlertDialog(
+            context: context,
+            title: L10n.of(context).oopsSomethingWentWrong,
+            message: L10n.of(context).noPermission,
+          );
+          setState(_reset);
+        } else {
+          _reset();
+        }
         return;
       }
       await WakelockPlus.enable();
@@ -116,7 +124,10 @@ class RecordingViewModelState extends State<RecordingViewModel> {
         ),
         path: path ?? '',
       );
-      setState(() => duration = Duration.zero);
+      setState(() {
+        duration = Duration.zero;
+        isStarting = false;
+      });
       _subscribe();
     } catch (e, s) {
       Logs().w('Unable to start voice message recording', e, s);
@@ -165,6 +176,7 @@ class RecordingViewModelState extends State<RecordingViewModel> {
     isPaused = false;
     isLocked = false;
     isCancelling = false;
+    isStarting = false;
   }
 
   void cancel() {

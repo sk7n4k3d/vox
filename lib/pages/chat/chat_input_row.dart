@@ -82,15 +82,14 @@ class _ChatInputRowState extends State<ChatInputRow> {
             selectedTextButtonStyle,
           );
         }
-        return Stack(
-          clipBehavior: Clip.none,
+        return Column(
+          mainAxisSize: MainAxisSize.min,
           children: [
+            VoiceRecordingOverlay(
+              state: recordingViewModel,
+              gestureNotifier: _gestureNotifier,
+            ),
             content,
-            if (recordingViewModel.isRecording && !recordingViewModel.isLocked)
-              VoiceRecordingOverlay(
-                state: recordingViewModel,
-                gestureNotifier: _gestureNotifier,
-              ),
           ],
         );
       },

@@ -426,14 +426,21 @@ String _escapeHtml(String body) =>
     body.replaceAll('<', '&lt;').replaceAll('>', '&gt;');
 
 String _renderPlainBodyAsHtml(String body) {
-  if (!_markdownMarkers.hasMatch(body)) return _escapeHtml(body);
+  // Some senders emit literal "\n" escape sequences instead of real
+  // newlines. Normalize so fenced code blocks (```...```) and lists are
+  // detected by the markdown parser.
+  final normalized = body
+      .replaceAll(r'\r\n', '\n')
+      .replaceAll(r'\n', '\n')
+      .replaceAll(r'\t', '\t');
+  if (!_markdownMarkers.hasMatch(normalized)) return _escapeHtml(normalized);
   try {
     final rendered = md.markdownToHtml(
-      body,
+      normalized,
       extensionSet: md.ExtensionSet.gitHubFlavored,
     );
     return rendered.replaceAllMapped(_dangerousScheme, (_) => 'href="#');
   } catch (_) {
-    return _escapeHtml(body);
+    return _escapeHtml(normalized);
   }
 }
