@@ -22,6 +22,7 @@ import 'dart:math';
 import 'package:fluffychat/l10n/l10n.dart';
 import 'package:fluffychat/utils/matrix_sdk_extensions/matrix_locals.dart';
 import 'package:fluffychat/utils/platform_infos.dart';
+import 'package:fluffychat/pages/dialer/incoming_call_view.dart';
 import 'package:fluffychat/utils/voip/video_renderer.dart';
 import 'package:fluffychat/widgets/avatar.dart';
 import 'package:flutter/foundation.dart';
@@ -433,6 +434,30 @@ class MyCallingPage extends State<Calling> {
           }
         } else {
           actionButtons = <Widget>[];
+        }
+
+        // Refonte 2026: incoming ringing UI gets its own modern screen.
+        // Outgoing calls and connected calls keep the legacy renderer below.
+        final showIncoming = !isFloating &&
+            !call.isOutgoing &&
+            (_state == CallState.kRinging ||
+                _state == CallState.kCreateAnswer ||
+                _state == CallState.kConnecting);
+        if (showIncoming) {
+          final caller = call.remoteUser ??
+              call.room.unsafeGetUserFromMemoryOrFallback(
+                call.remoteUserId ?? widget.client.userID ?? '@unknown:server',
+              );
+          return Scaffold(
+            backgroundColor: Colors.black,
+            body: IncomingCallView(
+              room: call.room,
+              caller: caller,
+              encrypted: call.room.encrypted,
+              onAnswer: _answerCall,
+              onDecline: _hangUp,
+            ),
+          );
         }
 
         return Scaffold(
