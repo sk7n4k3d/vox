@@ -508,13 +508,13 @@ class Message extends StatelessWidget {
                                                 return Padding(
                                                   padding:
                                                       const EdgeInsets.only(
-                                                    right: 8.0,
+                                                    right: 10.0,
                                                   ),
                                                   child: Avatar(
                                                     mxContent: user.avatarUrl,
                                                     name: user
                                                         .calcDisplayname(),
-                                                    size: 28,
+                                                    size: 36,
                                                     onTap: () =>
                                                         showMemberActionsPopupMenu(
                                                       context: context,
