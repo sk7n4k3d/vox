@@ -458,7 +458,7 @@ class Message extends StatelessWidget {
                               onPressed: () => onSelect(event),
                             ),
                           )
-                        else if (nextEventSameSender || ownMessage)
+                        else if (ownMessage)
                           SizedBox(
                             width: Avatar.defaultSize,
                             child: Center(
@@ -474,27 +474,11 @@ class Message extends StatelessWidget {
                                     : null,
                               ),
                             ),
-                          )
-                        else
-                          FutureBuilder<User?>(
-                            future: event.fetchSenderUser(),
-                            builder: (context, snapshot) {
-                              final user = snapshot.data ?? sender;
-                              return Avatar(
-                                mxContent: user.avatarUrl,
-                                name: user.calcDisplayname(),
-                                onTap: () => showMemberActionsPopupMenu(
-                                  context: context,
-                                  user: user,
-                                  onMention: onMention,
-                                ),
-                                presenceUserId: user.stateKey,
-                                presenceBackgroundColor: wallpaperMode
-                                    ? Colors.transparent
-                                    : null,
-                              );
-                            },
                           ),
+                        // Inbound messages: drop the legacy left-aligned big
+                        // avatar — the avatar now lives inline with the sender
+                        // name (see "Header" below in the Column). The bubble
+                        // takes the full row width for better readability.
                         Expanded(
                           child: Column(
                             crossAxisAlignment: .start,
@@ -503,13 +487,51 @@ class Message extends StatelessWidget {
                               if (!nextEventSameSender)
                                 Padding(
                                   padding: const EdgeInsets.only(
-                                    left: 8.0,
-                                    bottom: 4,
+                                    left: 0.0,
+                                    bottom: 6,
                                   ),
-                                  child: ownMessage || event.room.isDirectChat
+                                  child: ownMessage
                                       ? const SizedBox(height: 12)
                                       : Row(
+                                          crossAxisAlignment:
+                                              CrossAxisAlignment.center,
                                           children: [
+                                            // Avatar inline with the sender
+                                            // name — same row as a compact
+                                            // header above the bubble. Tap
+                                            // opens the legacy member sheet.
+                                            FutureBuilder<User?>(
+                                              future: event.fetchSenderUser(),
+                                              builder: (context, snapshot) {
+                                                final user =
+                                                    snapshot.data ?? sender;
+                                                return Padding(
+                                                  padding:
+                                                      const EdgeInsets.only(
+                                                    right: 8.0,
+                                                  ),
+                                                  child: Avatar(
+                                                    mxContent: user.avatarUrl,
+                                                    name: user
+                                                        .calcDisplayname(),
+                                                    size: 28,
+                                                    onTap: () =>
+                                                        showMemberActionsPopupMenu(
+                                                      context: context,
+                                                      user: user,
+                                                      onMention: onMention,
+                                                    ),
+                                                    presenceUserId:
+                                                        user.stateKey,
+                                                    presenceBackgroundColor:
+                                                        wallpaperMode
+                                                            ? Colors
+                                                                .transparent
+                                                            : null,
+                                                  ),
+                                                );
+                                              },
+                                            ),
                                             if (sender.powerLevel >= 50)
                                               Padding(
                                                 padding: const EdgeInsets.only(
@@ -590,7 +612,13 @@ class Message extends StatelessWidget {
                                 ),
                               Container(
                                 alignment: alignment,
-                                padding: const EdgeInsets.only(left: 8),
+                                padding: EdgeInsets.only(
+                                  // Bubble extends to the row start for
+                                  // incoming messages (avatar is in the
+                                  // header above) so it has more room to
+                                  // breathe and reads on its own line.
+                                  left: ownMessage ? 8.0 : 0.0,
+                                ),
                                 child: GestureDetector(
                                   onLongPress: longPressSelect
                                       ? null
