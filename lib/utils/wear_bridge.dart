@@ -137,6 +137,31 @@ class WearBridge {
         rawEvents.map((e) => _serializeMessageWithMedia(e, client.userID)),
       );
 
+      // Sprint 2 audit finding-023 (CRITICAL): DataItem GMS limit = 100KB
+      // strict. Sans plafond, 30 thumbs base64 ~20KB chacun = 600KB →
+      // putDataItem rejette silencieusement, watch n'a rien. Ici on garde
+      // un budget sûr de 90KB et on droppe les thumbBase64 dès qu'on
+      // déborde, par ordre des messages les plus anciens d'abord.
+      const maxPayloadBytes = 90 * 1024;
+      var currentSize = jsonEncode({
+        'version': 1,
+        'roomId': roomId,
+        'updatedAt': 0,
+        'messages': messages,
+      }).length;
+      var droppedThumbs = 0;
+      // Iterate from the oldest message (low index) — most recent thumbs
+      // stay visible on the watch face.
+      for (final m in messages) {
+        if (currentSize <= maxPayloadBytes) break;
+        final thumb = m['thumbBase64'];
+        if (thumb is String && thumb.isNotEmpty) {
+          currentSize -= thumb.length;
+          m.remove('thumbBase64');
+          droppedThumbs++;
+        }
+      }
+
       final payload = {
         'version': 1,
         'roomId': roomId,
@@ -148,7 +173,10 @@ class WearBridge {
         'roomId': roomId,
         'json': json,
       });
-      Logs().d('[WearBridge] pushed ${messages.length} messages for $roomId (${json.length} bytes)');
+      Logs().d(
+        '[WearBridge] pushed ${messages.length} msgs for $roomId '
+        '(${json.length} bytes, droppedThumbs=$droppedThumbs)',
+      );
     } catch (e, st) {
       Logs().w('[WearBridge] pushMessages failed for $roomId', e, st);
     }

@@ -1,6 +1,7 @@
 package chat.fluffy.fluffychat.bastien_fork.wear.voice
 
 import android.content.Context
+import android.content.SharedPreferences
 import android.os.ParcelFileDescriptor
 import android.util.Log
 import com.google.android.gms.wearable.Asset
@@ -9,7 +10,9 @@ import com.google.android.gms.wearable.Wearable
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancelChildren
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -48,15 +51,40 @@ object VoiceUploader {
     private const val UPLOAD_TIMEOUT_MS = 30_000L
     private const val ACK_TIMEOUT_MS = 20_000L
 
-    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    // Sprint 2 audit finding-024 — SupervisorJob in a private field so we
+    // can cancel running uploads explicitly when the user navigates away or
+    // the host process is killed. Children inherit the SupervisorJob so a
+    // failed upload does not bring down sibling uploads.
+    private val supervisorJob = SupervisorJob()
+    private val scope = CoroutineScope(supervisorJob + Dispatchers.IO)
     private val pendingAcks = ConcurrentHashMap<String, CompletableDeferred<Boolean>>()
+
+    // Persisted pending uploads — survives process death. Real WorkManager
+    // migration tracked in Sprint 4 (audit roadmap). For now, sidecar in
+    // SharedPreferences lets BootReceiver re-enqueue orphan uploads.
+    private const val PREFS_NAME = "wear_voice_pending"
+    private const val PREFS_KEY_PENDING = "pending_uuids"
 
     private val _state = MutableStateFlow<UploadState>(UploadState.Idle)
     val state: StateFlow<UploadState> = _state.asStateFlow()
 
+    /**
+     * Cancel all in-flight uploads. Pending [pendingAcks] are completed with
+     * `false` so callers awaiting an ack get a definitive failure rather
+     * than a hung Deferred.
+     */
+    fun cancelAll() {
+        Log.d(TAG, "cancelAll() — ${pendingAcks.size} pending")
+        pendingAcks.values.forEach { runCatching { it.complete(false) } }
+        pendingAcks.clear()
+        supervisorJob.cancelChildren()
+        _state.value = UploadState.Idle
+    }
+
     fun upload(context: Context, roomId: String, file: File, durationMs: Int) {
         val uuid = UUID.randomUUID().toString()
         _state.value = UploadState.Uploading(uuid = uuid, attempt = 1)
+        persistPending(context, uuid, roomId, file.absolutePath, durationMs)
 
         // Pre-register le slot d'ack AVANT de putDataItem (sinon race condition)
         val ackDeferred = CompletableDeferred<Boolean>()
@@ -79,6 +107,7 @@ object VoiceUploader {
             if (!success) {
                 _state.value = UploadState.Error(uuid = uuid, message = "Envoi échoué")
                 pendingAcks.remove(uuid)
+                clearPending(context, uuid)
                 file.delete()
                 return@launch
             }
@@ -87,6 +116,7 @@ object VoiceUploader {
             _state.value = UploadState.WaitingAck(uuid = uuid)
             val acked = withTimeoutOrNull(ACK_TIMEOUT_MS) { ackDeferred.await() }
             pendingAcks.remove(uuid)
+            clearPending(context, uuid)
 
             _state.value = when (acked) {
                 true -> UploadState.Success(uuid = uuid)
@@ -95,6 +125,65 @@ object VoiceUploader {
             }
             file.delete()
         }
+    }
+
+    /**
+     * Re-enqueue orphan uploads after process death (called from BootReceiver
+     * or when the watch app starts). Each [PendingUpload] gets a fresh upload
+     * attempt; if the audio file is missing it is dropped from the registry.
+     */
+    fun reEnqueueOrphans(context: Context) {
+        val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        val uuids = prefs.getStringSet(PREFS_KEY_PENDING, null) ?: return
+        Log.i(TAG, "reEnqueueOrphans — ${uuids.size} pending found")
+        for (uuid in uuids.toSet()) {
+            val roomId = prefs.getString("$uuid.roomId", null)
+            val filePath = prefs.getString("$uuid.file", null)
+            val durationMs = prefs.getInt("$uuid.duration", 0)
+            if (roomId == null || filePath == null) {
+                clearPending(context, uuid)
+                continue
+            }
+            val file = File(filePath)
+            if (!file.exists()) {
+                Log.w(TAG, "orphan $uuid missing audio file, dropping")
+                clearPending(context, uuid)
+                continue
+            }
+            upload(context, roomId, file, durationMs)
+        }
+    }
+
+    private fun persistPending(
+        context: Context,
+        uuid: String,
+        roomId: String,
+        filePath: String,
+        durationMs: Int
+    ) {
+        val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        val current = prefs.getStringSet(PREFS_KEY_PENDING, emptySet())?.toMutableSet()
+            ?: mutableSetOf()
+        current.add(uuid)
+        prefs.edit()
+            .putStringSet(PREFS_KEY_PENDING, current)
+            .putString("$uuid.roomId", roomId)
+            .putString("$uuid.file", filePath)
+            .putInt("$uuid.duration", durationMs)
+            .apply()
+    }
+
+    private fun clearPending(context: Context, uuid: String) {
+        val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        val current = prefs.getStringSet(PREFS_KEY_PENDING, emptySet())?.toMutableSet()
+            ?: mutableSetOf()
+        current.remove(uuid)
+        prefs.edit()
+            .putStringSet(PREFS_KEY_PENDING, current)
+            .remove("$uuid.roomId")
+            .remove("$uuid.file")
+            .remove("$uuid.duration")
+            .apply()
     }
 
     /**

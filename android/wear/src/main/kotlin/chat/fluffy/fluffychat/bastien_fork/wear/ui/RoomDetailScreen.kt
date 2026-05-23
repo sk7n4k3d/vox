@@ -21,7 +21,6 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.GenericShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.PlayArrow
@@ -53,8 +52,11 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.wear.compose.foundation.lazy.TransformingLazyColumn
 import androidx.wear.compose.foundation.lazy.rememberTransformingLazyColumnState
+import androidx.wear.compose.material3.ButtonDefaults
 import androidx.wear.compose.material3.Card
 import androidx.wear.compose.material3.CardDefaults
+import androidx.wear.compose.material3.EdgeButton
+import androidx.wear.compose.material3.EdgeButtonSize
 import androidx.wear.compose.material3.FailureConfirmationDialog
 import androidx.wear.compose.material3.Icon
 import androidx.wear.compose.material3.MaterialTheme
@@ -129,7 +131,7 @@ fun RoomDetailScreen(
     ScreenScaffold(
         scrollState = scrollState,
         edgeButton = {
-            CustomEdgeMicButton(
+            MicEdgeButton(
                 isRecording = isRecording,
                 isUploading = isUploading,
                 uploadState = uploadState,
@@ -390,14 +392,18 @@ private fun decodeBase64Bitmap(base64: String): androidx.compose.ui.graphics.Ima
 }
 
 /**
- * EdgeButton custom — Box avec shape arc bottom (semi-cercle).
+ * EdgeButton mic — Wear M3 native EdgeButton (1.6.0+).
  *
- * **Tap-to-toggle** au lieu de hold-to-talk : tap = start, tap = stop+send.
- * Plus fiable que hold sur Wear OS (le release pointer est souvent perdu
- * dans SwipeDismissableNavHost + EdgeButton consume).
+ * Sprint 2 audit finding-022 (CRITICAL): le CustomEdgeMicButton précédent
+ * réimplémentait l'arc maison via GenericShape mais avec une hit area
+ * rectangulaire — l'utilisateur tapait "à côté" et croyait que ça ne
+ * marchait pas. Le natif M3 EdgeButton gère hit area, morphing, padding
+ * système, taille edge-hugging correcte.
+ *
+ * **Tap-to-toggle** : tap = start record, tap = stop+send.
  */
 @Composable
-private fun CustomEdgeMicButton(
+private fun MicEdgeButton(
     isRecording: Boolean,
     isUploading: Boolean,
     uploadState: UploadState,
@@ -417,44 +423,25 @@ private fun CustomEdgeMicButton(
         else -> cs.onPrimary
     }
 
-    // Shape arc bottom semi-circulaire — mimique EdgeButton M3 visuellement.
-    val arcShape = remember {
-        GenericShape { size, _ ->
-            addArc(
-                oval = androidx.compose.ui.geometry.Rect(
-                    left = -size.width * 0.1f,
-                    top = 0f,
-                    right = size.width * 1.1f,
-                    bottom = size.height * 2.2f
-                ),
-                startAngleDegrees = 180f,
-                sweepAngleDegrees = 180f
+    EdgeButton(
+        onClick = {
+            haptic.performHapticFeedback(
+                if (isRecording) HapticFeedbackType.TextHandleMove
+                else HapticFeedbackType.LongPress
             )
-            close()
-        }
-    }
-
-    Box(
-        modifier = Modifier
-            .fillMaxWidth()
-            .height(56.dp)
-            .padding(horizontal = 12.dp)
-            .clip(arcShape)
-            .background(containerColor)
-            .clickable(enabled = !isUploading) {
-                haptic.performHapticFeedback(
-                    if (isRecording) HapticFeedbackType.TextHandleMove
-                    else HapticFeedbackType.LongPress
-                )
-                onTap()
-            },
-        contentAlignment = Alignment.Center
+            onTap()
+        },
+        buttonSize = EdgeButtonSize.Large,
+        enabled = !isUploading,
+        colors = ButtonDefaults.buttonColors(
+            containerColor = containerColor,
+            contentColor = contentColor
+        )
     ) {
         when {
             isUploading -> {
                 Text(
                     text = uploadHintText(uploadState),
-                    color = contentColor,
                     style = MaterialTheme.typography.labelSmall,
                     fontWeight = FontWeight.SemiBold
                 )
@@ -463,7 +450,6 @@ private fun CustomEdgeMicButton(
                 val ms = (recordingState as? RecordingState.Recording)?.elapsedMs ?: 0
                 Text(
                     text = "● ${formatDuration(ms)}",
-                    color = contentColor,
                     fontWeight = FontWeight.Bold,
                     fontSize = 16.sp
                 )
