@@ -492,20 +492,25 @@ class Message extends StatelessWidget {
                                   ),
                                   child: ownMessage
                                       ? const SizedBox(height: 12)
-                                      : Row(
-                                          crossAxisAlignment:
-                                              CrossAxisAlignment.center,
-                                          children: [
-                                            // Avatar inline with the sender
-                                            // name — same row as a compact
-                                            // header above the bubble. Tap
-                                            // opens the legacy member sheet.
-                                            FutureBuilder<User?>(
-                                              future: event.fetchSenderUser(),
-                                              builder: (context, snapshot) {
-                                                final user =
-                                                    snapshot.data ?? sender;
-                                                return Padding(
+                                      // Sprint 2 audit finding-008: single
+                                      // FutureBuilder feeds both avatar +
+                                      // sender-name children. Previously
+                                      // fetchSenderUser() was called twice
+                                      // per row → -50% network hits on dense
+                                      // rooms.
+                                      : FutureBuilder<User?>(
+                                          future: event.fetchSenderUser(),
+                                          builder: (context, senderSnapshot) {
+                                            final user =
+                                                senderSnapshot.data ?? sender;
+                                            return Row(
+                                              crossAxisAlignment:
+                                                  CrossAxisAlignment.center,
+                                              children: [
+                                                // Avatar inline with the
+                                                // sender name. Tap opens the
+                                                // legacy member sheet.
+                                                Padding(
                                                   padding:
                                                       const EdgeInsets.only(
                                                     right: 10.0,
@@ -529,9 +534,7 @@ class Message extends StatelessWidget {
                                                                 .transparent
                                                             : null,
                                                   ),
-                                                );
-                                              },
-                                            ),
+                                                ),
                                             if (sender.powerLevel >= 50)
                                               Padding(
                                                 padding: const EdgeInsets.only(
@@ -550,13 +553,10 @@ class Message extends StatelessWidget {
                                                 ),
                                               ),
                                             Expanded(
-                                              child: FutureBuilder<User?>(
-                                                future: event.fetchSenderUser(),
-                                                builder: (context, snapshot) {
+                                              child: Builder(
+                                                builder: (context) {
                                                   final displayname =
-                                                      snapshot.data
-                                                          ?.calcDisplayname() ??
-                                                      sender.calcDisplayname();
+                                                      user.calcDisplayname();
                                                   final highContrast =
                                                       MediaQuery.highContrastOf(
                                                         context,
@@ -608,6 +608,8 @@ class Message extends StatelessWidget {
                                               ),
                                             ),
                                           ],
+                                            );
+                                          },
                                         ),
                                 ),
                               Container(

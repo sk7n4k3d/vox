@@ -1,3 +1,5 @@
+import 'dart:collection';
+
 import 'package:collection/collection.dart';
 import 'package:fluffychat/pages/chat/events/code_block_widget.dart';
 import 'package:fluffychat/utils/event_checkbox_extension.dart';
@@ -12,6 +14,31 @@ import 'package:html/parser.dart' as parser;
 import 'package:matrix/matrix.dart';
 
 import '../../../utils/url_launcher.dart';
+
+/// LRU cache for parsed HTML bodies — bounded to [_kHtmlCacheCap] entries
+/// keyed by `identityHashCode(html)` + `html.length`. Memoization avoids
+/// re-parsing the same message HTML on every scroll/rebuild (audit
+/// AUDIT-FLUFFYCHAT-FORK-2026-05-23 finding-010).
+const int _kHtmlCacheCap = 256;
+final LinkedHashMap<String, dom.Element> _htmlCache =
+    LinkedHashMap<String, dom.Element>();
+
+dom.Element _parseHtmlCached(String html) {
+  final key = '${html.length}:${html.hashCode}';
+  final cached = _htmlCache[key];
+  if (cached != null) {
+    // Refresh LRU recency.
+    _htmlCache.remove(key);
+    _htmlCache[key] = cached;
+    return cached;
+  }
+  final parsed = parser.parse(html).body ?? dom.Element.html('');
+  if (_htmlCache.length >= _kHtmlCacheCap) {
+    _htmlCache.remove(_htmlCache.keys.first);
+  }
+  _htmlCache[key] = parsed;
+  return parsed;
+}
 
 class HtmlMessage extends StatelessWidget {
   final String html;
@@ -528,7 +555,7 @@ class HtmlMessage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final element = parser.parse(html).body ?? dom.Element.html('');
+    final element = _parseHtmlCached(html);
     return Text.rich(
       _renderHtml(element, context),
       style: TextStyle(fontSize: fontSize, color: textColor),
