@@ -2921,5 +2921,25 @@
     "@callReplyAndDecline": {
         "type": "String",
         "placeholders": {}
+    },
+    "sectionToday": "Today",
+    "@sectionToday": {
+        "type": "String",
+        "placeholders": {}
+    },
+    "sectionYesterday": "Yesterday",
+    "@sectionYesterday": {
+        "type": "String",
+        "placeholders": {}
+    },
+    "sectionThisWeek": "This week",
+    "@sectionThisWeek": {
+        "type": "String",
+        "placeholders": {}
+    },
+    "sectionEarlier": "Earlier",
+    "@sectionEarlier": {
+        "type": "String",
+        "placeholders": {}
     }
 }

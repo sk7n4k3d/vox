@@ -2875,5 +2875,25 @@
     "@callReplyAndDecline": {
         "type": "String",
         "placeholders": {}
+    },
+    "sectionToday": "Aujourd'hui",
+    "@sectionToday": {
+        "type": "String",
+        "placeholders": {}
+    },
+    "sectionYesterday": "Hier",
+    "@sectionYesterday": {
+        "type": "String",
+        "placeholders": {}
+    },
+    "sectionThisWeek": "Cette semaine",
+    "@sectionThisWeek": {
+        "type": "String",
+        "placeholders": {}
+    },
+    "sectionEarlier": "Plus tôt",
+    "@sectionEarlier": {
+        "type": "String",
+        "placeholders": {}
     }
 }

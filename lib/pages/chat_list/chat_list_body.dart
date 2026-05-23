@@ -1,3 +1,5 @@
+import 'package:fluffychat/config/cyberpunk_theme_extension.dart';
+import 'package:fluffychat/config/design_tokens.dart';
 import 'package:fluffychat/config/setting_keys.dart';
 import 'package:fluffychat/l10n/l10n.dart';
 import 'package:fluffychat/pages/chat_list/chat_list.dart';
@@ -213,9 +215,16 @@ class ChatListViewBody extends StatelessWidget {
                 ),
               if (client.prevBatch != null)
                 SliverList.builder(
-                  itemCount: rooms.length,
+                  // Sprint 2 V3 — chatlist items + section headers injected
+                  // inline. Each transition between time buckets (Today /
+                  // Yesterday / This Week / Earlier) inserts a header row.
+                  itemCount: _ChatListSections.totalCount(rooms),
                   itemBuilder: (BuildContext context, int i) {
-                    final room = rooms[i];
+                    final entry = _ChatListSections.entryAt(rooms, i);
+                    if (entry.isHeader) {
+                      return _ChatListSectionHeader(label: entry.headerLabel!);
+                    }
+                    final room = entry.room!;
                     final space = spaceDelegateCandidates[room.id];
                     return ChatListItem(
                       room,
@@ -311,4 +320,128 @@ class _SearchItem extends StatelessWidget {
       ),
     ),
   );
+}
+
+/// Sprint 2 V3 — chatlist section helper.
+///
+/// Splits the list into time buckets (Today / Yesterday / This Week / Earlier)
+/// based on each room's latest event timestamp, and computes the synthetic
+/// indices that include both header rows and room rows.
+class _ChatListSections {
+  static const String today = 'today';
+  static const String yesterday = 'yesterday';
+  static const String thisWeek = 'thisWeek';
+  static const String earlier = 'earlier';
+
+  static String _bucketFor(Room room) {
+    final ts = room.lastEvent?.originServerTs ?? DateTime.now();
+    final now = DateTime.now();
+    final dThat = DateTime(ts.year, ts.month, ts.day);
+    final dNow = DateTime(now.year, now.month, now.day);
+    final diff = dNow.difference(dThat).inDays;
+    if (diff <= 0) return today;
+    if (diff == 1) return yesterday;
+    if (diff < 7) return thisWeek;
+    return earlier;
+  }
+
+  /// Returns the list of (bucket, indexInRooms) pairs flattened with header
+  /// markers. Used by `entryAt` / `totalCount`.
+  static List<_ChatListEntry> _layout(List<Room> rooms) {
+    final entries = <_ChatListEntry>[];
+    String? lastBucket;
+    for (var i = 0; i < rooms.length; i++) {
+      final bucket = _bucketFor(rooms[i]);
+      if (bucket != lastBucket) {
+        entries.add(_ChatListEntry.header(bucket));
+        lastBucket = bucket;
+      }
+      entries.add(_ChatListEntry.room(rooms[i]));
+    }
+    return entries;
+  }
+
+  static int totalCount(List<Room> rooms) => _layout(rooms).length;
+
+  static _ChatListEntry entryAt(List<Room> rooms, int i) =>
+      _layout(rooms)[i];
+}
+
+class _ChatListEntry {
+  final Room? room;
+  final String? headerLabel;
+
+  _ChatListEntry.header(this.headerLabel) : room = null;
+  _ChatListEntry.room(this.room) : headerLabel = null;
+
+  bool get isHeader => room == null;
+}
+
+/// Sprint 2 V3 — section header row, scroll-along (pas sticky en Sprint 2 mais
+/// déjà très visible). Uppercase Rajdhani + accent ligne cyan.
+class _ChatListSectionHeader extends StatelessWidget {
+  const _ChatListSectionHeader({required this.label});
+
+  final String label;
+
+  String _labelFor(BuildContext context) {
+    final l10n = L10n.of(context);
+    switch (label) {
+      case _ChatListSections.today:
+        return l10n.sectionToday.toUpperCase();
+      case _ChatListSections.yesterday:
+        return l10n.sectionYesterday.toUpperCase();
+      case _ChatListSections.thisWeek:
+        return l10n.sectionThisWeek.toUpperCase();
+      case _ChatListSections.earlier:
+      default:
+        return l10n.sectionEarlier.toUpperCase();
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final cyber = theme.extension<CyberpunkTheme>();
+    final accent = cyber?.cyan ?? theme.colorScheme.primary;
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(20, 14, 20, 6),
+      child: Row(
+        children: [
+          Container(
+            width: 12,
+            height: 2,
+            decoration: BoxDecoration(
+              color: accent,
+              borderRadius: const BorderRadius.all(Radius.circular(1)),
+              boxShadow: [
+                BoxShadow(
+                  color: accent.withValues(alpha: 0.6),
+                  blurRadius: 6,
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(width: 10),
+          Text(
+            _labelFor(context),
+            style: FluffyTypography.labelM.copyWith(
+              color: accent,
+              fontSize: 11,
+              letterSpacing: 1.4,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Container(
+              height: 0.5,
+              color: theme.colorScheme.outlineVariant
+                  .withValues(alpha: 0.25),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
 }
