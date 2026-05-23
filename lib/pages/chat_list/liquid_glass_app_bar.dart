@@ -137,12 +137,6 @@ class LiquidGlassAppBar extends StatelessWidget
                               tooltip: L10n.of(context).search,
                               onPressed: onSearchTap,
                             ),
-                            const SizedBox(width: 4),
-                            _AppBarIconButton(
-                              icon: Icons.add_rounded,
-                              tooltip: L10n.of(context).newChat,
-                              onPressed: onNewChatTap,
-                            ),
                             if (leadingAvatar == null) ...[
                               const SizedBox(width: 4),
                               _AppBarIconButton(
