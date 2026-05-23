@@ -4,6 +4,12 @@ import android.Manifest
 import android.content.pm.PackageManager
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.core.EaseInOut
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.tween
 import android.content.Intent
 import android.graphics.BitmapFactory
 import android.net.Uri
@@ -412,9 +418,21 @@ private fun MicEdgeButton(
 ) {
     val haptic = LocalHapticFeedback.current
     val cs = MaterialTheme.colorScheme
+
+    // Sprint 2 V2 — pulse subtil sur recording (magenta saturated).
+    val infinite = rememberInfiniteTransition(label = "mic-pulse")
+    val pulseAlpha by infinite.animateFloat(
+        initialValue = 0.85f,
+        targetValue = 1.0f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(durationMillis = 700, easing = EaseInOut),
+            repeatMode = RepeatMode.Reverse
+        ),
+        label = "pulse-alpha"
+    )
     val containerColor = when {
         isUploading -> cs.surfaceContainerHigh
-        isRecording -> cs.secondary
+        isRecording -> cs.secondary.copy(alpha = pulseAlpha)
         else -> cs.primary
     }
     val contentColor = when {
@@ -450,6 +468,7 @@ private fun MicEdgeButton(
                 val ms = (recordingState as? RecordingState.Recording)?.elapsedMs ?: 0
                 Text(
                     text = "● ${formatDuration(ms)}",
+                    style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.Bold,
                     fontSize = 16.sp
                 )
