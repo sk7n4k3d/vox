@@ -1,3 +1,4 @@
+import 'package:fluffychat/config/cyberpunk_theme_extension.dart';
 import 'package:fluffychat/config/setting_keys.dart';
 import 'package:fluffychat/l10n/l10n.dart';
 import 'package:fluffychat/utils/platform_infos.dart';
@@ -19,23 +20,27 @@ class SettingsView extends StatelessWidget {
 
   const SettingsView(this.controller, {super.key});
 
-  // Section colors — premium 2026 palette.
-  static const _accountColor = Color(0xFF3B82F6);
-  static const _privacyColor = Color(0xFF10B981);
-  static const _notificationsColor = Color(0xFFF59E0B);
-  static const _appearanceColor = Color(0xFFA855F7);
-  static const _chatColor = Color(0xFFEF4444);
-  static const _devicesColor = Color(0xFFEAB308);
-  static const _storageColor = Color(0xFF6B7280);
-  static const _advancedColor = Color(0xFF94A3B8);
-
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final cyber =
+        theme.extension<CyberpunkTheme>() ?? CyberpunkTheme.dark();
     final l10n = L10n.of(context);
     final client = Matrix.of(context).client;
     final activeRoute =
         GoRouter.of(context).routeInformationProvider.value.uri.path;
+
+    // Sprint 2 audit finding-014: section colors derived from cyberpunk
+    // accents instead of Tailwind hardcoded palette. Identity stays coherent
+    // throughout the app.
+    final accountColor = cyber.cyan;
+    final privacyColor = cyber.success;
+    final notificationsColor = cyber.magenta;
+    final appearanceColor = cyber.violet;
+    final chatColor = cyber.cyan;
+    final devicesColor = cyber.violet;
+    final storageColor = cyber.cyan.withValues(alpha: 0.65);
+    final advancedColor = theme.colorScheme.onSurfaceVariant;
 
     return Scaffold(
       appBar: AppBar(
@@ -87,7 +92,7 @@ class SettingsView extends StatelessWidget {
           // Account — homeserver settings + manage account flow.
           SettingsSectionTile(
             icon: Icons.person_outline,
-            color: _accountColor,
+            color: accountColor,
             title: l10n.account,
             subtitle: _accountSubtitle(client, l10n),
             selected: activeRoute.startsWith('/rooms/settings/homeserver'),
@@ -97,7 +102,7 @@ class SettingsView extends StatelessWidget {
           // Privacy & Security.
           SettingsSectionTile(
             icon: Icons.shield_outlined,
-            color: _privacyColor,
+            color: privacyColor,
             title: l10n.security,
             subtitle: _privacySubtitle(controller, client, l10n),
             selected: activeRoute.startsWith('/rooms/settings/security'),
@@ -107,7 +112,7 @@ class SettingsView extends StatelessWidget {
           // Notifications.
           SettingsSectionTile(
             icon: Icons.notifications_outlined,
-            color: _notificationsColor,
+            color: notificationsColor,
             title: l10n.notifications,
             subtitle: _notificationsSubtitle(client, l10n),
             selected:
@@ -118,7 +123,7 @@ class SettingsView extends StatelessWidget {
           // Appearance.
           SettingsSectionTile(
             icon: Icons.palette_outlined,
-            color: _appearanceColor,
+            color: appearanceColor,
             title: l10n.changeTheme,
             subtitle: _appearanceSubtitle(context, l10n),
             selected: activeRoute.startsWith('/rooms/settings/style'),
@@ -128,7 +133,7 @@ class SettingsView extends StatelessWidget {
           // Chat.
           SettingsSectionTile(
             icon: Icons.forum_outlined,
-            color: _chatColor,
+            color: chatColor,
             title: l10n.chat,
             subtitle: _chatSubtitle(l10n),
             selected: activeRoute.startsWith('/rooms/settings/chat'),
@@ -138,7 +143,7 @@ class SettingsView extends StatelessWidget {
           // Devices.
           SettingsSectionTile(
             icon: Icons.devices_outlined,
-            color: _devicesColor,
+            color: devicesColor,
             title: l10n.devices,
             subtitle: _devicesSubtitle(client, l10n),
             selected: activeRoute.startsWith('/rooms/settings/devices'),
@@ -148,7 +153,7 @@ class SettingsView extends StatelessWidget {
           // Storage — no dedicated route, fallback to chat (cache/media live there).
           SettingsSectionTile(
             icon: Icons.storage_outlined,
-            color: _storageColor,
+            color: storageColor,
             title: l10n.settingsSectionStorage,
             subtitle: _storageSubtitle(client),
             selected: false,
@@ -157,7 +162,7 @@ class SettingsView extends StatelessWidget {
 
           // Advanced — about + logs + version.
           _AdvancedTile(
-            color: _advancedColor,
+            color: advancedColor,
             onTap: () => PlatformInfos.showDialog(context),
           ),
 
