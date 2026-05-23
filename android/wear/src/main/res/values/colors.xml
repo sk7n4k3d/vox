@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="cyber_cyan">#FF22D3EE</color>
+    <color name="cyber_magenta">#FFEC4899</color>
+    <color name="cyber_violet">#FFA78BFA</color>
+    <color name="cyber_bg">#FF0F0A1E</color>
+    <color name="cyber_surface">#FF1A1428</color>
+    <color name="cyber_on_surface">#FFE8E2F4</color>
+    <color name="cyber_on_surface_variant">#FFB8AECC</color>
+</resources>

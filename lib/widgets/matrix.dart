@@ -11,6 +11,7 @@ import 'package:fluffychat/utils/matrix_sdk_extensions/matrix_file_extension.dar
 import 'package:fluffychat/utils/platform_infos.dart';
 import 'package:fluffychat/utils/uia_request_manager.dart';
 import 'package:fluffychat/utils/voip_plugin.dart';
+import 'package:fluffychat/utils/wear_bridge.dart';
 import 'package:fluffychat/widgets/adaptive_dialogs/show_ok_cancel_alert_dialog.dart';
 import 'package:fluffychat/widgets/fluffy_chat_app.dart';
 import 'package:fluffychat/widgets/future_loading_dialog.dart';
@@ -222,6 +223,7 @@ class MatrixState extends State<Matrix> with WidgetsBindingObserver {
       );
       return;
     }
+    WearBridge.instance.attach(c);
     onRoomKeyRequestSub[name] ??= c.onRoomKeyRequest.stream.listen((
       RoomKeyRequest request,
     ) async {
@@ -289,6 +291,7 @@ class MatrixState extends State<Matrix> with WidgetsBindingObserver {
   }
 
   void _cancelSubs(String name) {
+    WearBridge.instance.detach(name);
     onRoomKeyRequestSub[name]?.cancel();
     onRoomKeyRequestSub.remove(name);
     onKeyVerificationRequestSub[name]?.cancel();

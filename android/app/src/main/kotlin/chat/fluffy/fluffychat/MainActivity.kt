@@ -5,6 +5,8 @@ import io.flutter.embedding.engine.FlutterEngine
 
 import android.content.Context
 
+import chat.fluffy.fluffychat.wear.WearBridgePlugin
+
 class MainActivity : FlutterActivity() {
 
     override fun attachBaseContext(base: Context) {
@@ -25,6 +27,7 @@ class MainActivity : FlutterActivity() {
         fun provideEngine(context: Context): FlutterEngine {
             val eng = engine ?: FlutterEngine(context, emptyArray(), true, false)
             engine = eng
+            WearBridgePlugin.register(context, eng)
             return eng
         }
     }

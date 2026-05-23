@@ -20,9 +20,12 @@ plugins {
     id("dev.flutter.flutter-plugin-loader") version "1.0.0"
     id("com.android.application") version "8.9.1" apply false
     id("org.jetbrains.kotlin.android") version "2.1.0" apply false
+    id("org.jetbrains.kotlin.plugin.compose") version "2.1.0" apply false
+    id("org.jetbrains.kotlin.plugin.serialization") version "2.1.0" apply false
     if (file("app/google-services.json").exists()) {
         id("com.google.gms.google-services") version "4.3.8" apply false
-    } 
+    }
 }
 
 include(":app")
+include(":wear")

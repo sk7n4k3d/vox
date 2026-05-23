@@ -123,6 +123,34 @@
           </intent-filter>
         </service>
 
+        <!-- Wear OS bridge — un seul filter MESSAGE_RECEIVED sur /wear/rooms
+             (le routing fin est fait dans le code Kotlin). Évite l'overlap pathPrefix
+             qui déclencherait le service 2 fois pour le même message. -->
+        <service
+            android:name=".wear.WearBridgeService"
+            android:exported="true">
+            <!-- Messages watch → phone : ping refresh rooms + request messages d'une room -->
+            <intent-filter>
+                <action android:name="com.google.android.gms.wearable.MESSAGE_RECEIVED" />
+                <data
+                    android:host="*"
+                    android:pathPrefix="/wear/rooms"
+                    android:scheme="wear" />
+            </intent-filter>
+            <!-- Voice DataItem watch → phone : audio Opus à uploader sur Matrix -->
+            <intent-filter>
+                <action android:name="com.google.android.gms.wearable.DATA_CHANGED" />
+                <data
+                    android:host="*"
+                    android:pathPrefix="/wear/voice/"
+                    android:scheme="wear" />
+            </intent-filter>
+        </service>
+
+        <meta-data
+            android:name="com.google.android.wearable.beta.app"
+            android:resource="@array/android_wear_capabilities" />
+
         <service android:name="com.pravera.flutter_foreground_task.service.ForegroundService"
              android:foregroundServiceType="camera|microphone|mediaProjection">
         </service>

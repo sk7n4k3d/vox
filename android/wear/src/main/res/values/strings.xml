@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">FluffyChat</string>
+    <string name="rooms_title">Conversations</string>
+    <string name="favorites_section">Favoris</string>
+    <string name="recents_section">Récents</string>
+    <string name="empty_rooms">Aucune room reçue</string>
+    <string name="refresh">Actualiser</string>
+    <string name="record_button">Vocal</string>
+    <string name="record_in_progress">Enregistrement…</string>
+    <string name="record_send">Envoyer</string>
+    <string name="record_cancel">Annuler</string>
+</resources>
