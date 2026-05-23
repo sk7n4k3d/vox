@@ -1,5 +1,6 @@
 import 'package:fluffychat/config/app_config.dart';
 import 'package:fluffychat/config/cyberpunk_theme_extension.dart';
+import 'package:fluffychat/config/design_tokens.dart';
 import 'package:fluffychat/config/setting_keys.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -51,6 +52,11 @@ abstract class FluffyThemes {
       useMaterial3: true,
       brightness: brightness,
       colorScheme: colorScheme,
+      // Sprint 2 V2 typography: Rajdhani titles, Inter body. Default font
+      // family fallback = Inter so any orphan Text() inherits the right font.
+      fontFamily: FluffyTypography.inter,
+      textTheme: FluffyTypography.textThemeFor(colorScheme),
+      primaryTextTheme: FluffyTypography.textThemeFor(colorScheme),
       extensions: <ThemeExtension<dynamic>>[
         // Sprint 2 audit finding-001 : light() retiré (dupliquait dark()).
         // ThemeMode est forcé dark dans FluffyChatApp build, mais on garde

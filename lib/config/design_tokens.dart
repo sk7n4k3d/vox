@@ -62,6 +62,114 @@ class FluffyCurves {
   );
 }
 
+/// Typography tokens — Sprint 2 V2.
+///
+/// 4 font families bundled :
+///   - **Rajdhani** : titles, app bars, section headers (tech-futuriste)
+///   - **Inter** : body, labels, input (lecture longue confortable)
+///   - **JetBrainsMono** : code blocks, room IDs, event IDs, timestamps debug
+///   - **Orbitron** : timer écran d'appel uniquement (decorative)
+class FluffyTypography {
+  static const String rajdhani = 'Rajdhani';
+  static const String inter = 'Inter';
+  static const String mono = 'JetBrainsMono';
+  static const String orbitron = 'Orbitron';
+
+  static const TextStyle display = TextStyle(
+    fontFamily: rajdhani,
+    fontSize: 32,
+    fontWeight: FontWeight.w700,
+    letterSpacing: -0.5,
+    height: 1.1,
+  );
+  static const TextStyle headlineL = TextStyle(
+    fontFamily: rajdhani,
+    fontSize: 24,
+    fontWeight: FontWeight.w600,
+    height: 1.2,
+  );
+  static const TextStyle headlineM = TextStyle(
+    fontFamily: rajdhani,
+    fontSize: 20,
+    fontWeight: FontWeight.w600,
+    height: 1.25,
+  );
+  static const TextStyle title = TextStyle(
+    fontFamily: rajdhani,
+    fontSize: 16,
+    fontWeight: FontWeight.w600,
+    height: 1.3,
+  );
+  static const TextStyle bodyL = TextStyle(
+    fontFamily: inter,
+    fontSize: 16,
+    fontWeight: FontWeight.w400,
+    height: 1.5,
+  );
+  static const TextStyle bodyM = TextStyle(
+    fontFamily: inter,
+    fontSize: 14,
+    fontWeight: FontWeight.w400,
+    height: 1.45,
+  );
+  static const TextStyle bodyS = TextStyle(
+    fontFamily: inter,
+    fontSize: 12,
+    fontWeight: FontWeight.w400,
+    height: 1.4,
+  );
+  static const TextStyle labelL = TextStyle(
+    fontFamily: inter,
+    fontSize: 13,
+    fontWeight: FontWeight.w500,
+    letterSpacing: 0.1,
+  );
+  static const TextStyle labelM = TextStyle(
+    fontFamily: inter,
+    fontSize: 11,
+    fontWeight: FontWeight.w500,
+    letterSpacing: 0.5,
+  );
+  static const TextStyle code = TextStyle(
+    fontFamily: mono,
+    fontSize: 13,
+    fontWeight: FontWeight.w400,
+    height: 1.5,
+  );
+  static const TextStyle timer = TextStyle(
+    fontFamily: orbitron,
+    fontSize: 24,
+    fontWeight: FontWeight.w600,
+    letterSpacing: 1.2,
+  );
+
+  /// Builds a Material 3 [TextTheme] consistent with these tokens, used by
+  /// [FluffyThemes.buildTheme] so every widget reading from
+  /// `Theme.of(context).textTheme` gets the fork typography.
+  static TextTheme textThemeFor(ColorScheme scheme) {
+    final body = scheme.onSurface;
+    final heading = scheme.onSurface;
+    final muted = scheme.onSurfaceVariant;
+    return TextTheme(
+      displayLarge: display.copyWith(color: heading),
+      displayMedium: display.copyWith(color: heading, fontSize: 28),
+      displaySmall: headlineL.copyWith(color: heading),
+      headlineLarge: headlineL.copyWith(color: heading),
+      headlineMedium: headlineM.copyWith(color: heading),
+      headlineSmall: title.copyWith(color: heading, fontSize: 18),
+      titleLarge: title.copyWith(color: heading, fontSize: 18),
+      titleMedium: title.copyWith(color: heading),
+      titleSmall: title.copyWith(color: heading, fontSize: 14),
+      bodyLarge: bodyL.copyWith(color: body),
+      bodyMedium: bodyM.copyWith(color: body),
+      bodySmall: bodyS.copyWith(color: muted),
+      labelLarge: labelL.copyWith(color: body),
+      labelMedium: labelM.copyWith(color: muted),
+      labelSmall: labelM.copyWith(color: muted, fontSize: 10),
+    );
+  }
+}
+
 class FluffyElevation {
   static List<BoxShadow> glowCyan(Color cyan, {double alpha = 0.35}) => [
         BoxShadow(
