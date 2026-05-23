@@ -384,22 +384,29 @@ class AudioPlayerState extends State<AudioPlayerWidget> {
                           ),
                         ),
                         const SizedBox(width: 8),
+                        // Sprint 2 V3.1 — width bumped 36→56 to fit '00:00'
+                        // dans la new bubble gradient sans wrap → '00:0\\n4'.
                         SizedBox(
-                          width: 36,
+                          width: 56,
                           child: Text(
                             statusText,
-                            style: TextStyle(color: widget.color, fontSize: 12),
+                            textAlign: TextAlign.center,
+                            style: TextStyle(
+                              color: widget.color,
+                              fontSize: 12,
+                              fontFeatures: const [
+                                FontFeature.tabularFigures(),
+                              ],
+                            ),
                           ),
                         ),
                         const SizedBox(width: 8),
                         AnimatedCrossFade(
-                          firstChild: Padding(
-                            padding: const EdgeInsets.only(right: 8.0),
-                            child: Icon(
-                              Icons.mic_none_outlined,
-                              color: widget.color,
-                            ),
-                          ),
+                          // Sprint 2 V3.1 — drop the parasite mic icon shown
+                          // before playback. Empty placeholder keeps the
+                          // crossfade transition smooth when the user taps
+                          // play and the speed pill appears.
+                          firstChild: const SizedBox(width: 32, height: 20),
                           secondChild: ValueListenableBuilder<double>(
                             valueListenable: playbackSpeedController,
                             builder: (context, speed, _) => Material(

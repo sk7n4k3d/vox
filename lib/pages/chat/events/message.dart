@@ -278,7 +278,7 @@ class Message extends StatelessWidget {
           borderRadius: borderRadius,
           border: !ownMessage && cyber != null
               ? Border.all(
-                  color: cyber.violet.withValues(alpha: 0.22),
+                  color: cyber.violet.withValues(alpha: 0.45),
                   width: 0.5,
                 )
               : null,
