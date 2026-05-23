@@ -2856,5 +2856,70 @@
     "@voiceMessageCancelled": {
         "type": "String",
         "placeholders": {}
+    },
+    "greetingNight": "Good night",
+    "@greetingNight": {
+        "type": "String",
+        "placeholders": {}
+    },
+    "greetingMorning": "Good morning",
+    "@greetingMorning": {
+        "type": "String",
+        "placeholders": {}
+    },
+    "greetingAfternoon": "Good afternoon",
+    "@greetingAfternoon": {
+        "type": "String",
+        "placeholders": {}
+    },
+    "greetingEvening": "Good evening",
+    "@greetingEvening": {
+        "type": "String",
+        "placeholders": {}
+    },
+    "settingsSectionStorage": "Storage",
+    "@settingsSectionStorage": {
+        "type": "String",
+        "placeholders": {}
+    },
+    "settingsSectionAdvanced": "Advanced",
+    "@settingsSectionAdvanced": {
+        "type": "String",
+        "placeholders": {}
+    },
+    "presenceAvailable": "Available",
+    "@presenceAvailable": {
+        "type": "String",
+        "placeholders": {}
+    },
+    "presenceAway": "Away",
+    "@presenceAway": {
+        "type": "String",
+        "placeholders": {}
+    },
+    "presenceOffline": "Offline",
+    "@presenceOffline": {
+        "type": "String",
+        "placeholders": {}
+    },
+    "callDecline": "Decline",
+    "@callDecline": {
+        "type": "String",
+        "placeholders": {}
+    },
+    "callAnswer": "Answer",
+    "@callAnswer": {
+        "type": "String",
+        "placeholders": {}
+    },
+    "callReplyByMessage": "Reply with message",
+    "@callReplyByMessage": {
+        "type": "String",
+        "placeholders": {}
+    },
+    "callReplyAndDecline": "Send & decline",
+    "@callReplyAndDecline": {
+        "type": "String",
+        "placeholders": {}
     }
 }

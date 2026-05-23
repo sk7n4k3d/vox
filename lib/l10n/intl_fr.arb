@@ -2810,5 +2810,70 @@
     "@voiceMessageCancelled": {
         "type": "String",
         "placeholders": {}
+    },
+    "greetingNight": "Bonne nuit",
+    "@greetingNight": {
+        "type": "String",
+        "placeholders": {}
+    },
+    "greetingMorning": "Bonjour",
+    "@greetingMorning": {
+        "type": "String",
+        "placeholders": {}
+    },
+    "greetingAfternoon": "Bon après-midi",
+    "@greetingAfternoon": {
+        "type": "String",
+        "placeholders": {}
+    },
+    "greetingEvening": "Bonsoir",
+    "@greetingEvening": {
+        "type": "String",
+        "placeholders": {}
+    },
+    "settingsSectionStorage": "Stockage",
+    "@settingsSectionStorage": {
+        "type": "String",
+        "placeholders": {}
+    },
+    "settingsSectionAdvanced": "Avancé",
+    "@settingsSectionAdvanced": {
+        "type": "String",
+        "placeholders": {}
+    },
+    "presenceAvailable": "Disponible",
+    "@presenceAvailable": {
+        "type": "String",
+        "placeholders": {}
+    },
+    "presenceAway": "Absent",
+    "@presenceAway": {
+        "type": "String",
+        "placeholders": {}
+    },
+    "presenceOffline": "Hors ligne",
+    "@presenceOffline": {
+        "type": "String",
+        "placeholders": {}
+    },
+    "callDecline": "Décliner",
+    "@callDecline": {
+        "type": "String",
+        "placeholders": {}
+    },
+    "callAnswer": "Décrocher",
+    "@callAnswer": {
+        "type": "String",
+        "placeholders": {}
+    },
+    "callReplyByMessage": "Répondre par message",
+    "@callReplyByMessage": {
+        "type": "String",
+        "placeholders": {}
+    },
+    "callReplyAndDecline": "Envoyer & décliner",
+    "@callReplyAndDecline": {
+        "type": "String",
+        "placeholders": {}
     }
 }

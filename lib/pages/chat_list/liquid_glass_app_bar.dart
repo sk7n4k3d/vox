@@ -197,7 +197,7 @@ class _GreetingLine extends StatelessWidget {
         final displayName = snapshot.data?.displayName ??
             client.userID?.localpart ??
             '';
-        final greeting = _greetingForHour(DateTime.now().hour);
+        final greeting = _greetingForHour(context, DateTime.now().hour);
         final fullText =
             displayName.isEmpty ? greeting : '$greeting, $displayName';
         return Align(
@@ -216,10 +216,11 @@ class _GreetingLine extends StatelessWidget {
     );
   }
 
-  String _greetingForHour(int hour) {
-    if (hour < 6) return 'Bonne nuit';
-    if (hour < 12) return 'Bonjour';
-    if (hour < 18) return 'Bon après-midi';
-    return 'Bonsoir';
+  String _greetingForHour(BuildContext context, int hour) {
+    final l10n = L10n.of(context);
+    if (hour < 6) return l10n.greetingNight;
+    if (hour < 12) return l10n.greetingMorning;
+    if (hour < 18) return l10n.greetingAfternoon;
+    return l10n.greetingEvening;
   }
 }

@@ -1,5 +1,6 @@
 import 'dart:ui';
 
+import 'package:fluffychat/l10n/l10n.dart';
 import 'package:fluffychat/widgets/avatar.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -108,7 +109,7 @@ class _IncomingCallViewState extends State<IncomingCallView>
                       ),
                     ),
                     Text(
-                      'Répondre par message',
+                      L10n.of(context).callReplyByMessage,
                       style: TextStyle(
                         color: scheme.onSurface,
                         fontSize: 18,
@@ -145,7 +146,7 @@ class _IncomingCallViewState extends State<IncomingCallView>
                         Expanded(
                           child: OutlinedButton(
                             onPressed: () => Navigator.pop(sheetContext),
-                            child: const Text('Annuler'),
+                            child: Text(L10n.of(context).cancel),
                           ),
                         ),
                         const SizedBox(width: 12),
@@ -156,7 +157,7 @@ class _IncomingCallViewState extends State<IncomingCallView>
                               if (text.isEmpty) return;
                               Navigator.pop(sheetContext, text);
                             },
-                            child: const Text('Envoyer & décliner'),
+                            child: Text(L10n.of(context).callReplyAndDecline),
                           ),
                         ),
                       ],
@@ -301,7 +302,7 @@ class _IncomingCallViewState extends State<IncomingCallView>
                     children: [
                       _CallActionButton(
                         icon: Icons.call_end,
-                        label: 'Décliner',
+                        label: L10n.of(context).callDecline,
                         background: const Color(0xFFB3261E),
                         onTap: () {
                           HapticFeedback.selectionClick();
@@ -310,7 +311,7 @@ class _IncomingCallViewState extends State<IncomingCallView>
                       ),
                       _CallActionButton(
                         icon: Icons.call,
-                        label: 'Décrocher',
+                        label: L10n.of(context).callAnswer,
                         background: const Color(0xFF34A853),
                         onTap: () {
                           HapticFeedback.selectionClick();

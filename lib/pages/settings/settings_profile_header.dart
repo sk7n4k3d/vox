@@ -92,7 +92,7 @@ class SettingsProfileHeader extends StatelessWidget {
                   ),
                   const SizedBox(width: 6),
                   Text(
-                    'Available',
+                    L10n.of(context).presenceAvailable,
                     style: TextStyle(
                       fontSize: 12,
                       fontWeight: FontWeight.w500,

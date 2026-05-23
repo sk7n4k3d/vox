@@ -149,7 +149,7 @@ class SettingsView extends StatelessWidget {
           SettingsSectionTile(
             icon: Icons.storage_outlined,
             color: _storageColor,
-            title: 'Storage',
+            title: l10n.settingsSectionStorage,
             subtitle: _storageSubtitle(client),
             selected: false,
             onTap: () => context.go('/rooms/settings/chat'),
@@ -351,7 +351,7 @@ class _AdvancedTile extends StatelessWidget {
         return SettingsSectionTile(
           icon: Icons.tune_outlined,
           color: color,
-          title: 'Advanced',
+          title: L10n.of(context).settingsSectionAdvanced,
           subtitle: subtitle,
           onTap: onTap,
         );
