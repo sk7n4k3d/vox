@@ -2,9 +2,10 @@ import 'package:flutter/material.dart';
 
 /// Cyberpunk hybrid theme tokens layered on top of Material 3.
 ///
-/// Exposes neon accents (cyan / magenta / violet), glass-morphism fills, blur
-/// sigmas for the different surface tiers (chip / sheet / overlay / app bar)
-/// and the M3 Expressive emphasized curve. Consumed via:
+/// Sprint 2 — bascule palette CYBERCORE (`#00F0FF` / `#FF2E92` / `#A78BFA`).
+/// L'identité du fork est dark-first ; le `light()` constructor a été retiré
+/// (audit AUDIT-FLUFFYCHAT-FORK-2026-05-23 finding-001) car il dupliquait `.dark()`.
+/// Le ThemeMode est forcé à `dark` dans `themes.dart`.
 ///
 /// ```dart
 /// final cyber = Theme.of(context).extension<CyberpunkTheme>()!;
@@ -19,6 +20,12 @@ class CyberpunkTheme extends ThemeExtension<CyberpunkTheme> {
 
   /// Spaces and threads accent.
   final Color violet;
+
+  /// Warning (yellow néon CYBERCORE).
+  final Color warn;
+
+  /// Success (green néon CYBERCORE).
+  final Color success;
 
   /// Reusable neon glow effect (blur 12, cyan tinted @ ~35% alpha).
   final List<BoxShadow> neonGlow;
@@ -52,6 +59,8 @@ class CyberpunkTheme extends ThemeExtension<CyberpunkTheme> {
     required this.cyan,
     required this.magenta,
     required this.violet,
+    required this.warn,
+    required this.success,
     required this.neonGlow,
     required this.glassFillLight,
     required this.glassFillStrong,
@@ -63,44 +72,19 @@ class CyberpunkTheme extends ThemeExtension<CyberpunkTheme> {
     required this.emphasizedDeceleratedCurve,
   });
 
-  /// Default dark-mode tokens. The cyberpunk look is dark-first so this is the
-  /// canonical instance; [CyberpunkTheme.light] only tweaks glass alpha.
+  /// Tokens dark cyberpunk (CYBERCORE palette).
   factory CyberpunkTheme.dark() {
-    const cyan = Color(0xFF22D3EE);
-    const magenta = Color(0xFFEC4899);
+    const cyan = Color(0xFF00F0FF);
+    const magenta = Color(0xFFFF2E92);
     const violet = Color(0xFFA78BFA);
+    const warn = Color(0xFFFCEE0A);
+    const success = Color(0xFF05FFA1);
     return CyberpunkTheme(
       cyan: cyan,
       magenta: magenta,
       violet: violet,
-      neonGlow: [
-        BoxShadow(
-          color: cyan.withValues(alpha: 0.35),
-          blurRadius: 12,
-          spreadRadius: 0,
-        ),
-      ],
-      glassFillLight: Colors.white.withValues(alpha: 0.12),
-      glassFillStrong: Colors.white.withValues(alpha: 0.18),
-      glassBorder: Colors.white.withValues(alpha: 0.18),
-      blurSigmaChip: 8.0,
-      blurSigmaSheet: 24.0,
-      blurSigmaOverlay: 36.0,
-      blurSigmaAppBar: 20.0,
-      emphasizedDeceleratedCurve: Curves.easeInOutCubicEmphasized,
-    );
-  }
-
-  /// Light-mode variant. Same neon accents (they read well on light too) but
-  /// glass uses a darker tint so it still reads as a frosted surface.
-  factory CyberpunkTheme.light() {
-    const cyan = Color(0xFF22D3EE);
-    const magenta = Color(0xFFEC4899);
-    const violet = Color(0xFFA78BFA);
-    return CyberpunkTheme(
-      cyan: cyan,
-      magenta: magenta,
-      violet: violet,
+      warn: warn,
+      success: success,
       neonGlow: [
         BoxShadow(
           color: cyan.withValues(alpha: 0.35),
@@ -124,6 +108,8 @@ class CyberpunkTheme extends ThemeExtension<CyberpunkTheme> {
     Color? cyan,
     Color? magenta,
     Color? violet,
+    Color? warn,
+    Color? success,
     List<BoxShadow>? neonGlow,
     Color? glassFillLight,
     Color? glassFillStrong,
@@ -138,6 +124,8 @@ class CyberpunkTheme extends ThemeExtension<CyberpunkTheme> {
       cyan: cyan ?? this.cyan,
       magenta: magenta ?? this.magenta,
       violet: violet ?? this.violet,
+      warn: warn ?? this.warn,
+      success: success ?? this.success,
       neonGlow: neonGlow ?? this.neonGlow,
       glassFillLight: glassFillLight ?? this.glassFillLight,
       glassFillStrong: glassFillStrong ?? this.glassFillStrong,
@@ -158,6 +146,8 @@ class CyberpunkTheme extends ThemeExtension<CyberpunkTheme> {
       cyan: Color.lerp(cyan, other.cyan, t) ?? cyan,
       magenta: Color.lerp(magenta, other.magenta, t) ?? magenta,
       violet: Color.lerp(violet, other.violet, t) ?? violet,
+      warn: Color.lerp(warn, other.warn, t) ?? warn,
+      success: Color.lerp(success, other.success, t) ?? success,
       neonGlow:
           BoxShadow.lerpList(neonGlow, other.neonGlow, t) ?? neonGlow,
       glassFillLight:
@@ -171,7 +161,6 @@ class CyberpunkTheme extends ThemeExtension<CyberpunkTheme> {
       blurSigmaOverlay:
           _lerpDouble(blurSigmaOverlay, other.blurSigmaOverlay, t),
       blurSigmaAppBar: _lerpDouble(blurSigmaAppBar, other.blurSigmaAppBar, t),
-      // Curves don't interpolate — snap at the midpoint to the destination.
       emphasizedDeceleratedCurve:
           t < 0.5 ? emphasizedDeceleratedCurve : other.emphasizedDeceleratedCurve,
     );
@@ -186,6 +175,8 @@ class CyberpunkTheme extends ThemeExtension<CyberpunkTheme> {
     return cyan == other.cyan &&
         magenta == other.magenta &&
         violet == other.violet &&
+        warn == other.warn &&
+        success == other.success &&
         _listEquals(neonGlow, other.neonGlow) &&
         glassFillLight == other.glassFillLight &&
         glassFillStrong == other.glassFillStrong &&
@@ -202,6 +193,8 @@ class CyberpunkTheme extends ThemeExtension<CyberpunkTheme> {
         cyan,
         magenta,
         violet,
+        warn,
+        success,
         Object.hashAll(neonGlow),
         glassFillLight,
         glassFillStrong,

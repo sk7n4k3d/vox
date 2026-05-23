@@ -52,10 +52,14 @@ class FluffyChatApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return ThemeBuilder(
-      builder: (context, themeMode, primaryColor) => MaterialApp.router(
+      builder: (context, _, primaryColor) => MaterialApp.router(
         title: AppSettings.applicationName.value,
-        themeMode: themeMode,
-        theme: FluffyThemes.buildTheme(context, Brightness.light, primaryColor),
+        // Sprint 2 audit finding-001 : identité cyberpunk dark-first, le
+        // light() dupliquait dark() et personne ne l'utilise. ThemeController
+        // continue de stocker le choix user pour migration future éventuelle,
+        // mais on force dark partout au runtime.
+        themeMode: ThemeMode.dark,
+        theme: FluffyThemes.buildTheme(context, Brightness.dark, primaryColor),
         darkTheme: FluffyThemes.buildTheme(
           context,
           Brightness.dark,

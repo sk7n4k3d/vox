@@ -52,9 +52,11 @@ abstract class FluffyThemes {
       brightness: brightness,
       colorScheme: colorScheme,
       extensions: <ThemeExtension<dynamic>>[
-        brightness == Brightness.dark
-            ? CyberpunkTheme.dark()
-            : CyberpunkTheme.light(),
+        // Sprint 2 audit finding-001 : light() retiré (dupliquait dark()).
+        // ThemeMode est forcé dark dans FluffyChatApp build, mais on garde
+        // l'extension dark partout pour les sub-widgets qui interrogeraient
+        // une variante light involontairement.
+        CyberpunkTheme.dark(),
       ],
       dividerColor: brightness == Brightness.dark
           ? colorScheme.surfaceContainerHighest
