@@ -1,10 +1,27 @@
 import 'dart:ui';
 
 import 'package:fluffychat/config/cyberpunk_theme_extension.dart';
+import 'package:fluffychat/config/design_tokens.dart';
 import 'package:fluffychat/l10n/l10n.dart';
 import 'package:fluffychat/widgets/matrix.dart';
 import 'package:flutter/material.dart';
 import 'package:matrix/matrix.dart';
+
+/// Process-wide cache of the logged-in user's [Profile]. Sprint 2 V2
+/// finding-004: previously [LiquidGlassAppBar] re-fetched the profile via a
+/// fresh FutureBuilder on every rebuild → flash + metered-data cost.
+/// We memoize the first successful fetch and serve subsequent reads
+/// synchronously. Cleared by [resetOwnProfileCache] on logout.
+Future<Profile?>? _ownProfileFuture;
+
+void resetOwnProfileCache() {
+  _ownProfileFuture = null;
+}
+
+Future<Profile?> _ownProfileCached(Client client) {
+  return _ownProfileFuture ??=
+      client.isLogged() ? client.fetchOwnProfile() : Future.value(null);
+}
 
 /// Liquid Glass AppBar — Material 3 Expressive style.
 ///
@@ -107,10 +124,9 @@ class LiquidGlassAppBar extends StatelessWidget
                             Expanded(
                               child: Text(
                                 L10n.of(context).chats,
-                                style: theme.textTheme.headlineSmall?.copyWith(
-                                  fontWeight: FontWeight.w600,
+                                style: FluffyTypography.display.copyWith(
                                   color: colorScheme.onSurface,
-                                  letterSpacing: -0.5,
+                                  fontSize: 26,
                                 ),
                                 maxLines: 1,
                                 overflow: TextOverflow.ellipsis,
@@ -189,26 +205,41 @@ class _GreetingLine extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final cyber = theme.extension<CyberpunkTheme>();
     final client = Matrix.of(context).client;
 
+    // Sprint 2 V2 finding-004: profile served from process-wide memo.
+    // First sync paint shows greeting without name; second rebuild fills it
+    // in. No more re-fetch on every appbar rebuild.
     return FutureBuilder<Profile?>(
-      future: client.isLogged() ? client.fetchOwnProfile() : null,
+      future: _ownProfileCached(client),
       builder: (context, snapshot) {
         final displayName = snapshot.data?.displayName ??
             client.userID?.localpart ??
             '';
         final greeting = _greetingForHour(context, DateTime.now().hour);
-        final fullText =
-            displayName.isEmpty ? greeting : '$greeting, $displayName';
         return Align(
           alignment: Alignment.centerLeft,
-          child: Text(
-            fullText,
+          child: RichText(
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
-            style: theme.textTheme.titleMedium?.copyWith(
-              color: theme.colorScheme.onSurfaceVariant,
-              fontWeight: FontWeight.w400,
+            text: TextSpan(
+              style: FluffyTypography.bodyM.copyWith(
+                color: theme.colorScheme.onSurfaceVariant,
+              ),
+              children: [
+                TextSpan(text: greeting),
+                if (displayName.isNotEmpty) ...[
+                  TextSpan(text: ', '),
+                  TextSpan(
+                    text: displayName,
+                    style: FluffyTypography.title.copyWith(
+                      color: cyber?.cyan ?? theme.colorScheme.primary,
+                      fontSize: 14,
+                    ),
+                  ),
+                ],
+              ],
             ),
           ),
         );
