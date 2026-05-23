@@ -1,6 +1,8 @@
 import 'dart:ui' as ui;
 
 import 'package:emoji_picker_flutter/emoji_picker_flutter.dart';
+import 'package:fluffychat/config/cyberpunk_theme_extension.dart';
+import 'package:fluffychat/config/design_tokens.dart';
 import 'package:fluffychat/config/setting_keys.dart';
 import 'package:fluffychat/config/themes.dart';
 import 'package:fluffychat/l10n/l10n.dart';
@@ -83,6 +85,7 @@ class Message extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final cyber = theme.extension<CyberpunkTheme>();
 
     if (!{
       EventTypes.Message,
@@ -312,25 +315,11 @@ class Message extends StatelessWidget {
                       left: 16.0,
                       right: 16.0,
                     ),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      spacing: 4.0,
-                      children: [
-                        Icon(
-                          Icons.edit_outlined,
-                          color: textColor.withAlpha(164),
-                          size: 14,
-                        ),
-                        Text(
-                          displayEvent.originServerTs.localizedTimeShort(
-                            context,
-                          ),
-                          style: TextStyle(
-                            color: textColor.withAlpha(164),
-                            fontSize: 11,
-                          ),
-                        ),
-                      ],
+                    child: _EditedPill(
+                      time: displayEvent.originServerTs
+                          .localizedTimeShort(context),
+                      accent: cyber?.violet ?? textColor.withAlpha(164),
+                      textColor: textColor.withAlpha(164),
                     ),
                   ),
               ],
@@ -463,13 +452,20 @@ class Message extends StatelessWidget {
                             width: Avatar.defaultSize,
                             child: Center(
                               child: SizedBox(
-                                width: 16,
-                                height: 16,
+                                width: 18,
+                                height: 18,
                                 child: event.status == EventStatus.error
-                                    ? const Icon(Icons.error, color: Colors.red)
+                                    ? _MessageErrorBadge(
+                                        magenta: cyber?.magenta ??
+                                            theme.colorScheme.error,
+                                      )
                                     : event.fileSendingStatus != null
-                                    ? const CircularProgressIndicator.adaptive(
-                                        strokeWidth: 1,
+                                    ? CircularProgressIndicator.adaptive(
+                                        strokeWidth: 1.5,
+                                        valueColor: AlwaysStoppedAnimation(
+                                          cyber?.cyan ??
+                                              theme.colorScheme.primary,
+                                        ),
                                       )
                                     : null,
                               ),
@@ -1020,6 +1016,80 @@ class __AnimateInState extends State<_AnimateIn> {
         curve: FluffyThemes.animationCurve,
         child: _animationFinished ? widget.child : const SizedBox.shrink(),
       ),
+    );
+  }
+}
+
+/// Sprint 2 V2 — edited pill : icon violet + texte mono, micro-pill
+/// avec accent cyber. Remplace l'edit row inline historique.
+class _EditedPill extends StatelessWidget {
+  const _EditedPill({
+    required this.time,
+    required this.accent,
+    required this.textColor,
+  });
+
+  final String time;
+  final Color accent;
+  final Color textColor;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+      decoration: BoxDecoration(
+        color: accent.withValues(alpha: 0.10),
+        borderRadius: const BorderRadius.all(Radius.circular(8)),
+        border: Border.all(
+          color: accent.withValues(alpha: 0.30),
+          width: 0.5,
+        ),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(Icons.edit_outlined, color: accent, size: 11),
+          const SizedBox(width: 4),
+          Text(
+            time,
+            style: FluffyTypography.code.copyWith(
+              color: textColor,
+              fontSize: 10,
+              letterSpacing: 0.3,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// Sprint 2 V2 — error badge cyber : ring magenta + glow + cross.
+///
+/// Remplace l'`Icon(Icons.error, color: Colors.red)` historique. Le glow est
+/// statique (pas d'AnimationController) pour rester cheap dans une room
+/// peuplée. Si on veut un pulse dans une future itération, wrap dans un
+/// `RepaintBoundary` + `AnimationController` borné par `VisibilityDetector`.
+class _MessageErrorBadge extends StatelessWidget {
+  const _MessageErrorBadge({required this.magenta});
+
+  final Color magenta;
+
+  @override
+  Widget build(BuildContext context) {
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        shape: BoxShape.circle,
+        border: Border.all(color: magenta, width: 1.5),
+        boxShadow: [
+          BoxShadow(
+            color: magenta.withValues(alpha: 0.45),
+            blurRadius: 8,
+            spreadRadius: 0,
+          ),
+        ],
+      ),
+      child: Icon(Icons.close_rounded, color: magenta, size: 12),
     );
   }
 }
