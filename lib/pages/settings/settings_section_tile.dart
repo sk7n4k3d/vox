@@ -24,8 +24,13 @@ class SettingsSectionTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final isDark = theme.brightness == Brightness.dark;
-    final iconColor = isDark ? Colors.white : Colors.white;
+    // Sprint 2 audit finding-015: previously `isDark ? white : white` —
+    // both ternary branches identical. Pick a foreground that contrasts
+    // with the actual colored container (the [color] field).
+    final iconColor =
+        ThemeData.estimateBrightnessForColor(color) == Brightness.dark
+            ? Colors.white
+            : Colors.black87;
     final radius = BorderRadius.circular(16);
 
     return Padding(

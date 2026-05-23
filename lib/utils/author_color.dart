@@ -1,3 +1,4 @@
+import 'dart:collection';
 import 'dart:convert';
 import 'dart:math' as math;
 
@@ -57,21 +58,36 @@ class AuthorColors {
     Color(0xFFBCAAA4), // 7 — Brown
   ];
 
-  static final Map<String, Color> _cacheLight = <String, Color>{};
-  static final Map<String, Color> _cacheDark = <String, Color>{};
+  /// Maximum entries kept per brightness LRU cache. With 512 entries
+  /// each, the worst case memory footprint stays under ~64 KB and covers
+  /// the active set of any realistic federated room.
+  /// Sprint 2 audit finding-011: previously unbounded → memory leak risk.
+  static const int _kCacheCap = 512;
+
+  static final LinkedHashMap<String, Color> _cacheLight =
+      LinkedHashMap<String, Color>();
+  static final LinkedHashMap<String, Color> _cacheDark =
+      LinkedHashMap<String, Color>();
 
   /// Returns the deterministic color for [userId] under the given
-  /// [brightness]. The result is memoized for the lifetime of the
-  /// process.
+  /// [brightness]. Bounded LRU cache (512 entries / brightness).
   static Color forUserId(String userId, Brightness brightness) {
     final cache = brightness == Brightness.dark ? _cacheDark : _cacheLight;
     final cached = cache[userId];
-    if (cached != null) return cached;
+    if (cached != null) {
+      // Refresh recency.
+      cache.remove(userId);
+      cache[userId] = cached;
+      return cached;
+    }
 
     final palette = brightness == Brightness.dark
         ? paletteDark
         : paletteLight;
     final color = palette[_fnv1a32(userId) % palette.length];
+    if (cache.length >= _kCacheCap) {
+      cache.remove(cache.keys.first);
+    }
     cache[userId] = color;
     return color;
   }
