@@ -173,6 +173,11 @@ class ChatListItem extends StatelessWidget {
                                         : null,
                                     encrypted: room.encrypted,
                                     isSpace: room.isSpace,
+                                    // Sprint 2 V2 — pulse cyan sur unread,
+                                    // glow magenta sur mention.
+                                    unread: room.notificationCount > 0 ||
+                                        room.markedUnread,
+                                    mentioned: room.highlightCount > 0,
                                     shapeBorder: room.isSpace
                                         ? RoundedSuperellipseBorder(
                                             side: BorderSide(

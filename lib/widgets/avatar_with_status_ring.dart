@@ -1,4 +1,5 @@
 import 'package:fluffychat/config/cyberpunk_theme_extension.dart';
+import 'package:fluffychat/config/design_tokens.dart';
 import 'package:fluffychat/widgets/avatar.dart';
 import 'package:fluffychat/widgets/presence_builder.dart';
 import 'package:flutter/material.dart';
@@ -46,6 +47,13 @@ class AvatarWithStatusRing extends StatelessWidget {
   /// Hard override of the ring color. Bypasses presence/encryption logic.
   final Color? ringColor;
 
+  /// Sprint 2 V2 — when true, draws a subtle pulse animation in cyan to
+  /// signal an unread room. Stacked on top of any existing ring color.
+  final bool unread;
+
+  /// Sprint 2 V2 — when true, draws a magenta highlight ring (mentions).
+  final bool mentioned;
+
   /// Avatar shape override forwarded to the inner [Avatar].
   final ShapeBorder? shapeBorder;
   final BorderRadius? borderRadius;
@@ -67,6 +75,8 @@ class AvatarWithStatusRing extends StatelessWidget {
     this.encrypted = false,
     this.isSpace = false,
     this.ringColor,
+    this.unread = false,
+    this.mentioned = false,
     this.shapeBorder,
     this.borderRadius,
     super.key,
@@ -76,6 +86,9 @@ class AvatarWithStatusRing extends StatelessWidget {
     if (ringColor != null) return ringColor!;
     final theme = Theme.of(context);
     final cyber = theme.extension<CyberpunkTheme>();
+    if (mentioned) {
+      return cyber?.magenta ?? theme.colorScheme.error;
+    }
     if (isSpace) {
       return cyber?.violet ?? theme.colorScheme.tertiary;
     }
@@ -83,7 +96,10 @@ class AvatarWithStatusRing extends StatelessWidget {
       if (encrypted) {
         return cyber?.cyan ?? theme.colorScheme.primary;
       }
-      return Colors.green.shade400;
+      return cyber?.success ?? Colors.green.shade400;
+    }
+    if (unread) {
+      return (cyber?.cyan ?? theme.colorScheme.primary).withValues(alpha: 0.7);
     }
     return Colors.transparent;
   }
@@ -115,9 +131,39 @@ class AvatarWithStatusRing extends StatelessWidget {
     final color = _resolveRingColor(context, isOnline);
     final hasRing = color != Colors.transparent;
 
+    final avatar = Avatar(
+      mxContent: mxContent,
+      name: name,
+      size: size,
+      onTap: onTap,
+      client: client,
+      // Presence dot is already rendered upstream via the ring — avoid
+      // double-signalling by NOT forwarding presenceUserId to the inner
+      // Avatar.
+      shapeBorder: shapeBorder,
+      borderRadius: borderRadius,
+    );
+
+    // Sprint 2 V2 — unread/mentioned rooms get a soft cyan/magenta pulse.
+    // Static avatars stay cheap: pulse only kicks in when [unread] is true,
+    // wrapped in a RepaintBoundary so the chatlist viewport doesn't repaint
+    // surrounding bubbles each frame.
+    if (unread && !mentioned && hasRing) {
+      return SizedBox(
+        width: outerSize,
+        height: outerSize,
+        child: _PulseRing(
+          color: color,
+          ringWidth: _ringWidth,
+          gap: _ringGap,
+          child: avatar,
+        ),
+      );
+    }
+
     return AnimatedContainer(
-      duration: const Duration(milliseconds: 200),
-      curve: Curves.easeOut,
+      duration: FluffyDurations.normal,
+      curve: FluffyCurves.decelerated,
       width: outerSize,
       height: outerSize,
       padding: EdgeInsets.all(hasRing ? _ringGap : 0),
@@ -126,27 +172,83 @@ class AvatarWithStatusRing extends StatelessWidget {
         border: hasRing
             ? Border.all(color: color, width: _ringWidth)
             : null,
-        boxShadow: isOnline && hasRing
+        boxShadow: (isOnline || mentioned) && hasRing
             ? [
                 BoxShadow(
-                  color: color.withValues(alpha: 0.4),
-                  blurRadius: 8,
+                  color: color.withValues(alpha: mentioned ? 0.55 : 0.4),
+                  blurRadius: mentioned ? 12 : 8,
                 ),
               ]
             : null,
       ),
-      child: Avatar(
-        mxContent: mxContent,
-        name: name,
-        size: size,
-        onTap: onTap,
-        client: client,
-        // Presence dot is already rendered upstream via the ring — avoid
-        // double-signalling by NOT forwarding presenceUserId to the inner
-        // Avatar. Consumers that want the legacy bottom-right dot can use
-        // [Avatar] directly.
-        shapeBorder: shapeBorder,
-        borderRadius: borderRadius,
+      child: avatar,
+    );
+  }
+}
+
+/// Sprint 2 V2 — pulsing ring used to draw the eye toward unread rooms.
+class _PulseRing extends StatefulWidget {
+  const _PulseRing({
+    required this.color,
+    required this.ringWidth,
+    required this.gap,
+    required this.child,
+  });
+
+  final Color color;
+  final double ringWidth;
+  final double gap;
+  final Widget child;
+
+  @override
+  State<_PulseRing> createState() => _PulseRingState();
+}
+
+class _PulseRingState extends State<_PulseRing>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _ctrl = AnimationController(
+    vsync: this,
+    duration: const Duration(milliseconds: 1600),
+  )..repeat(reverse: true);
+
+  late final Animation<double> _glow = CurvedAnimation(
+    parent: _ctrl,
+    curve: Curves.easeInOut,
+  );
+
+  @override
+  void dispose() {
+    _ctrl.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return RepaintBoundary(
+      child: AnimatedBuilder(
+        animation: _glow,
+        builder: (context, child) {
+          final alpha = 0.25 + 0.35 * _glow.value;
+          final blur = 6.0 + 8.0 * _glow.value;
+          return Container(
+            padding: EdgeInsets.all(widget.gap),
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              border: Border.all(
+                color: widget.color,
+                width: widget.ringWidth,
+              ),
+              boxShadow: [
+                BoxShadow(
+                  color: widget.color.withValues(alpha: alpha),
+                  blurRadius: blur,
+                ),
+              ],
+            ),
+            child: child,
+          );
+        },
+        child: widget.child,
       ),
     );
   }
