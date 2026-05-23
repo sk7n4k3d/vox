@@ -231,18 +231,70 @@ class Message extends StatelessWidget {
     /// Build the bubble visual once so we can reuse it inline (with the
     /// GlobalKey, for hit-testing + position resolution) and pass a clone
     /// (without the key) to [MessageContextOverlay] as the lifted hero.
+    ///
+    /// Sprint 2 V3 — own bubbles wear a saturated cyan→magenta diagonal
+    /// gradient with a soft cyan glow ; inbound bubbles get a subtle violet
+    /// 0.5px border. Media bubbles ([noBubble]) keep their original empty
+    /// container — only the wrapper changes.
     Widget buildBubbleVisual({Key? key}) {
+      // Gradient + glow only when there's an actual surface to color.
+      final useOwnGradient =
+          ownMessage && !noBubble && !displayEvent.status.isError &&
+              cyber != null && !MediaQuery.highContrastOf(context);
+
+      final BoxDecoration decoration;
+      if (noBubble) {
+        decoration = BoxDecoration(
+          color: Colors.transparent,
+          borderRadius: borderRadius,
+        );
+      } else if (useOwnGradient) {
+        final c = cyber;
+        decoration = BoxDecoration(
+          gradient: LinearGradient(
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+            colors: [
+              c.cyan.withValues(alpha: 0.35),
+              c.magenta.withValues(alpha: 0.30),
+            ],
+          ),
+          borderRadius: borderRadius,
+          border: Border.all(
+            color: c.cyan.withValues(alpha: 0.45),
+            width: 0.75,
+          ),
+          boxShadow: [
+            BoxShadow(
+              color: c.cyan.withValues(alpha: 0.18),
+              blurRadius: 14,
+              spreadRadius: -2,
+            ),
+          ],
+        );
+      } else {
+        decoration = BoxDecoration(
+          color: color,
+          borderRadius: borderRadius,
+          border: !ownMessage && cyber != null
+              ? Border.all(
+                  color: cyber.violet.withValues(alpha: 0.22),
+                  width: 0.5,
+                )
+              : null,
+        );
+      }
+
       return Container(
         key: key,
-        decoration: BoxDecoration(
-          color: noBubble ? Colors.transparent : color,
-          borderRadius: borderRadius,
-        ),
+        decoration: decoration,
         clipBehavior: Clip.antiAlias,
         child: BubbleBackground(
           colors: colors,
-          ignore:
-              noBubble || !ownMessage || MediaQuery.highContrastOf(context),
+          // Skip the legacy parallax gradient when our V3 gradient already
+          // covers the surface.
+          ignore: noBubble || useOwnGradient || !ownMessage ||
+              MediaQuery.highContrastOf(context),
           scrollController: scrollController,
           child: Container(
             decoration: BoxDecoration(
