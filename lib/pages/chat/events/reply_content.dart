@@ -7,6 +7,48 @@ import 'package:matrix/matrix.dart';
 
 import '../../../config/app_config.dart';
 
+/// Sprint 2 V3.2 — robust reply preview for media events.
+///
+/// Bug capture 2026-05-24 : Hermes (Jarvis) reply quoting our voice messages
+/// rendered as bare `00:07` because the body of some m.audio events is just
+/// the duration string. Now we synthesise a proper preview:
+///   - m.audio voice → 🎙️ mm:ss · Voice message
+///   - m.audio       → 🎵 audio
+///   - m.image       → 📷 image
+///   - m.video       → 🎞️ video
+///   - m.file        → 📎 file
+///   - m.text+formatted → body / plaintext (unchanged)
+String _previewBodyFor(Event event, MatrixLocalizations i18n) {
+  if (event.type == EventTypes.Message) {
+    final mt = event.messageType;
+    if (mt == MessageTypes.Audio) {
+      final isVoice =
+          event.content.tryGetMap('org.matrix.msc3245.voice') != null;
+      final durationMs = event.content
+          .tryGetMap<String, Object?>('info')
+          ?.tryGet<int>('duration');
+      final durStr = durationMs == null
+          ? ''
+          : '${(durationMs ~/ 60000).toString().padLeft(2, '0')}'
+              ':${((durationMs ~/ 1000) % 60).toString().padLeft(2, '0')}';
+      if (isVoice) {
+        return durStr.isEmpty ? '🎙️ Voice message' : '🎙️ $durStr · Voice';
+      }
+      return durStr.isEmpty ? '🎵 Audio' : '🎵 $durStr';
+    }
+    if (mt == MessageTypes.Image) return '📷 Image';
+    if (mt == MessageTypes.Video) return '🎞️ Video';
+    if (mt == MessageTypes.File) return '📎 File';
+  }
+  final fallback = event.calcLocalizedBodyFallback(
+    i18n,
+    withSenderNamePrefix: false,
+    hideReply: true,
+    plaintextBody: true,
+  );
+  return fallback.trim().isEmpty ? '…' : fallback;
+}
+
 class ReplyContent extends StatelessWidget {
   final Event replyEvent;
   final bool ownMessage;
@@ -93,11 +135,9 @@ class ReplyContent extends StatelessWidget {
                   },
                 ),
                 Text(
-                  displayEvent.calcLocalizedBodyFallback(
+                  _previewBodyFor(
+                    displayEvent,
                     MatrixLocals(L10n.of(context)),
-                    withSenderNamePrefix: false,
-                    hideReply: true,
-                    plaintextBody: true,
                   ),
                   overflow: TextOverflow.ellipsis,
                   maxLines: 1,
