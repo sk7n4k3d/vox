@@ -1,5 +1,6 @@
 import 'dart:ui';
 
+import 'package:fluffychat/config/design_tokens.dart';
 import 'package:fluffychat/l10n/l10n.dart';
 import 'package:fluffychat/pages/chat/recording_view_model.dart';
 import 'package:fluffychat/pages/chat/voice_record_gesture_state.dart';
@@ -80,8 +81,8 @@ class _OverlayShell extends StatelessWidget {
     );
     return TweenAnimationBuilder<double>(
       tween: Tween(begin: 0, end: visible ? 1.0 : 0.0),
-      duration: Duration(milliseconds: visible ? 240 : 180),
-      curve: visible ? Curves.easeOutBack : Curves.easeInCubic,
+      duration: visible ? FluffyDurations.medium : FluffyDurations.fast,
+      curve: visible ? Curves.easeOutBack : FluffyCurves.accelerated,
       builder: (context, t, animatedChild) {
         if (t <= 0.001) {
           return const SizedBox(width: double.infinity, height: 0);

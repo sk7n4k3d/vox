@@ -1,3 +1,4 @@
+import 'package:fluffychat/config/design_tokens.dart';
 import 'package:fluffychat/l10n/l10n.dart';
 import 'package:fluffychat/pages/chat/chat.dart';
 import 'package:fluffychat/pages/chat/chat_input_row.dart';
@@ -168,8 +169,8 @@ class _VoiceRecordButtonState extends State<VoiceRecordButton> {
       onLongPressCancel: _handleLongPressCancel,
       child: AnimatedScale(
         scale: shouldEnlarge ? 1.4 : 1.0,
-        duration: const Duration(milliseconds: 150),
-        curve: Curves.easeOut,
+        duration: FluffyDurations.fast,
+        curve: FluffyCurves.decelerated,
         child: Semantics(
           button: true,
           label: L10n.of(context).voiceMessage,

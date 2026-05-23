@@ -1,3 +1,4 @@
+import 'package:fluffychat/config/design_tokens.dart';
 import 'package:fluffychat/pages/chat_list/chat_list.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -6,7 +7,7 @@ import 'package:flutter/services.dart';
 ///
 /// Selected pill: full stadium (radius 28) on `colorScheme.primary`.
 /// Unselected pill: squircle (radius 12) on `surfaceContainerHigh`.
-/// Transition: 280 ms with [Curves.easeInOutCubicEmphasized].
+/// Transition: [FluffyDurations.medium] with [FluffyCurves.emphasized].
 class ChatListFilterPills extends StatelessWidget {
   static const double height = 52.0;
 
@@ -86,8 +87,8 @@ class _FilterPill extends StatelessWidget {
     required this.onTap,
   });
 
-  static const Duration _duration = Duration(milliseconds: 280);
-  static const Curve _curve = Curves.easeInOutCubicEmphasized;
+  static const Duration _duration = FluffyDurations.medium;
+  static const Curve _curve = FluffyCurves.emphasized;
 
   @override
   Widget build(BuildContext context) {

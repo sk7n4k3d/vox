@@ -1,5 +1,7 @@
 import 'dart:ui';
 
+import 'package:fluffychat/config/cyberpunk_theme_extension.dart';
+import 'package:fluffychat/config/design_tokens.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:matrix/matrix.dart';
@@ -105,7 +107,7 @@ class _MessageQuickReactPickerState extends State<MessageQuickReactPicker>
     super.initState();
     _controller = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 220),
+      duration: FluffyDurations.normal,
     );
     _scale = Tween<double>(begin: 0.7, end: 1.0).animate(
       CurvedAnimation(parent: _controller, curve: Curves.elasticOut),
@@ -141,6 +143,8 @@ class _MessageQuickReactPickerState extends State<MessageQuickReactPicker>
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final cyber = theme.extension<CyberpunkTheme>();
+    final blur = cyber?.blurSigmaSheet ?? 24;
 
     return AnimatedBuilder(
       animation: _controller,
@@ -157,7 +161,7 @@ class _MessageQuickReactPickerState extends State<MessageQuickReactPicker>
       child: ClipRRect(
         borderRadius: BorderRadius.circular(28),
         child: BackdropFilter(
-          filter: ImageFilter.blur(sigmaX: 24, sigmaY: 24),
+          filter: ImageFilter.blur(sigmaX: blur, sigmaY: blur),
           child: Container(
             decoration: BoxDecoration(
               color: theme.colorScheme.surfaceContainerHighest.withValues(

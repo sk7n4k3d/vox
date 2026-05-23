@@ -1,6 +1,7 @@
 import 'dart:ui' as ui;
 
 import 'package:fluffychat/config/cyberpunk_theme_extension.dart';
+import 'package:fluffychat/config/design_tokens.dart';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 
@@ -26,9 +27,9 @@ class ChatDateSeparator extends StatelessWidget {
       padding: const EdgeInsets.symmetric(vertical: 12.0),
       child: Center(
         child: TweenAnimationBuilder<double>(
-          duration: const Duration(milliseconds: 240),
+          duration: FluffyDurations.medium,
           curve:
-              cyber?.emphasizedDeceleratedCurve ?? Curves.easeOutCubic,
+              cyber?.emphasizedDeceleratedCurve ?? FluffyCurves.emphasized,
           tween: Tween(begin: 0.0, end: 1.0),
           builder: (context, t, child) {
             return Opacity(
@@ -39,7 +40,10 @@ class ChatDateSeparator extends StatelessWidget {
           child: ClipRRect(
             borderRadius: BorderRadius.circular(20),
             child: BackdropFilter(
-              filter: ui.ImageFilter.blur(sigmaX: 12, sigmaY: 12),
+              filter: ui.ImageFilter.blur(
+                sigmaX: (cyber?.blurSigmaSheet ?? 24) * 0.5,
+                sigmaY: (cyber?.blurSigmaSheet ?? 24) * 0.5,
+              ),
               child: Container(
                 padding: const EdgeInsets.symmetric(
                   horizontal: 16,

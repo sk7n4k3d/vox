@@ -1,5 +1,6 @@
 import 'dart:ui';
 
+import 'package:fluffychat/config/cyberpunk_theme_extension.dart';
 import 'package:fluffychat/l10n/l10n.dart';
 import 'package:fluffychat/widgets/matrix.dart';
 import 'package:flutter/material.dart';
@@ -55,6 +56,8 @@ class LiquidGlassAppBar extends StatelessWidget
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
+    final cyber =
+        theme.extension<CyberpunkTheme>() ?? CyberpunkTheme.dark();
     final mediaQuery = MediaQuery.of(context);
     final topPadding = mediaQuery.padding.top;
 
@@ -65,7 +68,10 @@ class LiquidGlassAppBar extends StatelessWidget
         height: totalHeight,
         child: ClipRect(
           child: BackdropFilter(
-            filter: ImageFilter.blur(sigmaX: 20, sigmaY: 20),
+            filter: ImageFilter.blur(
+              sigmaX: cyber.blurSigmaAppBar,
+              sigmaY: cyber.blurSigmaAppBar,
+            ),
             child: Container(
               decoration: BoxDecoration(
                 color: colorScheme.surface.withValues(alpha: 0.65),

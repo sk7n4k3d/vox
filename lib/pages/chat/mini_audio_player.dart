@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:async/async.dart';
+import 'package:fluffychat/config/design_tokens.dart';
 import 'package:fluffychat/l10n/l10n.dart';
 import 'package:fluffychat/pages/chat/chat.dart';
 import 'package:fluffychat/utils/audio_playback_controller.dart';
@@ -32,8 +33,8 @@ class MiniAudioPlayer extends StatelessWidget {
         final visible = eventId != null && !controller.sourceVisible;
 
         return AnimatedSize(
-          duration: const Duration(milliseconds: 250),
-          curve: Curves.easeOutCubic,
+          duration: FluffyDurations.medium,
+          curve: FluffyCurves.decelerated,
           alignment: Alignment.topCenter,
           child: !visible
               ? const SizedBox(width: double.infinity, height: 0)
@@ -45,7 +46,7 @@ class MiniAudioPlayer extends StatelessWidget {
                     child: SizedBox(
                       height: 64,
                       child: AnimatedSwitcher(
-                        duration: const Duration(milliseconds: 200),
+                        duration: FluffyDurations.normal,
                         transitionBuilder: (child, animation) =>
                             FadeTransition(opacity: animation, child: child),
                         child: _MiniAudioPlayerContent(

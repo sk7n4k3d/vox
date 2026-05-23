@@ -13,6 +13,9 @@ import 'package:matrix/matrix.dart';
 /// collapsed under a "+N" overflow chip.
 const int _kMaxVisibleReactions = 3;
 
+/// Backdrop blur sigma for reaction pills (matches [CyberpunkTheme.blurSigmaChip]).
+const double _kBlurChip = 8;
+
 class MessageReactions extends StatelessWidget {
   final Event event;
   final Timeline timeline;
@@ -297,7 +300,7 @@ class _ReactionState extends State<_Reaction>
           child: ClipRRect(
             borderRadius: BorderRadius.circular(16),
             child: BackdropFilter(
-              filter: ImageFilter.blur(sigmaX: 8, sigmaY: 8),
+              filter: ImageFilter.blur(sigmaX: _kBlurChip, sigmaY: _kBlurChip),
               child: Container(
                 decoration: BoxDecoration(
                   color: bgColor,
@@ -340,7 +343,7 @@ class _OverflowChip extends StatelessWidget {
         child: ClipRRect(
           borderRadius: BorderRadius.circular(16),
           child: BackdropFilter(
-            filter: ImageFilter.blur(sigmaX: 8, sigmaY: 8),
+            filter: ImageFilter.blur(sigmaX: _kBlurChip, sigmaY: _kBlurChip),
             child: Container(
               decoration: BoxDecoration(
                 color: theme.colorScheme.surfaceContainerHighest.withValues(

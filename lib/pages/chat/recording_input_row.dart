@@ -1,3 +1,4 @@
+import 'package:fluffychat/config/design_tokens.dart';
 import 'package:fluffychat/config/themes.dart';
 import 'package:fluffychat/l10n/l10n.dart';
 import 'package:fluffychat/pages/chat/chat_input_row.dart';
@@ -117,7 +118,7 @@ class RecordingInputRow extends StatelessWidget {
     final opacity = state.isCancelling ? 0.4 : 1.0;
     return AnimatedOpacity(
       opacity: opacity,
-      duration: const Duration(milliseconds: 150),
+      duration: FluffyDurations.fast,
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.center,
         children: [

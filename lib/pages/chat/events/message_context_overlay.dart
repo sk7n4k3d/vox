@@ -3,6 +3,8 @@ import 'dart:ui';
 
 import 'package:emoji_picker_flutter/emoji_picker_flutter.dart';
 import 'package:fluffychat/config/app_config.dart';
+import 'package:fluffychat/config/cyberpunk_theme_extension.dart';
+import 'package:fluffychat/config/design_tokens.dart';
 import 'package:fluffychat/l10n/l10n.dart';
 import 'package:fluffychat/pages/chat/chat.dart';
 import 'package:flutter/material.dart';
@@ -11,10 +13,13 @@ import 'package:matrix/matrix.dart';
 
 /// iMessage-style context menu overlay for a single message.
 ///
-/// On long-press the chat behind is blurred (sigma 24), the pressed bubble is
-/// "lifted off" (translated up + scaled + drop shadow), a quick-react row
-/// floats above the bubble and an actions card slides up below. Tap-outside,
-/// swipe-down or tapping any action dismisses the overlay.
+/// On long-press the chat behind is blurred, the pressed bubble is "lifted
+/// off" (translated up + scaled + drop shadow), a quick-react row floats above
+/// the bubble and an actions card slides up below. Tap-outside, swipe-down or
+/// tapping any action dismisses the overlay.
+///
+/// Blur sigma défaut = [CyberpunkTheme.blurSigmaSheet] (24).
+const double _kBlurSheet = 24;
 class MessageContextOverlay extends StatefulWidget {
   final Event event;
   final ChatController controller;
@@ -103,24 +108,24 @@ class _MessageContextOverlayState extends State<MessageContextOverlay>
 
     _entryController = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 280),
+      duration: FluffyDurations.medium,
       reverseDuration: const Duration(milliseconds: 260),
     );
     _reactionsController = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 220),
-      reverseDuration: const Duration(milliseconds: 200),
+      duration: FluffyDurations.normal,
+      reverseDuration: FluffyDurations.normal,
     );
     _actionsController = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 200),
-      reverseDuration: const Duration(milliseconds: 200),
+      duration: FluffyDurations.normal,
+      reverseDuration: FluffyDurations.normal,
     );
 
     _bubbleProgress = CurvedAnimation(
       parent: _entryController,
-      curve: Curves.easeOutCubic,
-      reverseCurve: Curves.easeInCubic,
+      curve: FluffyCurves.decelerated,
+      reverseCurve: FluffyCurves.accelerated,
     );
     _backdropOpacity = CurvedAnimation(
       parent: _entryController,
@@ -404,7 +409,7 @@ class _MessageContextOverlayState extends State<MessageContextOverlay>
                   child: Opacity(
                     opacity: _backdropOpacity.value,
                     child: BackdropFilter(
-                      filter: ImageFilter.blur(sigmaX: 24, sigmaY: 24),
+                      filter: ImageFilter.blur(sigmaX: _kBlurSheet, sigmaY: _kBlurSheet),
                       child: Container(
                         color: Colors.black.withValues(alpha: 0.18),
                       ),
@@ -619,7 +624,7 @@ class _QuickReactionsBar extends StatelessWidget {
     return ClipRRect(
       borderRadius: BorderRadius.circular(28),
       child: BackdropFilter(
-        filter: ImageFilter.blur(sigmaX: 24, sigmaY: 24),
+        filter: ImageFilter.blur(sigmaX: _kBlurSheet, sigmaY: _kBlurSheet),
         child: Container(
           decoration: BoxDecoration(
             color: theme.colorScheme.surfaceContainerHighest
@@ -703,7 +708,7 @@ class _ActionsCard extends StatelessWidget {
     return ClipRRect(
       borderRadius: BorderRadius.circular(20),
       child: BackdropFilter(
-        filter: ImageFilter.blur(sigmaX: 24, sigmaY: 24),
+        filter: ImageFilter.blur(sigmaX: _kBlurSheet, sigmaY: _kBlurSheet),
         child: Container(
           decoration: BoxDecoration(
             color: theme.colorScheme.surfaceContainerHighest
