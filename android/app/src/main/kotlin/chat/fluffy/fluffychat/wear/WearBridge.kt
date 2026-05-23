@@ -12,6 +12,7 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.tasks.await
 import java.io.ByteArrayOutputStream
+import java.io.File
 import java.io.InputStream
 import java.nio.charset.StandardCharsets
 
@@ -141,18 +142,105 @@ object WearBridge {
                 val fdResponse = Wearable.getDataClient(context).getFdForAsset(asset).await()
                 val bytes = fdResponse.inputStream.use { it.readAllBytesCompat() }
                 Log.d(TAG, "voice bytes received: ${bytes.size} uuid=$uuid")
-                voiceReceivedCallback?.invoke(
-                    VoiceMessage(
-                        uuid = uuid,
-                        roomId = roomId,
-                        durationMs = durationMs,
-                        mimeType = mimeType,
-                        bytes = bytes
-                    )
+                val msg = VoiceMessage(
+                    uuid = uuid,
+                    roomId = roomId,
+                    durationMs = durationMs,
+                    mimeType = mimeType,
+                    bytes = bytes
                 )
+                // Sprint 2 V3.2 bug fix — quand Flutter n'est pas attaché (app
+                // killée/background), persister le vocal sur disk pour drain
+                // dès que Flutter wake. Sans ça les vocaux watch sont silently
+                // dropped et arrivent jamais à Matrix.
+                val cb = voiceReceivedCallback
+                if (cb != null) {
+                    cb(msg)
+                } else {
+                    Log.w(TAG, "voiceReceivedCallback null, persisting voice $uuid for later drain")
+                    persistPendingVoice(context, msg)
+                }
             } catch (t: Throwable) {
                 Log.w(TAG, "handleIncomingVoice failed uuid=$uuid", t)
             }
+        }
+    }
+
+    /**
+     * Drain les vocaux pending sur disk vers le callback Flutter, par ordre
+     * d'arrivée (filename = `{ts}_{uuid}.bin`). Appelé par WearBridgePlugin
+     * dès que Flutter attache son callback.
+     */
+    fun drainPendingVoices(context: Context) {
+        scope.launch {
+            try {
+                val dir = pendingVoicesDir(context)
+                if (!dir.exists()) return@launch
+                val files = dir.listFiles { f -> f.name.endsWith(".bin") }
+                    ?.sortedBy { it.name } ?: return@launch
+                Log.d(TAG, "drainPendingVoices: ${files.size} pending")
+                for (f in files) {
+                    val msg = readPendingVoice(f) ?: continue
+                    voiceReceivedCallback?.invoke(msg) ?: break
+                    f.delete()
+                }
+            } catch (t: Throwable) {
+                Log.w(TAG, "drainPendingVoices failed", t)
+            }
+        }
+    }
+
+    private fun pendingVoicesDir(context: Context): File {
+        val d = File(context.filesDir, "wear_voice_pending")
+        if (!d.exists()) d.mkdirs()
+        return d
+    }
+
+    /**
+     * Disk format compact: 4-byte LE int (header length) + header JSON UTF-8
+     * (uuid/roomId/durationMs/mimeType) + raw audio bytes. Filename starts
+     * with `System.currentTimeMillis()` so the sort order = FIFO d'arrivée.
+     */
+    private fun persistPendingVoice(context: Context, msg: VoiceMessage) {
+        try {
+            val header = """{"uuid":"${msg.uuid}","roomId":"${msg.roomId}",""" +
+                """"durationMs":${msg.durationMs},"mimeType":"${msg.mimeType}"}"""
+            val headerBytes = header.toByteArray(StandardCharsets.UTF_8)
+            val ts = System.currentTimeMillis()
+            val file = File(pendingVoicesDir(context), "${ts}_${msg.uuid}.bin")
+            file.outputStream().use { out ->
+                val lenBuf = java.nio.ByteBuffer.allocate(4)
+                    .order(java.nio.ByteOrder.LITTLE_ENDIAN)
+                    .putInt(headerBytes.size)
+                    .array()
+                out.write(lenBuf)
+                out.write(headerBytes)
+                out.write(msg.bytes)
+            }
+            Log.d(TAG, "persisted voice ${msg.uuid} to ${file.absolutePath}")
+        } catch (t: Throwable) {
+            Log.w(TAG, "persistPendingVoice failed for ${msg.uuid}", t)
+        }
+    }
+
+    private fun readPendingVoice(file: File): VoiceMessage? {
+        return try {
+            val raw = file.readBytes()
+            if (raw.size < 4) return null
+            val headerLen = java.nio.ByteBuffer.wrap(raw, 0, 4)
+                .order(java.nio.ByteOrder.LITTLE_ENDIAN).int
+            if (headerLen <= 0 || headerLen > raw.size - 4) return null
+            val header = String(raw, 4, headerLen, StandardCharsets.UTF_8)
+            val audioBytes = raw.copyOfRange(4 + headerLen, raw.size)
+            // Parse JSON manually (no Gson dep): fields are fixed, simple regex.
+            val uuid = Regex(""""uuid":"([^"]+)"""").find(header)?.groupValues?.get(1) ?: return null
+            val roomId = Regex(""""roomId":"([^"]+)"""").find(header)?.groupValues?.get(1) ?: return null
+            val durationMs = Regex(""""durationMs":(\d+)""").find(header)?.groupValues?.get(1)?.toIntOrNull() ?: 0
+            val mimeType = Regex(""""mimeType":"([^"]+)"""").find(header)?.groupValues?.get(1) ?: "audio/ogg"
+            VoiceMessage(uuid, roomId, durationMs, mimeType, audioBytes)
+        } catch (t: Throwable) {
+            Log.w(TAG, "readPendingVoice failed for ${file.name}", t)
+            null
         }
     }
 

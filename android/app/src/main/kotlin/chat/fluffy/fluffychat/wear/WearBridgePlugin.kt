@@ -42,6 +42,10 @@ class WearBridgePlugin private constructor(
                 )
             }
         }
+        // Sprint 2 V3.2 — drain les vocaux watch persistés pendant que
+        // Flutter était down. Préserve l'ordre d'arrivée (FIFO par filename
+        // timestamp).
+        WearBridge.drainPendingVoices(context)
         WearBridge.messagesRequestedCallback = { roomId ->
             Handler(Looper.getMainLooper()).post {
                 channel.invokeMethod("onMessagesRequested", mapOf("roomId" to roomId))
