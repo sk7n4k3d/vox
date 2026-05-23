@@ -1048,25 +1048,33 @@ class _AnimateIn extends StatefulWidget {
 }
 
 class __AnimateInState extends State<_AnimateIn> {
+  // Sprint 2 V3 — slide-up + fade animation, spring physics-like via
+  // emphasized curve. 16dp depart en bas, monte en se révélant. Sensation
+  // beaucoup plus premium que le simple fade.
   bool _animationFinished = false;
   @override
   Widget build(BuildContext context) {
     if (!widget.animateIn) return widget.child;
     if (!_animationFinished) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
-        setState(() {
-          _animationFinished = true;
-        });
+        if (mounted) {
+          setState(() => _animationFinished = true);
+        }
       });
     }
-    return AnimatedOpacity(
-      duration: FluffyThemes.animationDuration,
-      curve: FluffyThemes.animationCurve,
-      opacity: _animationFinished ? 1 : 0,
-      child: AnimatedSize(
-        duration: FluffyThemes.animationDuration,
-        curve: FluffyThemes.animationCurve,
-        child: _animationFinished ? widget.child : const SizedBox.shrink(),
+    return AnimatedSlide(
+      duration: FluffyDurations.medium,
+      curve: FluffyCurves.emphasized,
+      offset: _animationFinished ? Offset.zero : const Offset(0, 0.25),
+      child: AnimatedOpacity(
+        duration: FluffyDurations.medium,
+        curve: FluffyCurves.decelerated,
+        opacity: _animationFinished ? 1 : 0,
+        child: AnimatedSize(
+          duration: FluffyDurations.medium,
+          curve: FluffyCurves.emphasized,
+          child: _animationFinished ? widget.child : const SizedBox.shrink(),
+        ),
       ),
     );
   }

@@ -226,15 +226,21 @@ class ChatListViewBody extends StatelessWidget {
                     }
                     final room = entry.room!;
                     final space = spaceDelegateCandidates[room.id];
-                    return ChatListItem(
-                      room,
-                      space: space,
-                      key: Key('chat_list_item_${room.id}'),
-                      filter: filter,
-                      onTap: () => controller.onChatTap(room),
-                      onLongPress: (context) =>
-                          controller.chatContextAction(room, context, space),
-                      activeChat: controller.activeChat == room.id,
+                    return _StaggeredFadeIn(
+                      // Stagger only the visible top of the list; beyond
+                      // 12 items we play the entry at the same delay (avoid
+                      // multi-second cascade on big lists).
+                      delayMs: (i.clamp(0, 12)) * 35,
+                      child: ChatListItem(
+                        room,
+                        space: space,
+                        key: Key('chat_list_item_${room.id}'),
+                        filter: filter,
+                        onTap: () => controller.onChatTap(room),
+                        onLongPress: (context) =>
+                            controller.chatContextAction(room, context, space),
+                        activeChat: controller.activeChat == room.id,
+                      ),
                     );
                   },
                 ),
@@ -442,6 +448,63 @@ class _ChatListSectionHeader extends StatelessWidget {
           ),
         ],
       ),
+    );
+  }
+}
+
+/// Sprint 2 V3 — slide-up + fade staggered item, played once on first frame
+/// after a per-item delay. Used by the chatlist to give an immediate
+/// "premium app launch" feel. Subsequent rebuilds (scroll, sync) don't
+/// replay the animation thanks to the local _shown flag.
+class _StaggeredFadeIn extends StatefulWidget {
+  const _StaggeredFadeIn({
+    required this.child,
+    required this.delayMs,
+  });
+
+  final Widget child;
+  final int delayMs;
+
+  @override
+  State<_StaggeredFadeIn> createState() => _StaggeredFadeInState();
+}
+
+class _StaggeredFadeInState extends State<_StaggeredFadeIn>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _ctrl = AnimationController(
+    vsync: this,
+    duration: FluffyDurations.medium,
+  );
+
+  @override
+  void initState() {
+    super.initState();
+    Future.delayed(Duration(milliseconds: widget.delayMs), () {
+      if (mounted) _ctrl.forward();
+    });
+  }
+
+  @override
+  void dispose() {
+    _ctrl.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedBuilder(
+      animation: _ctrl,
+      builder: (context, child) {
+        final t = Curves.easeOutCubic.transform(_ctrl.value);
+        return Opacity(
+          opacity: t,
+          child: Transform.translate(
+            offset: Offset(0, (1 - t) * 12),
+            child: child,
+          ),
+        );
+      },
+      child: widget.child,
     );
   }
 }
