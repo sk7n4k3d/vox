@@ -149,11 +149,15 @@ object WearBridge {
             try {
                 // wear-002 — GetFdForAssetResponse détient un ParcelFileDescriptor
                 // interne ; fermer seulement l'inputStream ne le libère PAS. Le
-                // response est Closeable : `use {}` ferme stream + PFD sur toutes
-                // les sorties (sinon fuite de fd côté phone → EMFILE après N pertes
-                // réseau).
-                val bytes = Wearable.getDataClient(context).getFdForAsset(asset).await()
-                    .use { fdResponse -> fdResponse.inputStream.use { it.readAllBytesCompat() } }
+                // response implémente Releasable : release() en finally libère le
+                // PFD sur toutes les sorties (sinon fuite de fd côté phone → EMFILE
+                // après N pertes réseau).
+                val fdResponse = Wearable.getDataClient(context).getFdForAsset(asset).await()
+                val bytes = try {
+                    fdResponse.inputStream.use { it.readAllBytesCompat() }
+                } finally {
+                    fdResponse.release()
+                }
                 Log.d(TAG, "voice bytes received: ${bytes.size} uuid=${uuid.redact()}")
                 val msg = VoiceMessage(
                     uuid = uuid,
