@@ -222,7 +222,7 @@ class _CallRingtoneTileState extends State<_CallRingtoneTile> {
                 title: Text(entry.value),
                 value: entry.key,
                 groupValue: _current,
-                activeThumbColor: CyberColors.of(sheetContext).cyan,
+                activeColor: CyberColors.of(sheetContext).cyan,
                 onChanged: (value) => Navigator.of(sheetContext).pop(value),
               ),
             const SizedBox(height: FluffySpacing.sm),
