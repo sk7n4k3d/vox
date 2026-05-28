@@ -72,6 +72,13 @@ class RoomsRepository(private val context: Context) {
 
     private fun decode(raw: ByteArray?): RoomsSnapshot? {
         if (raw == null || raw.isEmpty()) return null
+        // wear-006 — borne la taille AVANT String()/decodeFromString : un DataItem
+        // corrompu ou malformé (bug phone, corruption transit) avec un payload
+        // géant ferait un OOM. 512 KB couvre largement une liste de rooms.
+        if (raw.size > MAX_PAYLOAD_BYTES) {
+            Log.w(TAG, "rooms DataItem too large: ${raw.size} bytes, dropping")
+            return null
+        }
         return try {
             json.decodeFromString<RoomsSnapshot>(String(raw, StandardCharsets.UTF_8))
         } catch (t: Throwable) {
@@ -81,6 +88,9 @@ class RoomsRepository(private val context: Context) {
     }
 
     companion object {
+        /** Garde-fou OOM sur les payloads DataItem entrants (cf. decode). */
+        private const val MAX_PAYLOAD_BYTES = 512 * 1024
+
         /**
          * Signal global émis par [WearListenerService] quand un ping MessageClient
          * `/wear/rooms/ping` arrive du phone. Force tous les repos actifs à relire

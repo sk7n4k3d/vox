@@ -36,6 +36,14 @@ object WearBridge {
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
+    /**
+     * log-sensitive-001 — tronque un identifiant sensible (roomId, uuid) avant
+     * logging : seuls les 4 premiers caractères restent. Évite de leaker la
+     * topologie des rooms Matrix dans logcat.
+     */
+    private fun String.redact(n: Int = 4): String =
+        if (length <= n) this else substring(0, n) + "****"
+
     /** Callback enregistré par le plugin Flutter pour relayer un ping watch→Dart. */
     @Volatile
     var refreshRequestedCallback: (() -> Unit)? = null
@@ -101,7 +109,7 @@ object WearBridge {
     }
 
     fun notifyMessagesRequested(context: Context, roomId: String) {
-        Log.d(TAG, "watch requested messages for $roomId")
+        Log.d(TAG, "watch requested messages for ${roomId.redact()}")
         messagesRequestedCallback?.invoke(roomId)
     }
 
@@ -118,9 +126,9 @@ object WearBridge {
                     dataMap.putLong(UPDATED_KEY, System.currentTimeMillis())
                 }.asPutDataRequest().setUrgent()
                 Wearable.getDataClient(context).putDataItem(req).await()
-                Log.d(TAG, "pushed ${bytes.size} bytes messages for $roomId")
+                Log.d(TAG, "pushed ${bytes.size} bytes messages for ${roomId.redact()}")
             } catch (t: Throwable) {
-                Log.w(TAG, "pushMessagesJson failed for $roomId", t)
+                Log.w(TAG, "pushMessagesJson failed for ${roomId.redact()}", t)
             }
         }
     }
@@ -139,9 +147,14 @@ object WearBridge {
     ) {
         scope.launch {
             try {
-                val fdResponse = Wearable.getDataClient(context).getFdForAsset(asset).await()
-                val bytes = fdResponse.inputStream.use { it.readAllBytesCompat() }
-                Log.d(TAG, "voice bytes received: ${bytes.size} uuid=$uuid")
+                // wear-002 — GetFdForAssetResponse détient un ParcelFileDescriptor
+                // interne ; fermer seulement l'inputStream ne le libère PAS. Le
+                // response est Closeable : `use {}` ferme stream + PFD sur toutes
+                // les sorties (sinon fuite de fd côté phone → EMFILE après N pertes
+                // réseau).
+                val bytes = Wearable.getDataClient(context).getFdForAsset(asset).await()
+                    .use { fdResponse -> fdResponse.inputStream.use { it.readAllBytesCompat() } }
+                Log.d(TAG, "voice bytes received: ${bytes.size} uuid=${uuid.redact()}")
                 val msg = VoiceMessage(
                     uuid = uuid,
                     roomId = roomId,
@@ -157,11 +170,11 @@ object WearBridge {
                 if (cb != null) {
                     cb(msg)
                 } else {
-                    Log.w(TAG, "voiceReceivedCallback null, persisting voice $uuid for later drain")
+                    Log.w(TAG, "voiceReceivedCallback null, persisting voice ${uuid.redact()} for later drain")
                     persistPendingVoice(context, msg)
                 }
             } catch (t: Throwable) {
-                Log.w(TAG, "handleIncomingVoice failed uuid=$uuid", t)
+                Log.w(TAG, "handleIncomingVoice failed uuid=${uuid.redact()}", t)
             }
         }
     }
@@ -217,9 +230,9 @@ object WearBridge {
                 out.write(headerBytes)
                 out.write(msg.bytes)
             }
-            Log.d(TAG, "persisted voice ${msg.uuid} to ${file.absolutePath}")
+            Log.d(TAG, "persisted voice ${msg.uuid.redact()} to ${file.absolutePath}")
         } catch (t: Throwable) {
-            Log.w(TAG, "persistPendingVoice failed for ${msg.uuid}", t)
+            Log.w(TAG, "persistPendingVoice failed for ${msg.uuid.redact()}", t)
         }
     }
 
@@ -263,7 +276,7 @@ object WearBridge {
                 for (node in nodes) {
                     try {
                         Wearable.getMessageClient(context).sendMessage(node.id, path, ByteArray(0)).await()
-                        Log.d(TAG, "voice ack message sent to ${node.displayName} uuid=$uuid")
+                        Log.d(TAG, "voice ack message sent to ${node.displayName} uuid=${uuid.redact()}")
                     } catch (t: Throwable) {
                         Log.w(TAG, "voice ack message failed for ${node.displayName}", t)
                     }
@@ -280,9 +293,9 @@ object WearBridge {
                     dataMap.putLong("ackedAt", System.currentTimeMillis())
                 }.asPutDataRequest().setUrgent()
                 Wearable.getDataClient(context).putDataItem(req).await()
-                Log.d(TAG, "voice ack DataItem written uuid=$uuid success=$success")
+                Log.d(TAG, "voice ack DataItem written uuid=${uuid.redact()} success=$success")
             } catch (t: Throwable) {
-                Log.w(TAG, "voice ack DataItem failed uuid=$uuid", t)
+                Log.w(TAG, "voice ack DataItem failed uuid=${uuid.redact()}", t)
             }
 
             // 3. Cleanup l'asset original côté DataLayer pour pas accumuler
@@ -290,7 +303,7 @@ object WearBridge {
                 val originalUri = android.net.Uri.parse("wear:/wear/voice/$uuid")
                 Wearable.getDataClient(context).deleteDataItems(originalUri).await()
             } catch (t: Throwable) {
-                Log.d(TAG, "asset cleanup failed (likely already gone) uuid=$uuid")
+                Log.d(TAG, "asset cleanup failed (likely already gone) uuid=${uuid.redact()}")
             }
         }
     }

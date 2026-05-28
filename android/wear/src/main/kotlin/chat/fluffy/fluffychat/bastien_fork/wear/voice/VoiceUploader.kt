@@ -65,6 +65,12 @@ object VoiceUploader {
     private const val PREFS_NAME = "wear_voice_pending"
     private const val PREFS_KEY_PENDING = "pending_uuids"
 
+    // rc-wear-voice-pending-concurrent-rw — persistPending/clearPending font un
+    // read-modify-write sur le StringSet `pending_uuids`. Deux uploads rapides
+    // (deux vocaux d'affilée) peuvent s'écraser mutuellement et perdre un uuid.
+    // Lock + commit() (synchrone) sérialisent jusqu'au disque.
+    private val pendingLock = Any()
+
     private val _state = MutableStateFlow<UploadState>(UploadState.Idle)
     val state: StateFlow<UploadState> = _state.asStateFlow()
 
@@ -145,8 +151,20 @@ object VoiceUploader {
                 continue
             }
             val file = File(filePath)
+            // path-traversal-001 — le filePath vient de SharedPreferences : si un
+            // attaquant (adb/root, ou exploit ayant un write sur nos prefs) y
+            // injecte un chemin arbitraire, on l'uploaderait vers Matrix. On exige
+            // que le canonicalPath soit un enfant de cacheDir/voice (canonical pour
+            // déjouer les symlinks).
+            val voiceDir = File(context.cacheDir, "voice").canonicalPath + File.separator
+            val canonical = runCatching { file.canonicalPath }.getOrNull()
+            if (canonical == null || !canonical.startsWith(voiceDir)) {
+                Log.w(TAG, "orphan ${uuid.redact()} filePath outside voice cache, dropping")
+                clearPending(context, uuid)
+                continue
+            }
             if (!file.exists()) {
-                Log.w(TAG, "orphan $uuid missing audio file, dropping")
+                Log.w(TAG, "orphan ${uuid.redact()} missing audio file, dropping")
                 clearPending(context, uuid)
                 continue
             }
@@ -162,28 +180,32 @@ object VoiceUploader {
         durationMs: Int
     ) {
         val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-        val current = prefs.getStringSet(PREFS_KEY_PENDING, emptySet())?.toMutableSet()
-            ?: mutableSetOf()
-        current.add(uuid)
-        prefs.edit()
-            .putStringSet(PREFS_KEY_PENDING, current)
-            .putString("$uuid.roomId", roomId)
-            .putString("$uuid.file", filePath)
-            .putInt("$uuid.duration", durationMs)
-            .apply()
+        synchronized(pendingLock) {
+            val current = prefs.getStringSet(PREFS_KEY_PENDING, emptySet())?.toMutableSet()
+                ?: mutableSetOf()
+            current.add(uuid)
+            prefs.edit()
+                .putStringSet(PREFS_KEY_PENDING, current)
+                .putString("$uuid.roomId", roomId)
+                .putString("$uuid.file", filePath)
+                .putInt("$uuid.duration", durationMs)
+                .commit()
+        }
     }
 
     private fun clearPending(context: Context, uuid: String) {
         val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-        val current = prefs.getStringSet(PREFS_KEY_PENDING, emptySet())?.toMutableSet()
-            ?: mutableSetOf()
-        current.remove(uuid)
-        prefs.edit()
-            .putStringSet(PREFS_KEY_PENDING, current)
-            .remove("$uuid.roomId")
-            .remove("$uuid.file")
-            .remove("$uuid.duration")
-            .apply()
+        synchronized(pendingLock) {
+            val current = prefs.getStringSet(PREFS_KEY_PENDING, emptySet())?.toMutableSet()
+                ?: mutableSetOf()
+            current.remove(uuid)
+            prefs.edit()
+                .putStringSet(PREFS_KEY_PENDING, current)
+                .remove("$uuid.roomId")
+                .remove("$uuid.file")
+                .remove("$uuid.duration")
+                .commit()
+        }
     }
 
     /**
@@ -193,10 +215,10 @@ object VoiceUploader {
     fun notifyAck(uuid: String, success: Boolean) {
         val deferred = pendingAcks.remove(uuid)
         if (deferred != null) {
-            Log.d(TAG, "ack delivered for uuid=$uuid success=$success")
+            Log.d(TAG, "ack delivered for uuid=${uuid.redact()} success=$success")
             deferred.complete(success)
         } else {
-            Log.d(TAG, "ack for uuid=$uuid arrived but no pending slot (already timed out or ignored)")
+            Log.d(TAG, "ack for uuid=${uuid.redact()} arrived but no pending slot (already timed out or ignored)")
         }
     }
 
@@ -207,23 +229,36 @@ object VoiceUploader {
         file: File,
         durationMs: Int
     ) {
-        val fd = ParcelFileDescriptor.open(file, ParcelFileDescriptor.MODE_READ_ONLY)
-        val asset = Asset.createFromFd(fd)
-        val req = PutDataMapRequest.create("$PATH_VOICE/$uuid").apply {
-            dataMap.putAsset(KEY_AUDIO, asset)
-            dataMap.putString(KEY_UUID, uuid)
-            dataMap.putString(KEY_ROOM_ID, roomId)
-            dataMap.putInt(KEY_DURATION_MS, durationMs)
-            dataMap.putLong(KEY_CREATED_AT, System.currentTimeMillis())
-            dataMap.putString(KEY_MIME_TYPE, "audio/ogg")
-        }.asPutDataRequest().setUrgent()
-        Wearable.getDataClient(context).putDataItem(req).await()
-        Log.d(TAG, "asset put for uuid=$uuid (${file.length()} bytes)")
+        // Asset.createFromFd() ne prend PAS possession du fd : c'est à nous de le
+        // fermer. `use {}` garantit close() sur toutes les sorties (succès,
+        // exception, annulation de coroutine) — sinon chaque upload fuit un fd et
+        // on finit en EMFILE ("too many open files") après quelques centaines.
+        ParcelFileDescriptor.open(file, ParcelFileDescriptor.MODE_READ_ONLY).use { fd ->
+            val asset = Asset.createFromFd(fd)
+            val req = PutDataMapRequest.create("$PATH_VOICE/$uuid").apply {
+                dataMap.putAsset(KEY_AUDIO, asset)
+                dataMap.putString(KEY_UUID, uuid)
+                dataMap.putString(KEY_ROOM_ID, roomId)
+                dataMap.putInt(KEY_DURATION_MS, durationMs)
+                dataMap.putLong(KEY_CREATED_AT, System.currentTimeMillis())
+                dataMap.putString(KEY_MIME_TYPE, "audio/ogg")
+            }.asPutDataRequest().setUrgent()
+            Wearable.getDataClient(context).putDataItem(req).await()
+            Log.d(TAG, "asset put for uuid=${uuid.redact()} (${file.length()} bytes)")
+        }
     }
 
     fun reset() {
         _state.value = UploadState.Idle
     }
+
+    /**
+     * log-sensitive-001 — tronque un identifiant sensible (uuid, roomId) avant
+     * logging : seuls les 4 premiers caractères sont conservés. Évite de leaker
+     * la topologie des rooms Matrix dans logcat.
+     */
+    private fun String.redact(n: Int = 4): String =
+        if (length <= n) this else substring(0, n) + "****"
 }
 
 sealed class UploadState {

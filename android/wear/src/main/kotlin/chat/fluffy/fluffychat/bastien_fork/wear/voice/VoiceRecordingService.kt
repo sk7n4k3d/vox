@@ -49,6 +49,13 @@ class VoiceRecordingService : Service() {
     private var timerJob: Job? = null
     private var currentRoomId: String? = null
 
+    // rc-wear-bootstrap-double-start-race — onStartCommand peut être ré-entré
+    // (double-tap UI). Le check recorder?.isRecording() n'est pas atomique : deux
+    // handleStart() concurrents créaient deux VoiceRecorder sur le même MIC. Ce
+    // flag, posé AVANT toute init, ferme la fenêtre.
+    @Volatile
+    private var isStarting: Boolean = false
+
     override fun onBind(intent: Intent?): IBinder? = null
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -63,15 +70,19 @@ class VoiceRecordingService : Service() {
         return START_NOT_STICKY
     }
 
+    @Synchronized
     private fun handleStart(roomId: String) {
-        if (recorder?.isRecording() == true) {
-            Log.w(TAG, "already recording, ignore start")
+        if (isStarting || recorder?.isRecording() == true) {
+            Log.w(TAG, "already recording/starting, ignore start")
             return
         }
+        isStarting = true
         ensureChannel()
         startForegroundWithNotif(roomId, 0)
 
-        // Wake lock pour éviter écran off / CPU sleep pendant record
+        // Wake lock pour éviter écran off / CPU sleep pendant record. On release
+        // d'abord un éventuel lock résiduel pour ne pas en fuiter un.
+        wakeLock?.let { if (it.isHeld) it.release() }
         wakeLock = (getSystemService(POWER_SERVICE) as PowerManager).newWakeLock(
             PowerManager.PARTIAL_WAKE_LOCK,
             "FluffyChatWear:VoiceRec"
@@ -90,6 +101,8 @@ class VoiceRecordingService : Service() {
             _recordingState.value = RecordingState.Error(t.message ?: "start failed")
             stopForegroundCompat()
             stopSelf()
+        } finally {
+            isStarting = false
         }
     }
 

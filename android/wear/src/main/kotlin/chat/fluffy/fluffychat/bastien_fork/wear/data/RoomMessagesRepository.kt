@@ -66,6 +66,9 @@ class RoomMessagesRepository(private val context: Context, private val roomId: S
 
     companion object {
         const val KEY_PAYLOAD = "payload"
+
+        /** Garde-fou OOM sur les payloads DataItem entrants (cf. decode). */
+        private const val MAX_PAYLOAD_BYTES = 512 * 1024
     }
 
     private suspend fun requestRefresh() {
@@ -81,14 +84,21 @@ class RoomMessagesRepository(private val context: Context, private val roomId: S
             Wearable.getMessageClient(context)
                 .sendMessage(node.id, "$REQUEST_PATH_PREFIX/$roomId/request", ByteArray(0))
                 .await()
-            Log.d(TAG, "refresh ping sent for $roomId")
+            Log.d(TAG, "refresh ping sent for ${roomId.redact()}")
         } catch (t: Throwable) {
-            Log.w(TAG, "requestRefresh failed for $roomId", t)
+            Log.w(TAG, "requestRefresh failed for ${roomId.redact()}", t)
         }
     }
 
     private fun decode(raw: ByteArray?): RoomMessagesSnapshot? {
         if (raw == null || raw.isEmpty()) return null
+        // wear-006 — borne la taille AVANT désérialisation pour éviter l'OOM sur
+        // un payload corrompu/malformé. 512 KB couvre largement une fenêtre de
+        // messages d'une room (le phone tronque déjà à ~90 KB, cf. wear_bridge.dart).
+        if (raw.size > MAX_PAYLOAD_BYTES) {
+            Log.w(TAG, "messages DataItem too large: ${raw.size} bytes, dropping")
+            return null
+        }
         return try {
             json.decodeFromString<RoomMessagesSnapshot>(String(raw, StandardCharsets.UTF_8))
         } catch (t: Throwable) {
@@ -96,4 +106,7 @@ class RoomMessagesRepository(private val context: Context, private val roomId: S
             null
         }
     }
+
+    private fun String.redact(n: Int = 4): String =
+        if (length <= n) this else substring(0, n) + "****"
 }
