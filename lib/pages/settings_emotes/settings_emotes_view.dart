@@ -1,6 +1,8 @@
+import 'package:fluffychat/config/design_tokens.dart';
 import 'package:fluffychat/l10n/l10n.dart';
 import 'package:fluffychat/utils/platform_infos.dart';
 import 'package:fluffychat/utils/url_launcher.dart';
+import 'package:fluffychat/widgets/cyber/cyber_widgets.dart';
 import 'package:fluffychat/widgets/layouts/max_width_body.dart';
 import 'package:fluffychat/widgets/mxc_image.dart';
 import 'package:fluffychat/widgets/mxc_image_viewer.dart';
@@ -22,13 +24,18 @@ class EmotesSettingsView extends StatelessWidget {
   Widget build(BuildContext context) {
     if (controller.widget.roomId != null && controller.room == null) {
       return Scaffold(
-        appBar: AppBar(title: Text(L10n.of(context).oopsSomethingWentWrong)),
+        appBar: AppBar(
+          backgroundColor: Colors.transparent,
+          elevation: 0,
+          title: Text(L10n.of(context).oopsSomethingWentWrong),
+        ),
         body: Center(
           child: Text(L10n.of(context).youAreNoLongerParticipatingInThisChat),
         ),
       );
     }
     final theme = Theme.of(context);
+    final cyber = CyberColors.of(context);
 
     final client = Matrix.of(context).client;
     final imageKeys = controller.pack!.images.keys.toList();
@@ -42,26 +49,42 @@ class EmotesSettingsView extends StatelessWidget {
 
     return Scaffold(
       appBar: AppBar(
+        backgroundColor: Colors.transparent,
+        elevation: 0,
         automaticallyImplyLeading: !controller.showSave,
         title: controller.showSave
             ? TextButton(
                 onPressed: controller.resetAction,
-                child: Text(L10n.of(context).cancel),
+                child: Text(
+                  L10n.of(context).cancel,
+                  style: FluffyTypography.title.copyWith(
+                    color: theme.colorScheme.onSurfaceVariant,
+                  ),
+                ),
               )
-            : Text(L10n.of(context).customEmojisAndStickers),
+            : Text(
+                L10n.of(context).customEmojisAndStickers,
+                style: FluffyTypography.headlineM.copyWith(
+                  color: theme.colorScheme.onSurface,
+                ),
+              ),
         actions: [
           if (controller.showSave)
-            ElevatedButton(
-              onPressed: () => controller.save(context),
-              style: ElevatedButton.styleFrom(
-                backgroundColor: theme.colorScheme.primary,
-                foregroundColor: theme.colorScheme.onPrimary,
+            Padding(
+              padding: const EdgeInsets.symmetric(
+                horizontal: FluffySpacing.md,
+                vertical: FluffySpacing.sm,
               ),
-              child: Text(L10n.of(context).saveChanges),
+              child: CyberPrimaryButton(
+                label: L10n.of(context).saveChanges,
+                icon: Icons.check_outlined,
+                onPressed: () => controller.save(context),
+              ),
             )
           else
             PopupMenuButton<PopupMenuEmojiActions>(
               useRootNavigator: true,
+              icon: Icon(Icons.more_vert_outlined, color: cyber.cyan),
               onSelected: (value) {
                 switch (value) {
                   case PopupMenuEmojiActions.export:
@@ -91,7 +114,7 @@ class EmotesSettingsView extends StatelessWidget {
             : PreferredSize(
                 preferredSize: const Size.fromHeight(48),
                 child: Padding(
-                  padding: const EdgeInsets.all(4.0),
+                  padding: const EdgeInsets.all(FluffySpacing.xs),
                   child: SizedBox(
                     height: 40,
                     child: ListView.builder(
@@ -104,10 +127,14 @@ class EmotesSettingsView extends StatelessWidget {
                           }
                           return Padding(
                             padding: const EdgeInsets.symmetric(
-                              horizontal: 4.0,
+                              horizontal: FluffySpacing.xs,
                             ),
                             child: FilterChip(
-                              label: const Icon(Icons.add_outlined, size: 20),
+                              label: Icon(
+                                Icons.add_outlined,
+                                size: 20,
+                                color: cyber.cyan,
+                              ),
                               onSelected: controller.showSave
                                   ? null
                                   : (_) => controller.createImagePack(),
@@ -129,9 +156,13 @@ class EmotesSettingsView extends StatelessWidget {
                             (key.isNotEmpty ? key : 'Default');
 
                         return Padding(
-                          padding: const EdgeInsets.symmetric(horizontal: 4.0),
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: FluffySpacing.xs,
+                          ),
                           child: FilterChip(
                             label: Text(packName),
+                            selectedColor: cyber.magenta.withValues(alpha: 0.18),
+                            checkmarkColor: cyber.magenta,
                             selected:
                                 controller.stateKey == key ||
                                 (controller.stateKey == null && key.isEmpty),
@@ -152,70 +183,102 @@ class EmotesSettingsView extends StatelessWidget {
           crossAxisAlignment: .stretch,
           children: <Widget>[
             if (controller.room != null) ...[
-              const SizedBox(height: 16),
+              const SizedBox(height: FluffySpacing.lg),
               Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 16.0),
-                child: TextField(
-                  maxLength: 256,
-                  controller: controller.packDisplayNameController,
-                  readOnly: controller.readonly,
-                  onSubmitted: (_) => controller.submitDisplaynameAction(),
-                  decoration: InputDecoration(
-                    counter: const SizedBox.shrink(),
-                    hintText: controller.stateKey,
-                    labelText: L10n.of(context).stickerPackName,
+                padding: const EdgeInsets.symmetric(
+                  horizontal: FluffySpacing.lg,
+                ),
+                child: CyberField(
+                  child: TextField(
+                    maxLength: 256,
+                    controller: controller.packDisplayNameController,
+                    readOnly: controller.readonly,
+                    onSubmitted: (_) => controller.submitDisplaynameAction(),
+                    decoration: InputDecoration(
+                      counter: const SizedBox.shrink(),
+                      border: InputBorder.none,
+                      hintText: controller.stateKey,
+                      labelText: L10n.of(context).stickerPackName,
+                    ),
                   ),
                 ),
               ),
-              const SizedBox(height: 8),
+              const SizedBox(height: FluffySpacing.sm),
               Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 16.0),
-                child: TextField(
-                  maxLength: 256,
-                  controller: controller.packAttributionController,
-                  readOnly: controller.readonly,
-                  keyboardType: TextInputType.url,
-                  onSubmitted: (_) => controller.submitAttributionAction(),
-                  decoration: InputDecoration(
-                    counter: const SizedBox.shrink(),
-                    labelText: L10n.of(context).attribution,
-                    suffixIcon: attributionUrl == null
-                        ? null
-                        : IconButton(
-                            icon: const Icon(Icons.link_outlined),
-                            onPressed: () => UrlLauncher(
-                              context,
-                              attributionUrl.toString(),
-                            ).launchUrl(),
-                          ),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: FluffySpacing.lg,
+                ),
+                child: CyberField(
+                  child: TextField(
+                    maxLength: 256,
+                    controller: controller.packAttributionController,
+                    readOnly: controller.readonly,
+                    keyboardType: TextInputType.url,
+                    onSubmitted: (_) => controller.submitAttributionAction(),
+                    decoration: InputDecoration(
+                      counter: const SizedBox.shrink(),
+                      border: InputBorder.none,
+                      labelText: L10n.of(context).attribution,
+                      suffixIcon: attributionUrl == null
+                          ? null
+                          : IconButton(
+                              icon: Icon(
+                                Icons.link_outlined,
+                                color: cyber.cyan,
+                              ),
+                              onPressed: () => UrlLauncher(
+                                context,
+                                attributionUrl.toString(),
+                              ).launchUrl(),
+                            ),
+                    ),
                   ),
                 ),
               ),
             ],
             if (!controller.readonly) ...[
               Padding(
-                padding: const EdgeInsets.all(16.0),
-                child: ElevatedButton.icon(
+                padding: const EdgeInsets.all(FluffySpacing.lg),
+                child: CyberPrimaryButton(
+                  label: L10n.of(context).createSticker,
+                  icon: Icons.upload_outlined,
                   onPressed: controller.createStickers,
-                  icon: const Icon(Icons.upload_outlined),
-                  label: Text(L10n.of(context).createSticker),
                 ),
               ),
               const Divider(),
             ],
             if (controller.room != null && imageKeys.isNotEmpty)
               SwitchListTile.adaptive(
-                title: Text(L10n.of(context).enableEmotesGlobally),
+                title: Text(
+                  L10n.of(context).enableEmotesGlobally,
+                  style: FluffyTypography.title.copyWith(
+                    color: theme.colorScheme.onSurface,
+                  ),
+                ),
+                activeThumbColor: cyber.cyan,
                 value: controller.isGloballyActive(client),
                 onChanged: controller.setIsGloballyActive,
               ),
             imageKeys.isEmpty
                 ? Center(
                     child: Padding(
-                      padding: const EdgeInsets.all(16),
-                      child: Text(
-                        L10n.of(context).noEmotesFound,
-                        style: const TextStyle(fontSize: 20),
+                      padding: const EdgeInsets.all(FluffySpacing.lg),
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(
+                            Icons.emoji_emotions_outlined,
+                            size: 48,
+                            color: cyber.cyan.withValues(alpha: 0.6),
+                          ),
+                          const SizedBox(height: FluffySpacing.md),
+                          Text(
+                            L10n.of(context).noEmotesFound,
+                            style: FluffyTypography.headlineM.copyWith(
+                              color: theme.colorScheme.onSurfaceVariant,
+                            ),
+                          ),
+                        ],
                       ),
                     ),
                   )
@@ -223,7 +286,11 @@ class EmotesSettingsView extends StatelessWidget {
                     shrinkWrap: true,
                     physics: const NeverScrollableScrollPhysics(),
                     separatorBuilder: (BuildContext context, int i) =>
-                        const SizedBox.shrink(),
+                        const SizedBox(height: FluffySpacing.sm),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: FluffySpacing.lg,
+                      vertical: FluffySpacing.sm,
+                    ),
                     itemCount: imageKeys.length,
                     itemBuilder: (BuildContext context, int i) {
                       final imageCode = imageKeys[i];
@@ -232,9 +299,15 @@ class EmotesSettingsView extends StatelessWidget {
                       textEditingController.text = imageCode;
                       final useShortCuts =
                           (PlatformInfos.isWeb || PlatformInfos.isDesktop);
-                      return ListTile(
-                        title: Row(
+                      return CyberGlass(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: FluffySpacing.md,
+                          vertical: FluffySpacing.xs,
+                        ),
+                        child: Row(
                           children: [
+                            _EmoteImage(image.url),
+                            const SizedBox(width: FluffySpacing.md),
                             Expanded(
                               child: Shortcuts(
                                 shortcuts: !useShortCuts
@@ -265,12 +338,16 @@ class EmotesSettingsView extends StatelessWidget {
                                     minLines: 1,
                                     maxLines: 1,
                                     maxLength: 128,
+                                    style: FluffyTypography.code.copyWith(
+                                      color: theme.colorScheme.onSurface,
+                                    ),
                                     decoration: InputDecoration(
                                       hintText: L10n.of(context).emoteShortcode,
                                       prefixText: ': ',
                                       suffixText: ':',
                                       counter: const SizedBox.shrink(),
                                       filled: false,
+                                      border: InputBorder.none,
                                       enabledBorder: const OutlineInputBorder(
                                         borderSide: BorderSide(
                                           color: Colors.transparent,
@@ -301,8 +378,11 @@ class EmotesSettingsView extends StatelessWidget {
                                               ImagePackUsage.sticker,
                                             ) ??
                                             true)
-                                          const Icon(Icons.check_outlined),
-                                        const SizedBox(width: 12),
+                                          Icon(
+                                            Icons.check_outlined,
+                                            color: cyber.cyan,
+                                          ),
+                                        const SizedBox(width: FluffySpacing.md),
                                         Text(L10n.of(context).useAsSticker),
                                       ],
                                     ),
@@ -316,26 +396,33 @@ class EmotesSettingsView extends StatelessWidget {
                                               ImagePackUsage.emoticon,
                                             ) ??
                                             true)
-                                          const Icon(Icons.check_outlined),
-                                        const SizedBox(width: 12),
+                                          Icon(
+                                            Icons.check_outlined,
+                                            color: cyber.cyan,
+                                          ),
+                                        const SizedBox(width: FluffySpacing.md),
                                         Text(L10n.of(context).useAsEmoji),
                                       ],
                                     ),
                                   ),
                                 ],
-                                icon: const Icon(Icons.edit_outlined),
+                                icon: Icon(
+                                  Icons.edit_outlined,
+                                  color: cyber.cyan,
+                                ),
                               ),
-                          ],
-                        ),
-                        leading: _EmoteImage(image.url),
-                        trailing: controller.readonly
-                            ? null
-                            : IconButton(
+                            if (!controller.readonly)
+                              IconButton(
                                 tooltip: L10n.of(context).delete,
                                 onPressed: () =>
                                     controller.removeImageAction(imageCode),
-                                icon: const Icon(Icons.delete_outlined),
+                                icon: Icon(
+                                  Icons.delete_outlined,
+                                  color: cyber.magenta,
+                                ),
                               ),
+                          ],
+                        ),
                       );
                     },
                   ),
@@ -356,7 +443,7 @@ class _EmoteImage extends StatelessWidget {
     const size = 44.0;
     final key = 'sticker_preview_$mxc';
     return InkWell(
-      borderRadius: BorderRadius.circular(4),
+      borderRadius: FluffyRadius.brSm,
       onTap: () =>
           showDialog(context: context, builder: (_) => MxcImageViewer(mxc)),
       child: MxcImage(

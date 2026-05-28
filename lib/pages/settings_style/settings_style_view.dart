@@ -1,6 +1,7 @@
 import 'dart:ui';
 
 import 'package:dynamic_color/dynamic_color.dart';
+import 'package:fluffychat/config/design_tokens.dart';
 import 'package:fluffychat/config/setting_keys.dart';
 import 'package:fluffychat/config/themes.dart';
 import 'package:fluffychat/l10n/l10n.dart';
@@ -8,6 +9,7 @@ import 'package:fluffychat/pages/chat/events/state_message.dart';
 import 'package:fluffychat/utils/account_config.dart';
 import 'package:fluffychat/utils/color_value.dart';
 import 'package:fluffychat/widgets/avatar.dart';
+import 'package:fluffychat/widgets/cyber/cyber_widgets.dart';
 import 'package:fluffychat/widgets/layouts/max_width_body.dart';
 import 'package:fluffychat/widgets/matrix.dart';
 import 'package:fluffychat/widgets/mxc_image.dart';
@@ -26,6 +28,7 @@ class SettingsStyleView extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final cyber = CyberColors.of(context);
 
     const colorPickerSize = 32.0;
     final client = Matrix.of(context).client;
@@ -33,6 +36,8 @@ class SettingsStyleView extends StatelessWidget {
       appBar: AppBar(
         automaticallyImplyLeading: !FluffyThemes.isColumnMode(context),
         centerTitle: FluffyThemes.isColumnMode(context),
+        backgroundColor: Colors.transparent,
+        elevation: 0,
         title: Text(L10n.of(context).changeTheme),
       ),
       backgroundColor: theme.colorScheme.surface,
@@ -41,7 +46,7 @@ class SettingsStyleView extends StatelessWidget {
           crossAxisAlignment: .stretch,
           children: [
             Padding(
-              padding: const EdgeInsets.all(12.0),
+              padding: const EdgeInsets.all(FluffySpacing.md),
               child: SegmentedButton<ThemeMode>(
                 selected: {controller.currentTheme},
                 onSelectionChanged: (selected) =>
@@ -65,15 +70,10 @@ class SettingsStyleView extends StatelessWidget {
                 ],
               ),
             ),
-            Divider(color: theme.dividerColor),
-            ListTile(
-              title: Text(
-                L10n.of(context).setColorTheme,
-                style: TextStyle(
-                  color: theme.colorScheme.secondary,
-                  fontWeight: FontWeight.bold,
-                ),
-              ),
+            Divider(color: cyber.glassBorder),
+            CyberSectionHeader(
+              L10n.of(context).setColorTheme,
+              accent: cyber.violet,
             ),
             DynamicColorBuilder(
               builder: (light, dark) {
@@ -95,7 +95,7 @@ class SettingsStyleView extends StatelessWidget {
                   itemBuilder: (context, i) {
                     final color = colors[i];
                     return Padding(
-                      padding: const EdgeInsets.all(12.0),
+                      padding: const EdgeInsets.all(FluffySpacing.md),
                       child: Tooltip(
                         message: color == null
                             ? L10n.of(context).systemTheme
@@ -132,15 +132,10 @@ class SettingsStyleView extends StatelessWidget {
                 );
               },
             ),
-            Divider(color: theme.dividerColor),
-            ListTile(
-              title: Text(
-                L10n.of(context).messagesStyle,
-                style: TextStyle(
-                  color: theme.colorScheme.secondary,
-                  fontWeight: FontWeight.bold,
-                ),
-              ),
+            Divider(color: cyber.glassBorder),
+            CyberSectionHeader(
+              L10n.of(context).messagesStyle,
+              accent: cyber.violet,
             ),
             StreamBuilder(
               stream: client.onSync.stream.where(
@@ -187,7 +182,7 @@ class SettingsStyleView extends StatelessWidget {
                           Column(
                             mainAxisSize: .min,
                             children: [
-                              const SizedBox(height: 16),
+                              const SizedBox(height: FluffySpacing.lg),
                               StateMessage(
                                 Event(
                                   eventId: 'style_dummy',
@@ -205,11 +200,11 @@ class SettingsStyleView extends StatelessWidget {
                               Padding(
                                 padding: EdgeInsets.only(
                                   left: 12 + 12 + Avatar.defaultSize,
-                                  right: 12,
+                                  right: FluffySpacing.md,
                                   top: accountConfig.wallpaperUrl == null
                                       ? 0
-                                      : 12,
-                                  bottom: 12,
+                                      : FluffySpacing.md,
+                                  bottom: FluffySpacing.md,
                                 ),
                                 child: DecoratedBox(
                                   decoration: BoxDecoration(
@@ -220,8 +215,8 @@ class SettingsStyleView extends StatelessWidget {
                                   ),
                                   child: Padding(
                                     padding: const EdgeInsets.symmetric(
-                                      horizontal: 16,
-                                      vertical: 8,
+                                      horizontal: FluffySpacing.lg,
+                                      vertical: FluffySpacing.sm,
                                     ),
                                     child: Text(
                                       'Lorem ipsum dolor sit amet, consetetur sadipscing elitr, sed diam nonumy eirmod tempor',
@@ -239,12 +234,12 @@ class SettingsStyleView extends StatelessWidget {
                                 alignment: Alignment.centerLeft,
                                 child: Padding(
                                   padding: EdgeInsets.only(
-                                    right: 12,
-                                    left: 12,
+                                    right: FluffySpacing.md,
+                                    left: FluffySpacing.md,
                                     top: accountConfig.wallpaperUrl == null
                                         ? 0
-                                        : 12,
-                                    bottom: 12,
+                                        : FluffySpacing.md,
+                                    bottom: FluffySpacing.md,
                                   ),
                                   child: Material(
                                     color:
@@ -254,8 +249,8 @@ class SettingsStyleView extends StatelessWidget {
                                     ),
                                     child: Padding(
                                       padding: const EdgeInsets.symmetric(
-                                        horizontal: 16,
-                                        vertical: 8,
+                                        horizontal: FluffySpacing.lg,
+                                        vertical: FluffySpacing.sm,
                                       ),
                                       child: Text(
                                         'Lorem ipsum dolor sit amet',
@@ -275,42 +270,64 @@ class SettingsStyleView extends StatelessWidget {
                         ],
                       ),
                     ),
-                    Divider(color: theme.dividerColor),
-                    ListTile(
-                      title: TextButton.icon(
-                        style: TextButton.styleFrom(
-                          backgroundColor: theme.colorScheme.secondaryContainer,
-                          foregroundColor:
-                              theme.colorScheme.onSecondaryContainer,
-                        ),
-                        onPressed: controller.setWallpaper,
-                        icon: const Icon(Icons.edit_outlined),
-                        label: Text(L10n.of(context).setWallpaper),
+                    Divider(color: cyber.glassBorder),
+                    Padding(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: FluffySpacing.lg,
+                        vertical: FluffySpacing.sm,
                       ),
-                      trailing: accountConfig.wallpaperUrl == null
-                          ? null
-                          : IconButton(
+                      child: Row(
+                        children: [
+                          Expanded(
+                            child: CyberPrimaryButton(
+                              label: L10n.of(context).setWallpaper,
+                              icon: Icons.edit_outlined,
+                              onPressed: controller.setWallpaper,
+                            ),
+                          ),
+                          if (accountConfig.wallpaperUrl != null) ...[
+                            const SizedBox(width: FluffySpacing.md),
+                            IconButton(
                               icon: const Icon(Icons.delete_outlined),
-                              color: theme.colorScheme.error,
+                              color: cyber.magenta,
                               onPressed: controller.deleteChatWallpaper,
                             ),
+                          ],
+                        ],
+                      ),
                     ),
                     if (accountConfig.wallpaperUrl != null) ...[
-                      ListTile(title: Text(L10n.of(context).opacity)),
+                      ListTile(
+                        title: Text(
+                          L10n.of(context).opacity,
+                          style: FluffyTypography.title.copyWith(
+                            color: theme.colorScheme.onSurface,
+                          ),
+                        ),
+                      ),
                       Slider.adaptive(
                         min: 0.1,
                         max: 1.0,
                         divisions: 9,
+                        activeColor: cyber.cyan,
                         semanticFormatterCallback: (d) => d.toString(),
                         value: controller.wallpaperOpacity,
                         onChanged: controller.updateWallpaperOpacity,
                         onChangeEnd: controller.saveWallpaperOpacity,
                       ),
-                      ListTile(title: Text(L10n.of(context).blur)),
+                      ListTile(
+                        title: Text(
+                          L10n.of(context).blur,
+                          style: FluffyTypography.title.copyWith(
+                            color: theme.colorScheme.onSurface,
+                          ),
+                        ),
+                      ),
                       Slider.adaptive(
                         min: 0.0,
                         max: 10.0,
                         divisions: 10,
+                        activeColor: cyber.cyan,
                         semanticFormatterCallback: (d) => d.toString(),
                         value: controller.wallpaperBlur,
                         onChanged: controller.updateWallpaperBlur,
@@ -322,26 +339,31 @@ class SettingsStyleView extends StatelessWidget {
               },
             ),
             ListTile(
-              title: Text(L10n.of(context).fontSize),
-              trailing: Text('× ${AppSettings.fontSizeFactor.value}'),
+              leading: Icon(Icons.format_size_outlined, color: cyber.cyan),
+              title: Text(
+                L10n.of(context).fontSize,
+                style: FluffyTypography.title.copyWith(
+                  color: theme.colorScheme.onSurface,
+                ),
+              ),
+              trailing: Text(
+                '× ${AppSettings.fontSizeFactor.value}',
+                style: FluffyTypography.code.copyWith(color: cyber.cyan),
+              ),
             ),
             Slider.adaptive(
               min: 0.5,
               max: 2.5,
               divisions: 20,
+              activeColor: cyber.cyan,
               value: AppSettings.fontSizeFactor.value,
               semanticFormatterCallback: (d) => d.toString(),
               onChanged: controller.changeFontSizeFactor,
             ),
-            Divider(color: theme.dividerColor),
-            ListTile(
-              title: Text(
-                L10n.of(context).overview,
-                style: TextStyle(
-                  color: theme.colorScheme.secondary,
-                  fontWeight: FontWeight.bold,
-                ),
-              ),
+            Divider(color: cyber.glassBorder),
+            CyberSectionHeader(
+              L10n.of(context).overview,
+              accent: cyber.violet,
             ),
             SettingsSwitchListTile.adaptive(
               title: L10n.of(context).presencesToggle,

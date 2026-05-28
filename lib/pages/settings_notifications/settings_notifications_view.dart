@@ -1,8 +1,10 @@
+import 'package:fluffychat/config/design_tokens.dart';
 import 'package:fluffychat/config/setting_keys.dart';
 import 'package:fluffychat/config/themes.dart';
 import 'package:fluffychat/l10n/l10n.dart';
 import 'package:fluffychat/pages/settings_notifications/push_rule_extensions.dart';
 import 'package:fluffychat/utils/adaptive_bottom_sheet.dart';
+import 'package:fluffychat/widgets/cyber/cyber_widgets.dart';
 import 'package:fluffychat/widgets/layouts/max_width_body.dart';
 import 'package:flutter/material.dart';
 import 'package:matrix/matrix.dart';
@@ -33,6 +35,8 @@ class SettingsNotificationsView extends StatelessWidget {
       appBar: AppBar(
         automaticallyImplyLeading: !FluffyThemes.isColumnMode(context),
         centerTitle: FluffyThemes.isColumnMode(context),
+        backgroundColor: Colors.transparent,
+        elevation: 0,
         title: Text(L10n.of(context).notifications),
       ),
       body: MaxWidthBody(
@@ -46,79 +50,77 @@ class SettingsNotificationsView extends StatelessWidget {
           ),
           builder: (BuildContext context, _) {
             final theme = Theme.of(context);
+            final cyber = CyberColors.of(context);
             return SelectionArea(
               child: Column(
                 children: [
                   if (pushRules != null)
                     for (final category in pushCategories) ...[
-                      ListTile(
-                        title: Text(
-                          category.kind.localized(L10n.of(context)),
-                          style: TextStyle(
-                            color: theme.colorScheme.secondary,
-                            fontWeight: FontWeight.bold,
-                          ),
-                        ),
+                      CyberSectionHeader(
+                        category.kind.localized(L10n.of(context)),
+                        accent: cyber.magenta,
                       ),
-                      for (final rule in category.rules)
-                        ListTile(
-                          title: Text(rule.getPushRuleName(L10n.of(context))),
-                          subtitle: Text.rich(
-                            TextSpan(
-                              children: [
-                                TextSpan(
-                                  text: rule.getPushRuleDescription(
+                      Padding(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: FluffySpacing.lg,
+                        ),
+                        child: CyberGlass(
+                          padding: const EdgeInsets.symmetric(
+                            vertical: FluffySpacing.xs,
+                          ),
+                          child: Column(
+                            children: [
+                              for (final rule in category.rules)
+                                CyberSettingsTile(
+                                  icon: Icons.notifications_active_outlined,
+                                  accent: cyber.magenta,
+                                  title: rule.getPushRuleName(L10n.of(context)),
+                                  trailing: Switch.adaptive(
+                                    value: rule.enabled,
+                                    activeThumbColor: cyber.cyan,
+                                    onChanged: controller.isLoading
+                                        ? null
+                                        : rule.ruleId != '.m.rule.master' &&
+                                              Matrix.of(
+                                                context,
+                                              ).client.allPushNotificationsMuted
+                                        ? null
+                                        : (_) => controller.togglePushRule(
+                                            category.kind,
+                                            rule,
+                                          ),
+                                  ),
+                                  subtitle: rule.getPushRuleDescription(
                                     L10n.of(context),
                                   ),
-                                ),
-                                const TextSpan(text: ' '),
-                                WidgetSpan(
-                                  child: InkWell(
-                                    onTap: () => controller.editPushRule(
-                                      rule,
-                                      category.kind,
-                                    ),
-                                    child: Text(
-                                      L10n.of(context).more,
-                                      style: TextStyle(
-                                        color: theme.colorScheme.primary,
-                                        decoration: TextDecoration.underline,
-                                        decorationColor:
-                                            theme.colorScheme.primary,
-                                      ),
-                                    ),
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                          trailing: Switch.adaptive(
-                            value: rule.enabled,
-                            onChanged: controller.isLoading
-                                ? null
-                                : rule.ruleId != '.m.rule.master' &&
-                                      Matrix.of(
-                                        context,
-                                      ).client.allPushNotificationsMuted
-                                ? null
-                                : (_) => controller.togglePushRule(
-                                    category.kind,
+                                  onTap: () => controller.editPushRule(
                                     rule,
+                                    category.kind,
                                   ),
+                                ),
+                            ],
                           ),
                         ),
-                      Divider(color: theme.dividerColor),
-                    ],
-                  const _CallRingtoneTile(),
-                  Divider(color: theme.dividerColor),
-                  ListTile(
-                    title: Text(
-                      L10n.of(context).devices,
-                      style: TextStyle(
-                        color: theme.colorScheme.secondary,
-                        fontWeight: FontWeight.bold,
                       ),
+                    ],
+                  CyberSectionHeader(
+                    'Sonnerie appel entrant',
+                    accent: cyber.violet,
+                  ),
+                  Padding(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: FluffySpacing.lg,
                     ),
+                    child: const CyberGlass(
+                      padding: EdgeInsets.symmetric(
+                        vertical: FluffySpacing.xs,
+                      ),
+                      child: _CallRingtoneTile(),
+                    ),
+                  ),
+                  CyberSectionHeader(
+                    L10n.of(context).devices,
+                    accent: cyber.violet,
                   ),
                   FutureBuilder<List<Pusher>?>(
                     future: controller.pusherFuture ??= Matrix.of(
@@ -141,27 +143,46 @@ class SettingsNotificationsView extends StatelessWidget {
                       }
                       final pushers = snapshot.data ?? [];
                       if (pushers.isEmpty) {
-                        return Center(
-                          child: Padding(
-                            padding: const EdgeInsets.only(bottom: 16.0),
-                            child: Text(L10n.of(context).noOtherDevicesFound),
+                        return Padding(
+                          padding: const EdgeInsets.only(
+                            bottom: FluffySpacing.lg,
+                          ),
+                          child: Center(
+                            child: Text(
+                              L10n.of(context).noOtherDevicesFound,
+                              style: FluffyTypography.bodyM.copyWith(
+                                color: theme.colorScheme.onSurfaceVariant,
+                              ),
+                            ),
                           ),
                         );
                       }
-                      return ListView.builder(
-                        physics: const NeverScrollableScrollPhysics(),
-                        shrinkWrap: true,
-                        itemCount: pushers.length,
-                        itemBuilder: (_, i) => ListTile(
-                          title: Text(
-                            '${pushers[i].appDisplayName} - ${pushers[i].appId}',
+                      return Padding(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: FluffySpacing.lg,
+                        ),
+                        child: CyberGlass(
+                          padding: const EdgeInsets.symmetric(
+                            vertical: FluffySpacing.xs,
                           ),
-                          subtitle: Text(pushers[i].data.url.toString()),
-                          onTap: () => controller.onPusherTap(pushers[i]),
+                          child: ListView.builder(
+                            physics: const NeverScrollableScrollPhysics(),
+                            shrinkWrap: true,
+                            itemCount: pushers.length,
+                            itemBuilder: (_, i) => CyberSettingsTile(
+                              icon: Icons.devices_outlined,
+                              accent: cyber.violet,
+                              title:
+                                  '${pushers[i].appDisplayName} - ${pushers[i].appId}',
+                              subtitle: pushers[i].data.url.toString(),
+                              onTap: () => controller.onPusherTap(pushers[i]),
+                            ),
+                          ),
                         ),
                       );
                     },
                   ),
+                  const SizedBox(height: FluffySpacing.lg),
                 ],
               ),
             );
@@ -195,23 +216,16 @@ class _CallRingtoneTileState extends State<_CallRingtoneTile> {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            ListTile(
-              title: Text(
-                'Sonnerie appel entrant',
-                style: TextStyle(
-                  fontWeight: FontWeight.bold,
-                  color: Theme.of(sheetContext).colorScheme.secondary,
-                ),
-              ),
-            ),
+            const CyberSectionHeader('Sonnerie appel entrant'),
             for (final entry in _ringtoneOptions.entries)
               RadioListTile<String>(
                 title: Text(entry.value),
                 value: entry.key,
                 groupValue: _current,
+                activeThumbColor: CyberColors.of(sheetContext).cyan,
                 onChanged: (value) => Navigator.of(sheetContext).pop(value),
               ),
-            const SizedBox(height: 8),
+            const SizedBox(height: FluffySpacing.sm),
           ],
         ),
       ),
@@ -224,10 +238,12 @@ class _CallRingtoneTileState extends State<_CallRingtoneTile> {
 
   @override
   Widget build(BuildContext context) {
-    return ListTile(
-      leading: const Icon(Icons.phone_in_talk_outlined),
-      title: const Text('Sonnerie appel entrant'),
-      subtitle: Text(_ringtoneOptions[_current] ?? _current),
+    final cyber = CyberColors.of(context);
+    return CyberSettingsTile(
+      icon: Icons.phone_in_talk_outlined,
+      accent: cyber.cyan,
+      title: 'Sonnerie appel entrant',
+      subtitle: _ringtoneOptions[_current] ?? _current,
       onTap: _pick,
     );
   }

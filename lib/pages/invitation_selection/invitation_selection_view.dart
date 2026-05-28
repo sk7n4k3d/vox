@@ -1,6 +1,8 @@
+import 'package:fluffychat/config/design_tokens.dart';
 import 'package:fluffychat/l10n/l10n.dart';
 import 'package:fluffychat/pages/invitation_selection/invitation_selection.dart';
 import 'package:fluffychat/widgets/avatar.dart';
+import 'package:fluffychat/widgets/cyber/cyber_widgets.dart';
 import 'package:fluffychat/widgets/layouts/max_width_body.dart';
 import 'package:fluffychat/widgets/matrix.dart';
 import 'package:flutter/material.dart';
@@ -20,7 +22,11 @@ class InvitationSelectionView extends StatelessWidget {
     ).client.getRoomById(controller.widget.roomId);
     if (room == null) {
       return Scaffold(
-        appBar: AppBar(title: Text(L10n.of(context).oopsSomethingWentWrong)),
+        appBar: AppBar(
+          backgroundColor: Colors.transparent,
+          elevation: 0,
+          title: Text(L10n.of(context).oopsSomethingWentWrong),
+        ),
         body: Center(
           child: Text(L10n.of(context).youAreNoLongerParticipatingInThisChat),
         ),
@@ -29,48 +35,68 @@ class InvitationSelectionView extends StatelessWidget {
 
     final groupName = room.name.isEmpty ? L10n.of(context).group : room.name;
     final theme = Theme.of(context);
+    final cyber = CyberColors.of(context);
     return Scaffold(
       appBar: AppBar(
+        backgroundColor: Colors.transparent,
+        elevation: 0,
         leading: const Center(child: BackButton()),
         titleSpacing: 0,
-        title: Text(L10n.of(context).inviteContact),
+        title: Text(
+          L10n.of(context).inviteContact,
+          style: FluffyTypography.headlineM.copyWith(
+            color: theme.colorScheme.onSurface,
+          ),
+        ),
       ),
       body: MaxWidthBody(
-        innerPadding: const EdgeInsets.symmetric(vertical: 8),
+        innerPadding: const EdgeInsets.symmetric(vertical: FluffySpacing.sm),
         child: Column(
           children: [
             Padding(
-              padding: const EdgeInsets.all(16.0),
-              child: TextField(
-                textInputAction: TextInputAction.search,
-                decoration: InputDecoration(
-                  filled: true,
-                  fillColor: theme.colorScheme.secondaryContainer,
-                  border: OutlineInputBorder(
-                    borderSide: BorderSide.none,
-                    borderRadius: BorderRadius.circular(99),
-                  ),
-                  hintStyle: TextStyle(
-                    color: theme.colorScheme.onPrimaryContainer,
-                    fontWeight: FontWeight.normal,
-                  ),
-                  hintText: L10n.of(context).inviteContactToGroup(groupName),
-                  prefixIcon: controller.loading
-                      ? const Padding(
-                          padding: EdgeInsets.symmetric(
-                            vertical: 10.0,
-                            horizontal: 12,
-                          ),
-                          child: SizedBox.square(
-                            dimension: 24,
-                            child: CircularProgressIndicator.adaptive(
-                              strokeWidth: 2,
-                            ),
-                          ),
-                        )
-                      : const Icon(Icons.search_outlined),
+              padding: const EdgeInsets.all(FluffySpacing.lg),
+              child: CyberGlass(
+                borderRadius: FluffyRadius.brFull,
+                padding: const EdgeInsets.symmetric(
+                  horizontal: FluffySpacing.sm,
                 ),
-                onChanged: controller.searchUserWithCoolDown,
+                child: TextField(
+                  textInputAction: TextInputAction.search,
+                  style: FluffyTypography.bodyL.copyWith(
+                    color: theme.colorScheme.onSurface,
+                  ),
+                  decoration: InputDecoration(
+                    filled: false,
+                    border: InputBorder.none,
+                    enabledBorder: InputBorder.none,
+                    focusedBorder: InputBorder.none,
+                    hintStyle: FluffyTypography.bodyL.copyWith(
+                      color: theme.colorScheme.onSurfaceVariant,
+                    ),
+                    hintText: L10n.of(context).inviteContactToGroup(groupName),
+                    prefixIcon: controller.loading
+                        ? Padding(
+                            padding: const EdgeInsets.symmetric(
+                              vertical: FluffySpacing.md,
+                              horizontal: FluffySpacing.md,
+                            ),
+                            child: SizedBox.square(
+                              dimension: 24,
+                              child: CircularProgressIndicator.adaptive(
+                                strokeWidth: 2,
+                                valueColor: AlwaysStoppedAnimation<Color>(
+                                  cyber.cyan,
+                                ),
+                              ),
+                            ),
+                          )
+                        : Icon(
+                            Icons.search_outlined,
+                            color: cyber.cyan,
+                          ),
+                  ),
+                  onChanged: controller.searchUserWithCoolDown,
+                ),
               ),
             ),
             StreamBuilder<Object>(
@@ -109,9 +135,12 @@ class InvitationSelectionView extends StatelessWidget {
                         future: controller.getContacts(context),
                         builder: (BuildContext context, snapshot) {
                           if (!snapshot.hasData) {
-                            return const Center(
+                            return Center(
                               child: CircularProgressIndicator.adaptive(
                                 strokeWidth: 2,
+                                valueColor: AlwaysStoppedAnimation<Color>(
+                                  cyber.cyan,
+                                ),
                               ),
                             );
                           }
@@ -170,9 +199,14 @@ class _InviteContactListTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final cyber = CyberColors.of(context);
     final l10n = L10n.of(context);
 
     return ListTile(
+      contentPadding: const EdgeInsets.symmetric(
+        horizontal: FluffySpacing.lg,
+        vertical: FluffySpacing.xs,
+      ),
       leading: Avatar(
         mxContent: profile.avatarUrl,
         name: profile.displayName,
@@ -183,17 +217,44 @@ class _InviteContactListTile extends StatelessWidget {
         profile.displayName ?? profile.userId.localpart ?? l10n.user,
         maxLines: 1,
         overflow: TextOverflow.ellipsis,
+        style: FluffyTypography.title.copyWith(
+          color: theme.colorScheme.onSurface,
+        ),
       ),
       subtitle: Text(
         profile.userId,
         maxLines: 1,
         overflow: TextOverflow.ellipsis,
-        style: TextStyle(color: theme.colorScheme.secondary),
+        style: FluffyTypography.code.copyWith(
+          color: theme.colorScheme.onSurfaceVariant,
+        ),
       ),
-      trailing: TextButton(
-        onPressed: isMember ? null : onTap,
-        child: Text(isMember ? l10n.participant : l10n.invite),
-      ),
+      trailing: isMember
+          ? Container(
+              padding: const EdgeInsets.symmetric(
+                horizontal: FluffySpacing.md,
+                vertical: FluffySpacing.xs,
+              ),
+              decoration: BoxDecoration(
+                color: cyber.violet.withValues(alpha: 0.16),
+                borderRadius: FluffyRadius.brFull,
+                border: Border.all(
+                  color: cyber.violet.withValues(alpha: 0.4),
+                ),
+              ),
+              child: Text(
+                l10n.participant,
+                style: FluffyTypography.labelL.copyWith(
+                  color: cyber.violet,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            )
+          : CyberPrimaryButton(
+              label: l10n.invite,
+              icon: Icons.person_add_alt_1_outlined,
+              onPressed: onTap,
+            ),
     );
   }
 }

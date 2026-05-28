@@ -1,6 +1,8 @@
+import 'package:fluffychat/config/design_tokens.dart';
 import 'package:fluffychat/config/themes.dart';
 import 'package:fluffychat/l10n/l10n.dart';
 import 'package:fluffychat/pages/device_settings/device_settings.dart';
+import 'package:fluffychat/widgets/cyber/cyber_widgets.dart';
 import 'package:fluffychat/widgets/layouts/max_width_body.dart';
 import 'package:flutter/material.dart';
 
@@ -17,6 +19,8 @@ class DevicesSettingsView extends StatelessWidget {
       appBar: AppBar(
         automaticallyImplyLeading: !FluffyThemes.isColumnMode(context),
         centerTitle: FluffyThemes.isColumnMode(context),
+        backgroundColor: Colors.transparent,
+        elevation: 0,
         title: Text(L10n.of(context).devices),
       ),
       body: MaxWidthBody(
@@ -24,13 +28,18 @@ class DevicesSettingsView extends StatelessWidget {
           future: controller.loadUserDevices(context),
           builder: (BuildContext context, snapshot) {
             final theme = Theme.of(context);
+            final cyber = CyberColors.of(context);
             if (snapshot.hasError) {
               return Center(
                 child: Column(
                   mainAxisSize: .min,
                   children: <Widget>[
-                    const Icon(Icons.error_outlined),
-                    Text(snapshot.error.toString()),
+                    Icon(Icons.error_outlined, color: cyber.warn),
+                    const SizedBox(height: FluffySpacing.sm),
+                    Text(
+                      snapshot.error.toString(),
+                      style: FluffyTypography.bodyM.copyWith(color: cyber.warn),
+                    ),
                   ],
                 ),
               );
@@ -51,33 +60,25 @@ class DevicesSettingsView extends StatelessWidget {
                     children: [
                       if (controller.chatBackupEnabled == false)
                         Padding(
-                          padding: const EdgeInsets.symmetric(horizontal: 8.0),
-                          child: ListTile(
-                            leading: const CircleAvatar(
-                              child: Icon(Icons.info_outlined),
-                            ),
-                            subtitle: Text(
-                              L10n.of(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: FluffySpacing.lg,
+                            vertical: FluffySpacing.sm,
+                          ),
+                          child: CyberGlass(
+                            child: CyberSettingsTile(
+                              icon: Icons.info_outlined,
+                              accent: cyber.success,
+                              title: L10n.of(context).chatBackup,
+                              subtitle: L10n.of(
                                 context,
                               ).noticeChatBackupDeviceVerification,
                             ),
                           ),
                         ),
                       if (controller.thisDevice != null) ...[
-                        Container(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 16.0,
-                            vertical: 8.0,
-                          ),
-                          alignment: Alignment.centerLeft,
-                          child: Text(
-                            L10n.of(context).thisDevice,
-                            style: TextStyle(
-                              fontWeight: FontWeight.bold,
-                              color: theme.colorScheme.primary,
-                            ),
-                            textAlign: TextAlign.left,
-                          ),
+                        CyberSectionHeader(
+                          L10n.of(context).thisDevice,
+                          accent: cyber.violet,
                         ),
                         UserDeviceListItem(
                           controller.thisDevice!,
@@ -91,21 +92,27 @@ class DevicesSettingsView extends StatelessWidget {
                       if (controller.notThisDevice.isNotEmpty)
                         Padding(
                           padding: const EdgeInsets.symmetric(
-                            horizontal: 16.0,
-                            vertical: 8.0,
+                            horizontal: FluffySpacing.lg,
+                            vertical: FluffySpacing.sm,
                           ),
                           child: SizedBox(
                             width: double.infinity,
                             child: TextButton.icon(
                               label: Text(
                                 L10n.of(context).removeAllOtherDevices,
+                                style: FluffyTypography.title,
                               ),
                               style: TextButton.styleFrom(
-                                iconColor: theme.colorScheme.onErrorContainer,
-                                foregroundColor:
-                                    theme.colorScheme.onErrorContainer,
+                                iconColor: cyber.magenta,
+                                foregroundColor: cyber.magenta,
                                 backgroundColor:
-                                    theme.colorScheme.errorContainer,
+                                    cyber.magenta.withValues(alpha: 0.12),
+                                padding: const EdgeInsets.symmetric(
+                                  vertical: FluffySpacing.md,
+                                ),
+                                shape: const RoundedRectangleBorder(
+                                  borderRadius: FluffyRadius.brMd,
+                                ),
                               ),
                               icon: const Icon(Icons.delete_outline),
                               onPressed: () => controller.removeDevicesAction(
@@ -117,8 +124,13 @@ class DevicesSettingsView extends StatelessWidget {
                       else
                         Center(
                           child: Padding(
-                            padding: const EdgeInsets.all(16.0),
-                            child: Text(L10n.of(context).noOtherDevicesFound),
+                            padding: const EdgeInsets.all(FluffySpacing.lg),
+                            child: Text(
+                              L10n.of(context).noOtherDevicesFound,
+                              style: FluffyTypography.bodyM.copyWith(
+                                color: theme.colorScheme.onSurfaceVariant,
+                              ),
+                            ),
                           ),
                         ),
                     ],

@@ -1,7 +1,9 @@
+import 'package:fluffychat/config/design_tokens.dart';
 import 'package:fluffychat/config/setting_keys.dart';
 import 'package:fluffychat/l10n/l10n.dart';
 import 'package:fluffychat/pages/intro/flows/restore_backup_flow.dart';
 import 'package:fluffychat/utils/platform_infos.dart';
+import 'package:fluffychat/widgets/cyber/cyber_widgets.dart';
 import 'package:fluffychat/widgets/layouts/login_scaffold.dart';
 import 'package:fluffychat/widgets/matrix.dart';
 import 'package:flutter/material.dart';
@@ -26,6 +28,7 @@ class IntroPage extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final cyber = CyberColors.of(context);
     final addMultiAccount = Matrix.of(
       context,
     ).widget.clients.any((client) => client.isLogged());
@@ -33,6 +36,8 @@ class IntroPage extends StatelessWidget {
 
     return LoginScaffold(
       appBar: AppBar(
+        backgroundColor: Colors.transparent,
+        elevation: 0,
         centerTitle: true,
         title: Text(
           addMultiAccount
@@ -48,9 +53,14 @@ class IntroPage extends StatelessWidget {
                 child: Row(
                   mainAxisSize: .min,
                   children: [
-                    const Icon(Icons.import_export_outlined),
-                    const SizedBox(width: 12),
-                    Text(L10n.of(context).hydrate),
+                    Icon(Icons.import_export_outlined, color: cyber.cyan),
+                    const SizedBox(width: FluffySpacing.md),
+                    Text(
+                      L10n.of(context).hydrate,
+                      style: FluffyTypography.title.copyWith(
+                        color: theme.colorScheme.onSurface,
+                      ),
+                    ),
                   ],
                 ),
               ),
@@ -59,9 +69,14 @@ class IntroPage extends StatelessWidget {
                 child: Row(
                   mainAxisSize: .min,
                   children: [
-                    const Icon(Icons.privacy_tip_outlined),
-                    const SizedBox(width: 12),
-                    Text(L10n.of(context).privacy),
+                    Icon(Icons.privacy_tip_outlined, color: cyber.cyan),
+                    const SizedBox(width: FluffySpacing.md),
+                    Text(
+                      L10n.of(context).privacy,
+                      style: FluffyTypography.title.copyWith(
+                        color: theme.colorScheme.onSurface,
+                      ),
+                    ),
                   ],
                 ),
               ),
@@ -70,9 +85,14 @@ class IntroPage extends StatelessWidget {
                 child: Row(
                   mainAxisSize: .min,
                   children: [
-                    const Icon(Icons.info_outlined),
-                    const SizedBox(width: 12),
-                    Text(L10n.of(context).about),
+                    Icon(Icons.info_outlined, color: cyber.cyan),
+                    const SizedBox(width: FluffySpacing.md),
+                    Text(
+                      L10n.of(context).about,
+                      style: FluffyTypography.title.copyWith(
+                        color: theme.colorScheme.onSurface,
+                      ),
+                    ),
                   ],
                 ),
               ),
@@ -85,9 +105,19 @@ class IntroPage extends StatelessWidget {
               child: Column(
                 mainAxisAlignment: .center,
                 children: [
-                  CircularProgressIndicator.adaptive(),
-                  if (loggingInToHomeserver != null)
-                    Text(L10n.of(context).logInTo(loggingInToHomeserver)),
+                  CircularProgressIndicator.adaptive(
+                    valueColor: AlwaysStoppedAnimation<Color>(cyber.cyan),
+                  ),
+                  if (loggingInToHomeserver != null) ...[
+                    const SizedBox(height: FluffySpacing.lg),
+                    Text(
+                      L10n.of(context).logInTo(loggingInToHomeserver),
+                      textAlign: TextAlign.center,
+                      style: FluffyTypography.bodyM.copyWith(
+                        color: theme.colorScheme.onSurfaceVariant,
+                      ),
+                    ),
+                  ],
                 ],
               ),
             )
@@ -104,7 +134,7 @@ class IntroPage extends StatelessWidget {
                           Container(
                             alignment: Alignment.center,
                             padding: const EdgeInsets.symmetric(
-                              horizontal: 8.0,
+                              horizontal: FluffySpacing.sm,
                             ),
                             child: Hero(
                               tag: 'info-logo',
@@ -114,54 +144,58 @@ class IntroPage extends StatelessWidget {
                               ),
                             ),
                           ),
-                          const SizedBox(height: 32),
+                          const SizedBox(height: FluffySpacing.xxl),
                           Padding(
                             padding: const EdgeInsets.symmetric(
-                              horizontal: 32.0,
+                              horizontal: FluffySpacing.xxl,
                             ),
-                            child: SelectableLinkify(
-                              text: welcomeText ?? L10n.of(context).appIntro,
-                              textScaleFactor: MediaQuery.textScalerOf(
-                                context,
-                              ).scale(1),
-                              textAlign: TextAlign.center,
-                              linkStyle: TextStyle(
-                                color: theme.colorScheme.secondary,
-                                decorationColor: theme.colorScheme.secondary,
+                            child: CyberGlass(
+                              child: SelectableLinkify(
+                                text:
+                                    welcomeText ?? L10n.of(context).appIntro,
+                                textScaleFactor: MediaQuery.textScalerOf(
+                                  context,
+                                ).scale(1),
+                                textAlign: TextAlign.center,
+                                style: FluffyTypography.bodyM.copyWith(
+                                  color: theme.colorScheme.onSurface,
+                                ),
+                                linkStyle: FluffyTypography.bodyM.copyWith(
+                                  color: cyber.cyan,
+                                  decorationColor: cyber.cyan,
+                                ),
+                                onOpen: (link) => launchUrlString(link.url),
                               ),
-                              onOpen: (link) => launchUrlString(link.url),
                             ),
                           ),
                           const Spacer(),
                           Padding(
-                            padding: const EdgeInsets.all(32.0),
+                            padding: const EdgeInsets.all(FluffySpacing.xxl),
                             child: Column(
                               mainAxisSize: .min,
                               crossAxisAlignment: .stretch,
                               children: [
-                                if (!hasPresetHomeserver)
-                                  ElevatedButton(
-                                    style: ElevatedButton.styleFrom(
-                                      backgroundColor:
-                                          theme.colorScheme.secondary,
-                                      foregroundColor:
-                                          theme.colorScheme.onSecondary,
-                                    ),
+                                if (!hasPresetHomeserver) ...[
+                                  CyberPrimaryButton(
+                                    label: L10n.of(context).createNewAccount,
+                                    icon: Icons.person_add_alt_1_outlined,
                                     onPressed: () => context.go(
                                       '${GoRouterState.of(context).uri.path}/sign_up',
                                     ),
-                                    child: Text(
-                                      L10n.of(context).createNewAccount,
-                                    ),
                                   ),
-                                SizedBox(height: 16),
-                                ElevatedButton(
+                                  const SizedBox(height: FluffySpacing.lg),
+                                ],
+                                CyberPrimaryButton(
+                                  label: L10n.of(context).signIn,
+                                  icon: Icons.login_outlined,
                                   onPressed: login,
-                                  child: Text(L10n.of(context).signIn),
                                 ),
-
-                                if (!hasPresetHomeserver)
+                                if (!hasPresetHomeserver) ...[
+                                  const SizedBox(height: FluffySpacing.sm),
                                   TextButton(
+                                    style: TextButton.styleFrom(
+                                      foregroundColor: cyber.cyan,
+                                    ),
                                     onPressed: () async {
                                       final client = await Matrix.of(
                                         context,
@@ -175,6 +209,7 @@ class IntroPage extends StatelessWidget {
                                       L10n.of(context).loginWithMatrixId,
                                     ),
                                   ),
+                                ],
                               ],
                             ),
                           ),

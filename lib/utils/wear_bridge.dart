@@ -237,9 +237,9 @@ class WearBridge {
   Map<String, dynamic> _serializeMessage(Event e, String? ownUserId) {
     final isOwn = e.senderId == ownUserId;
     final senderName = e.senderFromMemoryOrFallback.calcDisplayname();
-    String type = 'text';
+    var type = 'text';
     int? audioDurationMs;
-    String body = e.body;
+    var body = e.body;
     if (e.type == EventTypes.Sticker) {
       type = 'sticker';
     } else if (e.type == EventTypes.Message) {
@@ -295,9 +295,9 @@ class WearBridge {
       'ts': e.originServerTs.millisecondsSinceEpoch,
       'type': type,
       'body': body,
-      if (formattedBody != null) 'formattedBody': formattedBody,
+      'formattedBody': ?formattedBody,
       'isOwn': isOwn,
-      if (audioDurationMs != null) 'audioDurationMs': audioDurationMs,
+      'audioDurationMs': ?audioDurationMs,
       'isRedacted': e.redacted,
     };
   }

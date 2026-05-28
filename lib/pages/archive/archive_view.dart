@@ -1,6 +1,8 @@
+import 'package:fluffychat/config/design_tokens.dart';
 import 'package:fluffychat/l10n/l10n.dart';
 import 'package:fluffychat/pages/archive/archive.dart';
 import 'package:fluffychat/pages/chat_list/chat_list_item.dart';
+import 'package:fluffychat/widgets/cyber/cyber_widgets.dart';
 import 'package:fluffychat/widgets/layouts/max_width_body.dart';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
@@ -13,20 +15,23 @@ class ArchiveView extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final cyber = CyberColors.of(context);
     return FutureBuilder<List<Room>>(
       future: controller.getArchive(context),
       builder: (BuildContext context, snapshot) => Scaffold(
         appBar: AppBar(
+          backgroundColor: Colors.transparent,
+          elevation: 0,
           leading: const Center(child: BackButton()),
           title: Text(L10n.of(context).archive),
           actions: [
             if (snapshot.data?.isNotEmpty ?? false)
               Padding(
-                padding: const EdgeInsets.all(8.0),
-                child: TextButton.icon(
+                padding: const EdgeInsets.all(FluffySpacing.sm),
+                child: CyberPrimaryButton(
+                  label: L10n.of(context).clearArchive,
+                  icon: Icons.cleaning_services_outlined,
                   onPressed: controller.forgetAllAction,
-                  label: Text(L10n.of(context).clearArchive),
-                  icon: const Icon(Icons.cleaning_services_outlined),
                 ),
               ),
           ],
@@ -40,17 +45,25 @@ class ArchiveView extends StatelessWidget {
                   child: Text(
                     L10n.of(context).oopsSomethingWentWrong,
                     textAlign: TextAlign.center,
+                    style: FluffyTypography.bodyL.copyWith(color: cyber.warn),
                   ),
                 );
               }
               if (!snapshot.hasData) {
-                return const Center(
-                  child: CircularProgressIndicator.adaptive(strokeWidth: 2),
+                return Center(
+                  child: CircularProgressIndicator.adaptive(
+                    strokeWidth: 2,
+                    valueColor: AlwaysStoppedAnimation<Color>(cyber.cyan),
+                  ),
                 );
               } else {
                 if (controller.archive.isEmpty) {
-                  return const Center(
-                    child: Icon(Icons.archive_outlined, size: 80),
+                  return Center(
+                    child: Icon(
+                      Icons.archive_outlined,
+                      size: 80,
+                      color: cyber.cyan,
+                    ),
                   );
                 }
                 return ListView.builder(

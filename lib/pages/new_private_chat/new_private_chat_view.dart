@@ -1,4 +1,5 @@
 import 'package:fluffychat/config/app_config.dart';
+import 'package:fluffychat/config/design_tokens.dart';
 import 'package:fluffychat/config/themes.dart';
 import 'package:fluffychat/l10n/l10n.dart';
 import 'package:fluffychat/pages/new_private_chat/new_private_chat.dart';
@@ -6,6 +7,7 @@ import 'package:fluffychat/utils/localized_exception_extension.dart';
 import 'package:fluffychat/utils/platform_infos.dart';
 import 'package:fluffychat/utils/url_launcher.dart';
 import 'package:fluffychat/widgets/avatar.dart';
+import 'package:fluffychat/widgets/cyber/cyber_widgets.dart';
 import 'package:fluffychat/widgets/layouts/max_width_body.dart';
 import 'package:fluffychat/widgets/matrix.dart';
 import 'package:flutter/material.dart';
@@ -23,79 +25,100 @@ class NewPrivateChatView extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final cyber = CyberColors.of(context);
 
     final searchResponse = controller.searchResponse;
     final userId = Matrix.of(context).client.userID!;
     return Scaffold(
       appBar: AppBar(
         scrolledUnderElevation: 0,
+        elevation: 0,
         leading: const Center(child: BackButton()),
-        title: Text(L10n.of(context).newChat),
-        backgroundColor: theme.scaffoldBackgroundColor,
+        title: Text(
+          L10n.of(context).newChat,
+          style: FluffyTypography.headlineM.copyWith(
+            color: theme.colorScheme.onSurface,
+          ),
+        ),
+        backgroundColor: Colors.transparent,
         actions: [
           TextButton(
             onPressed: UrlLauncher(
               context,
               AppConfig.startChatTutorial,
             ).launchUrl,
-            child: Text(L10n.of(context).help),
+            child: Text(
+              L10n.of(context).help,
+              style: FluffyTypography.labelL.copyWith(color: cyber.cyan),
+            ),
           ),
         ],
       ),
       body: MaxWidthBody(
         withScrolling: false,
-        innerPadding: const EdgeInsets.symmetric(vertical: 8),
+        innerPadding: const EdgeInsets.symmetric(vertical: FluffySpacing.sm),
         child: Column(
           children: [
             Padding(
               padding: const EdgeInsets.symmetric(
-                horizontal: 16.0,
-                vertical: 8.0,
+                horizontal: FluffySpacing.lg,
+                vertical: FluffySpacing.sm,
               ),
-              child: TextField(
-                controller: controller.controller,
-                onChanged: controller.searchUsers,
-                decoration: InputDecoration(
-                  hintText: L10n.of(context).searchForUsers,
-                  filled: true,
-                  fillColor: theme.colorScheme.secondaryContainer,
-                  border: OutlineInputBorder(
-                    borderSide: BorderSide.none,
-                    borderRadius: BorderRadius.circular(99),
+              child: CyberField(
+                focused: controller.controller.text.isNotEmpty,
+                child: TextField(
+                  controller: controller.controller,
+                  onChanged: controller.searchUsers,
+                  style: FluffyTypography.bodyM.copyWith(
+                    color: theme.colorScheme.onSurface,
                   ),
-                  hintStyle: TextStyle(
-                    color: theme.colorScheme.onPrimaryContainer,
-                    fontWeight: FontWeight.normal,
-                  ),
-                  prefixIcon: searchResponse == null
-                      ? const Icon(Icons.search_outlined)
-                      : FutureBuilder(
-                          future: searchResponse,
-                          builder: (context, snapshot) {
-                            if (snapshot.connectionState !=
-                                ConnectionState.done) {
-                              return const Padding(
-                                padding: EdgeInsets.all(10.0),
-                                child: SizedBox.square(
-                                  dimension: 24,
-                                  child: CircularProgressIndicator.adaptive(
-                                    strokeWidth: 1,
+                  decoration: InputDecoration(
+                    hintText: L10n.of(context).searchForUsers,
+                    border: InputBorder.none,
+                    enabledBorder: InputBorder.none,
+                    focusedBorder: InputBorder.none,
+                    contentPadding: const EdgeInsets.symmetric(
+                      vertical: FluffySpacing.md,
+                    ),
+                    hintStyle: FluffyTypography.bodyM.copyWith(
+                      color: theme.colorScheme.onSurfaceVariant,
+                    ),
+                    prefixIcon: searchResponse == null
+                        ? Icon(Icons.search_outlined, color: cyber.cyan)
+                        : FutureBuilder(
+                            future: searchResponse,
+                            builder: (context, snapshot) {
+                              if (snapshot.connectionState !=
+                                  ConnectionState.done) {
+                                return const Padding(
+                                  padding: EdgeInsets.all(FluffySpacing.sm),
+                                  child: SizedBox.square(
+                                    dimension: 24,
+                                    child: CircularProgressIndicator.adaptive(
+                                      strokeWidth: 1,
+                                    ),
                                   ),
-                                ),
+                                );
+                              }
+                              return Icon(
+                                Icons.search_outlined,
+                                color: cyber.cyan,
                               );
-                            }
-                            return const Icon(Icons.search_outlined);
-                          },
-                        ),
-                  suffixIcon: controller.controller.text.isEmpty
-                      ? null
-                      : IconButton(
-                          icon: const Icon(Icons.clear_outlined),
-                          onPressed: () {
-                            controller.controller.clear();
-                            controller.searchUsers();
-                          },
-                        ),
+                            },
+                          ),
+                    suffixIcon: controller.controller.text.isEmpty
+                        ? null
+                        : IconButton(
+                            icon: Icon(
+                              Icons.clear_outlined,
+                              color: theme.colorScheme.onSurfaceVariant,
+                            ),
+                            onPressed: () {
+                              controller.controller.clear();
+                              controller.searchUsers();
+                            },
+                          ),
+                  ),
                 ),
               ),
             ),
@@ -107,7 +130,8 @@ class NewPrivateChatView extends StatelessWidget {
                         children: [
                           Padding(
                             padding: const EdgeInsets.symmetric(
-                              horizontal: 18.0,
+                              horizontal: FluffySpacing.lg,
+                              vertical: FluffySpacing.sm,
                             ),
                             child: SelectableText.rich(
                               TextSpan(
@@ -117,93 +141,74 @@ class NewPrivateChatView extends StatelessWidget {
                                   ),
                                   TextSpan(
                                     text: Matrix.of(context).client.userID,
-                                    style: const TextStyle(
-                                      fontWeight: FontWeight.w600,
+                                    style: FluffyTypography.code.copyWith(
+                                      color: cyber.cyan,
                                     ),
                                   ),
                                 ],
                               ),
-                              style: TextStyle(
-                                color: theme.colorScheme.onSurface,
-                                fontSize: 12,
+                              style: FluffyTypography.bodyS.copyWith(
+                                color: theme.colorScheme.onSurfaceVariant,
                               ),
                             ),
                           ),
-                          const SizedBox(height: 8),
-                          ListTile(
-                            leading: CircleAvatar(
-                              backgroundColor:
-                                  theme.colorScheme.secondaryContainer,
-                              foregroundColor:
-                                  theme.colorScheme.onSecondaryContainer,
-                              child: Icon(Icons.adaptive.share_outlined),
+                          const SizedBox(height: FluffySpacing.md),
+                          Padding(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: FluffySpacing.lg,
                             ),
-                            title: Text(L10n.of(context).shareInviteLink),
-                            onTap: controller.inviteAction,
-                          ),
-                          ListTile(
-                            leading: CircleAvatar(
-                              backgroundColor:
-                                  theme.colorScheme.tertiaryContainer,
-                              foregroundColor:
-                                  theme.colorScheme.onTertiaryContainer,
-                              child: const Icon(Icons.group_add_outlined),
-                            ),
-                            title: Text(L10n.of(context).createGroup),
-                            onTap: () => context.go('/rooms/newgroup'),
-                          ),
-                          if (PlatformInfos.isMobile)
-                            ListTile(
-                              leading: CircleAvatar(
-                                backgroundColor:
-                                    theme.colorScheme.primaryContainer,
-                                foregroundColor:
-                                    theme.colorScheme.onPrimaryContainer,
-                                child: const Icon(
-                                  Icons.qr_code_scanner_outlined,
-                                ),
+                            child: CyberGlass(
+                              padding: const EdgeInsets.symmetric(
+                                vertical: FluffySpacing.xs,
                               ),
-                              title: Text(L10n.of(context).scanQrCode),
-                              onTap: controller.openScannerAction,
+                              child: Column(
+                                children: [
+                                  CyberSettingsTile(
+                                    icon: Icons.adaptive.share_outlined,
+                                    accent: cyber.cyan,
+                                    title: L10n.of(context).shareInviteLink,
+                                    onTap: controller.inviteAction,
+                                  ),
+                                  CyberSettingsTile(
+                                    icon: Icons.group_add_outlined,
+                                    accent: cyber.violet,
+                                    title: L10n.of(context).createGroup,
+                                    onTap: () => context.go('/rooms/newgroup'),
+                                  ),
+                                  if (PlatformInfos.isMobile)
+                                    CyberSettingsTile(
+                                      icon: Icons.qr_code_scanner_outlined,
+                                      accent: cyber.magenta,
+                                      title: L10n.of(context).scanQrCode,
+                                      onTap: controller.openScannerAction,
+                                    ),
+                                ],
+                              ),
                             ),
+                          ),
                           Center(
                             child: Padding(
                               padding: const EdgeInsets.symmetric(
-                                horizontal: 64.0,
-                                vertical: 24.0,
+                                horizontal: FluffySpacing.xxxxl,
+                                vertical: FluffySpacing.xl,
                               ),
-                              child: Material(
-                                shape: RoundedRectangleBorder(
-                                  borderRadius: BorderRadius.circular(
-                                    AppConfig.borderRadius,
-                                  ),
-                                  side: BorderSide(
-                                    width: 3,
-                                    color: theme.colorScheme.primary,
-                                  ),
+                              child: CyberGlass(
+                                onTap: () => showQrCodeViewer(context, userId),
+                                glow: FluffyElevation.glowCyan(
+                                  cyber.cyan,
+                                  alpha: 0.25,
                                 ),
-                                color: Colors.transparent,
-                                clipBehavior: Clip.hardEdge,
-                                child: InkWell(
-                                  borderRadius: BorderRadius.circular(
-                                    AppConfig.borderRadius,
+                                padding: const EdgeInsets.all(FluffySpacing.lg),
+                                child: ConstrainedBox(
+                                  constraints: const BoxConstraints(
+                                    maxWidth: 200,
                                   ),
-                                  onTap: () =>
-                                      showQrCodeViewer(context, userId),
-                                  child: Padding(
-                                    padding: const EdgeInsets.all(16.0),
-                                    child: ConstrainedBox(
-                                      constraints: const BoxConstraints(
-                                        maxWidth: 200,
-                                      ),
-                                      child: PrettyQrView.data(
-                                        data: 'https://matrix.to/#/$userId',
-                                        decoration: PrettyQrDecoration(
-                                          shape: PrettyQrSmoothSymbol(
-                                            roundFactor: 1,
-                                            color: theme.colorScheme.primary,
-                                          ),
-                                        ),
+                                  child: PrettyQrView.data(
+                                    data: 'https://matrix.to/#/$userId',
+                                    decoration: PrettyQrDecoration(
+                                      shape: PrettyQrSmoothSymbol(
+                                        roundFactor: 1,
+                                        color: cyber.cyan,
                                       ),
                                     ),
                                   ),
@@ -225,11 +230,11 @@ class NewPrivateChatView extends StatelessWidget {
                                 Text(
                                   error.toLocalizedString(context),
                                   textAlign: TextAlign.center,
-                                  style: TextStyle(
-                                    color: theme.colorScheme.error,
+                                  style: FluffyTypography.bodyM.copyWith(
+                                    color: cyber.warn,
                                   ),
                                 ),
-                                const SizedBox(height: 12),
+                                const SizedBox(height: FluffySpacing.md),
                                 OutlinedButton.icon(
                                   onPressed: controller.searchUsers,
                                   icon: const Icon(Icons.refresh_outlined),
@@ -247,15 +252,21 @@ class NewPrivateChatView extends StatelessWidget {
                             return Column(
                               mainAxisAlignment: .center,
                               children: [
-                                const Icon(Icons.search_outlined, size: 86),
+                                Icon(
+                                  Icons.search_outlined,
+                                  size: 86,
+                                  color: cyber.cyan,
+                                ),
                                 Padding(
-                                  padding: const EdgeInsets.all(16.0),
+                                  padding: const EdgeInsets.all(
+                                    FluffySpacing.lg,
+                                  ),
                                   child: Text(
                                     L10n.of(context).noUsersFoundWithQuery(
                                       controller.controller.text,
                                     ),
-                                    style: TextStyle(
-                                      color: theme.colorScheme.primary,
+                                    style: FluffyTypography.bodyM.copyWith(
+                                      color: theme.colorScheme.onSurfaceVariant,
                                     ),
                                     textAlign: TextAlign.center,
                                   ),
@@ -277,8 +288,18 @@ class NewPrivateChatView extends StatelessWidget {
                                   mxContent: contact.avatarUrl,
                                   presenceUserId: contact.userId,
                                 ),
-                                title: Text(displayname),
-                                subtitle: Text(contact.userId),
+                                title: Text(
+                                  displayname,
+                                  style: FluffyTypography.title.copyWith(
+                                    color: theme.colorScheme.onSurface,
+                                  ),
+                                ),
+                                subtitle: Text(
+                                  contact.userId,
+                                  style: FluffyTypography.bodyS.copyWith(
+                                    color: theme.colorScheme.onSurfaceVariant,
+                                  ),
+                                ),
                                 onTap: () => controller.openUserModal(contact),
                               );
                             },

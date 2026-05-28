@@ -1,9 +1,11 @@
 import 'package:fluffychat/config/app_config.dart';
+import 'package:fluffychat/config/design_tokens.dart';
 import 'package:fluffychat/config/setting_keys.dart';
 import 'package:fluffychat/config/themes.dart';
 import 'package:fluffychat/l10n/l10n.dart';
 import 'package:fluffychat/utils/beautify_string_extension.dart';
 import 'package:fluffychat/utils/platform_infos.dart';
+import 'package:fluffychat/widgets/cyber/cyber_widgets.dart';
 import 'package:fluffychat/widgets/layouts/max_width_body.dart';
 import 'package:fluffychat/widgets/matrix.dart';
 import 'package:fluffychat/widgets/settings_switch_list_tile.dart';
@@ -21,15 +23,18 @@ class SettingsSecurityView extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final cyber = CyberColors.of(context);
 
     return Scaffold(
       appBar: AppBar(
+        backgroundColor: Colors.transparent,
+        elevation: 0,
         title: Text(L10n.of(context).security),
         automaticallyImplyLeading: !FluffyThemes.isColumnMode(context),
         centerTitle: FluffyThemes.isColumnMode(context),
       ),
       body: ListTileTheme(
-        iconColor: theme.colorScheme.onSurface,
+        iconColor: cyber.cyan,
         child: MaxWidthBody(
           child: FutureBuilder(
             future: Matrix.of(
@@ -41,21 +46,16 @@ class SettingsSecurityView extends StatelessWidget {
               if (error == null && capabilities == null) {
                 return const Center(
                   child: Padding(
-                    padding: EdgeInsets.all(16.0),
+                    padding: EdgeInsets.all(FluffySpacing.lg),
                     child: CircularProgressIndicator.adaptive(strokeWidth: 2),
                   ),
                 );
               }
               return Column(
                 children: [
-                  ListTile(
-                    title: Text(
-                      L10n.of(context).privacy,
-                      style: TextStyle(
-                        color: theme.colorScheme.secondary,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
+                  CyberSectionHeader(
+                    L10n.of(context).privacy,
+                    accent: cyber.success,
                   ),
                   SettingsSwitchListTile.adaptive(
                     title: L10n.of(context).sendTypingNotifications,
@@ -69,50 +69,60 @@ class SettingsSecurityView extends StatelessWidget {
                     subtitle: L10n.of(context).sendReadReceiptsDescription,
                     setting: AppSettings.sendPublicReadReceipts,
                   ),
-                  ListTile(
-                    trailing: const Icon(Icons.chevron_right_outlined),
-                    title: Text(L10n.of(context).blockedUsers),
-                    subtitle: Text(
-                      L10n.of(context).thereAreCountUsersBlocked(
-                        Matrix.of(context).client.ignoredUsers.length,
-                      ),
+                  CyberSettingsTile(
+                    icon: Icons.block_outlined,
+                    accent: cyber.success,
+                    title: L10n.of(context).blockedUsers,
+                    subtitle: L10n.of(context).thereAreCountUsersBlocked(
+                      Matrix.of(context).client.ignoredUsers.length,
                     ),
                     onTap: () =>
                         context.go('/rooms/settings/security/ignorelist'),
                   ),
                   if (Matrix.of(context).client.encryption != null) ...{
                     if (PlatformInfos.isMobile)
-                      ListTile(
-                        trailing: const Icon(Icons.chevron_right_outlined),
-                        title: Text(L10n.of(context).appLock),
-                        subtitle: Text(L10n.of(context).appLockDescription),
+                      CyberSettingsTile(
+                        icon: Icons.lock_clock_outlined,
+                        accent: cyber.success,
+                        title: L10n.of(context).appLock,
+                        subtitle: L10n.of(context).appLockDescription,
                         onTap: controller.setAppLockAction,
                       ),
                   },
-                  Divider(color: theme.dividerColor),
-                  ListTile(
-                    title: Text(
-                      L10n.of(context).shareKeysWith,
-                      style: TextStyle(
-                        color: theme.colorScheme.secondary,
-                        fontWeight: FontWeight.bold,
+                  Divider(color: cyber.glassBorder),
+                  CyberSectionHeader(
+                    L10n.of(context).shareKeysWith,
+                    accent: cyber.success,
+                  ),
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(
+                      FluffySpacing.xl,
+                      0,
+                      FluffySpacing.xl,
+                      FluffySpacing.sm,
+                    ),
+                    child: Text(
+                      L10n.of(context).shareKeysWithDescription,
+                      style: FluffyTypography.bodyS.copyWith(
+                        color: theme.colorScheme.onSurfaceVariant,
                       ),
                     ),
-                    subtitle: Text(L10n.of(context).shareKeysWithDescription),
                   ),
-                  ListTile(
-                    title: Material(
-                      borderRadius: BorderRadius.circular(
-                        AppConfig.borderRadius / 2,
-                      ),
-                      color: theme.colorScheme.onInverseSurface,
+                  Padding(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: FluffySpacing.lg,
+                    ),
+                    child: CyberField(
                       child: DropdownButton<ShareKeysWith>(
                         isExpanded: true,
-                        padding: const EdgeInsets.symmetric(horizontal: 8.0),
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: FluffySpacing.sm,
+                        ),
                         borderRadius: BorderRadius.circular(
                           AppConfig.borderRadius / 2,
                         ),
                         underline: const SizedBox.shrink(),
+                        dropdownColor: cyber.glassFillStrong,
                         value: Matrix.of(context).client.shareKeysWith,
                         items: ShareKeysWith.values
                             .map(
@@ -126,50 +136,46 @@ class SettingsSecurityView extends StatelessWidget {
                       ),
                     ),
                   ),
-                  Divider(color: theme.dividerColor),
-                  ListTile(
-                    title: Text(
-                      L10n.of(context).account,
-                      style: TextStyle(
-                        color: theme.colorScheme.secondary,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
+                  Divider(color: cyber.glassBorder),
+                  CyberSectionHeader(
+                    L10n.of(context).account,
+                    accent: cyber.success,
                   ),
                   ListTile(
-                    title: Text(L10n.of(context).yourPublicKey),
-                    leading: const Icon(Icons.vpn_key_outlined),
+                    title: Text(
+                      L10n.of(context).yourPublicKey,
+                      style: FluffyTypography.title.copyWith(
+                        color: theme.colorScheme.onSurface,
+                      ),
+                    ),
+                    leading: Icon(Icons.vpn_key_outlined, color: cyber.cyan),
                     subtitle: SelectableText(
                       Matrix.of(context).client.fingerprintKey.beautified,
-                      style: const TextStyle(fontFamily: 'RobotoMono'),
+                      style: FluffyTypography.code.copyWith(
+                        color: theme.colorScheme.onSurfaceVariant,
+                      ),
                     ),
                   ),
                   if (capabilities?.mChangePassword?.enabled != false ||
                       error != null)
-                    ListTile(
-                      leading: const Icon(Icons.password_outlined),
-                      trailing: const Icon(Icons.chevron_right_outlined),
-                      title: Text(L10n.of(context).changePassword),
+                    CyberSettingsTile(
+                      icon: Icons.password_outlined,
+                      accent: cyber.cyan,
+                      title: L10n.of(context).changePassword,
                       onTap: () =>
                           context.go('/rooms/settings/security/password'),
                     ),
-                  ListTile(
-                    iconColor: Colors.orange,
-                    leading: const Icon(Icons.delete_sweep_outlined),
-                    title: Text(
-                      L10n.of(context).dehydrate,
-                      style: const TextStyle(color: Colors.orange),
-                    ),
+                  CyberSettingsTile(
+                    icon: Icons.delete_sweep_outlined,
+                    accent: cyber.warn,
+                    title: L10n.of(context).dehydrate,
                     onTap: controller.dehydrateAction,
                   ),
-                  Divider(color: theme.dividerColor),
-                  ListTile(
-                    iconColor: Colors.red,
-                    leading: const Icon(Icons.delete_outlined),
-                    title: Text(
-                      L10n.of(context).deleteAccount,
-                      style: const TextStyle(color: Colors.red),
-                    ),
+                  Divider(color: cyber.glassBorder),
+                  CyberSettingsTile(
+                    icon: Icons.delete_outlined,
+                    accent: cyber.magenta,
+                    title: L10n.of(context).deleteAccount,
                     onTap: controller.deleteAccountAction,
                   ),
                 ],

@@ -1,9 +1,10 @@
 import 'dart:convert';
 
-import 'package:fluffychat/config/app_config.dart';
+import 'package:fluffychat/config/design_tokens.dart';
 import 'package:fluffychat/config/themes.dart';
 import 'package:fluffychat/l10n/l10n.dart';
 import 'package:fluffychat/utils/localized_exception_extension.dart';
+import 'package:fluffychat/widgets/cyber/cyber_widgets.dart';
 import 'package:fluffychat/widgets/layouts/max_width_body.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_linkify/flutter_linkify.dart';
@@ -21,11 +22,14 @@ class SettingsHomeserverView extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final cyber = CyberColors.of(context);
 
     final client = Matrix.of(context).client;
 
     return Scaffold(
       appBar: AppBar(
+        backgroundColor: Colors.transparent,
+        elevation: 0,
         automaticallyImplyLeading: !FluffyThemes.isColumnMode(context),
         centerTitle: FluffyThemes.isColumnMode(context),
         title: Text(
@@ -40,14 +44,9 @@ class SettingsHomeserverView extends StatelessWidget {
           child: Column(
             mainAxisSize: .min,
             children: [
-              ListTile(
-                title: Text(
-                  L10n.of(context).serverInformation,
-                  style: TextStyle(
-                    color: theme.colorScheme.secondary,
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
+              CyberSectionHeader(
+                L10n.of(context).serverInformation,
+                accent: cyber.cyan,
               ),
               FutureBuilder(
                 future: client.getWellknownSupport(),
@@ -56,13 +55,18 @@ class SettingsHomeserverView extends StatelessWidget {
                   final data = snapshot.data;
                   if (error != null) {
                     return ListTile(
-                      leading: const Icon(Icons.error_outlined),
+                      leading: Icon(
+                        Icons.error_outlined,
+                        color: cyber.warn,
+                      ),
                       title: Text(
                         error.toLocalizedString(
                           context,
                           ExceptionContext.checkServerSupportInfo,
                         ),
-                        style: const TextStyle(fontSize: 14),
+                        style: FluffyTypography.bodyM.copyWith(
+                          color: cyber.warn,
+                        ),
                       ),
                     );
                   }
@@ -75,10 +79,15 @@ class SettingsHomeserverView extends StatelessWidget {
                   final contacts = data.contacts;
                   if (supportPage == null && contacts == null) {
                     return ListTile(
-                      leading: const Icon(Icons.error_outlined),
+                      leading: Icon(
+                        Icons.error_outlined,
+                        color: cyber.warn,
+                      ),
                       title: Text(
                         L10n.of(context).noContactInformationProvided,
-                        style: const TextStyle(fontSize: 14),
+                        style: FluffyTypography.bodyM.copyWith(
+                          color: cyber.warn,
+                        ),
                       ),
                     );
                   }
@@ -86,15 +95,24 @@ class SettingsHomeserverView extends StatelessWidget {
                     mainAxisSize: .min,
                     children: [
                       if (supportPage != null)
-                        ListTile(
-                          title: Text(L10n.of(context).supportPage),
-                          subtitle: Text(supportPage.toString()),
+                        CyberSettingsTile(
+                          icon: Icons.support_agent_outlined,
+                          accent: cyber.cyan,
+                          title: L10n.of(context).supportPage,
+                          subtitle: supportPage.toString(),
                         ),
                       if (contacts != null)
                         ...contacts.map((contact) {
                           return ListTile(
+                            leading: Icon(
+                              Icons.contact_mail_outlined,
+                              color: cyber.cyan,
+                            ),
                             title: Text(
                               contact.role.localizedString(L10n.of(context)),
+                              style: FluffyTypography.title.copyWith(
+                                color: theme.colorScheme.onSurface,
+                              ),
                             ),
                             subtitle: Column(
                               mainAxisSize: .min,
@@ -127,13 +145,15 @@ class SettingsHomeserverView extends StatelessWidget {
                       children: [
                         Icon(
                           Icons.error_outlined,
-                          color: theme.colorScheme.error,
+                          color: cyber.warn,
                         ),
-                        const SizedBox(height: 12),
+                        const SizedBox(height: FluffySpacing.md),
                         Text(
                           error.toLocalizedString(context),
                           textAlign: TextAlign.center,
-                          style: TextStyle(color: theme.colorScheme.error),
+                          style: FluffyTypography.bodyM.copyWith(
+                            color: cyber.warn,
+                          ),
                         ),
                       ],
                     );
@@ -147,16 +167,29 @@ class SettingsHomeserverView extends StatelessWidget {
                   return Column(
                     mainAxisSize: .min,
                     children: [
-                      ListTile(
-                        title: Text(L10n.of(context).name),
-                        subtitle: Text(data.name),
+                      CyberSettingsTile(
+                        icon: Icons.dns_outlined,
+                        accent: cyber.cyan,
+                        title: L10n.of(context).name,
+                        subtitle: data.name,
+                      ),
+                      CyberSettingsTile(
+                        icon: Icons.numbers_outlined,
+                        accent: cyber.cyan,
+                        title: L10n.of(context).version,
+                        subtitle: data.version,
                       ),
                       ListTile(
-                        title: Text(L10n.of(context).version),
-                        subtitle: Text(data.version),
-                      ),
-                      ListTile(
-                        title: Text(L10n.of(context).federationBaseUrl),
+                        leading: Icon(
+                          Icons.hub_outlined,
+                          color: cyber.cyan,
+                        ),
+                        title: Text(
+                          L10n.of(context).federationBaseUrl,
+                          style: FluffyTypography.title.copyWith(
+                            color: theme.colorScheme.onSurface,
+                          ),
+                        ),
                         subtitle: Linkify(
                           text: data.federationBaseUrl.toString(),
                           textScaleFactor: MediaQuery.textScalerOf(
@@ -164,8 +197,8 @@ class SettingsHomeserverView extends StatelessWidget {
                           ).scale(1),
                           options: const LinkifyOptions(humanize: false),
                           linkStyle: TextStyle(
-                            color: theme.colorScheme.primary,
-                            decorationColor: theme.colorScheme.primary,
+                            color: cyber.cyan,
+                            decorationColor: cyber.cyan,
                           ),
                           onOpen: (link) => launchUrlString(link.url),
                         ),
@@ -174,7 +207,7 @@ class SettingsHomeserverView extends StatelessWidget {
                   );
                 },
               ),
-              Divider(color: theme.dividerColor),
+              Divider(color: cyber.glassBorder),
               FutureBuilder(
                 future: client.getWellknown(),
                 builder: (context, snapshot) {
@@ -185,13 +218,15 @@ class SettingsHomeserverView extends StatelessWidget {
                       children: [
                         Icon(
                           Icons.error_outlined,
-                          color: theme.colorScheme.error,
+                          color: cyber.warn,
                         ),
-                        const SizedBox(height: 12),
+                        const SizedBox(height: FluffySpacing.md),
                         Text(
                           error.toLocalizedString(context),
                           textAlign: TextAlign.center,
-                          style: TextStyle(color: theme.colorScheme.error),
+                          style: FluffyTypography.bodyM.copyWith(
+                            color: cyber.warn,
+                          ),
                         ),
                       ],
                     );
@@ -206,17 +241,21 @@ class SettingsHomeserverView extends StatelessWidget {
                   return Column(
                     mainAxisSize: .min,
                     children: [
-                      ListTile(
-                        title: Text(
-                          L10n.of(context).clientWellKnownInformation,
-                          style: TextStyle(
-                            color: theme.colorScheme.secondary,
-                            fontWeight: FontWeight.bold,
-                          ),
-                        ),
+                      CyberSectionHeader(
+                        L10n.of(context).clientWellKnownInformation,
+                        accent: cyber.cyan,
                       ),
                       ListTile(
-                        title: Text(L10n.of(context).baseUrl),
+                        leading: Icon(
+                          Icons.link_outlined,
+                          color: cyber.cyan,
+                        ),
+                        title: Text(
+                          L10n.of(context).baseUrl,
+                          style: FluffyTypography.title.copyWith(
+                            color: theme.colorScheme.onSurface,
+                          ),
+                        ),
                         subtitle: Linkify(
                           text: wellKnown.mHomeserver.baseUrl.toString(),
                           textScaleFactor: MediaQuery.textScalerOf(
@@ -224,15 +263,24 @@ class SettingsHomeserverView extends StatelessWidget {
                           ).scale(1),
                           options: const LinkifyOptions(humanize: false),
                           linkStyle: TextStyle(
-                            color: theme.colorScheme.primary,
-                            decorationColor: theme.colorScheme.primary,
+                            color: cyber.cyan,
+                            decorationColor: cyber.cyan,
                           ),
                           onOpen: (link) => launchUrlString(link.url),
                         ),
                       ),
                       if (identityServer != null)
                         ListTile(
-                          title: Text(L10n.of(context).identityServer),
+                          leading: Icon(
+                            Icons.badge_outlined,
+                            color: cyber.cyan,
+                          ),
+                          title: Text(
+                            L10n.of(context).identityServer,
+                            style: FluffyTypography.title.copyWith(
+                              color: theme.colorScheme.onSurface,
+                            ),
+                          ),
                           subtitle: Linkify(
                             text: identityServer.baseUrl.toString(),
                             textScaleFactor: MediaQuery.textScalerOf(
@@ -240,28 +288,33 @@ class SettingsHomeserverView extends StatelessWidget {
                             ).scale(1),
                             options: const LinkifyOptions(humanize: false),
                             linkStyle: TextStyle(
-                              color: theme.colorScheme.primary,
-                              decorationColor: theme.colorScheme.primary,
+                              color: cyber.cyan,
+                              decorationColor: cyber.cyan,
                             ),
                             onOpen: (link) => launchUrlString(link.url),
                           ),
                         ),
                       ...wellKnown.additionalProperties.entries.map(
                         (entry) => ListTile(
-                          title: Text(entry.key),
-                          subtitle: Material(
-                            borderRadius: BorderRadius.circular(
-                              AppConfig.borderRadius,
+                          leading: Icon(
+                            Icons.data_object_outlined,
+                            color: cyber.cyan,
+                          ),
+                          title: Text(
+                            entry.key,
+                            style: FluffyTypography.title.copyWith(
+                              color: theme.colorScheme.onSurface,
                             ),
-                            color: theme.colorScheme.surfaceContainer,
+                          ),
+                          subtitle: CyberGlass(
+                            padding: const EdgeInsets.all(FluffySpacing.lg),
                             child: SingleChildScrollView(
-                              padding: const EdgeInsets.all(16),
                               scrollDirection: Axis.horizontal,
                               child: Text(
                                 const JsonEncoder.withIndent(
                                   '    ',
                                 ).convert(entry.value),
-                                style: TextStyle(
+                                style: FluffyTypography.code.copyWith(
                                   color: theme.colorScheme.onSurface,
                                 ),
                               ),

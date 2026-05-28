@@ -1,4 +1,6 @@
+import 'package:fluffychat/config/design_tokens.dart';
 import 'package:fluffychat/l10n/l10n.dart';
+import 'package:fluffychat/widgets/cyber/cyber_widgets.dart';
 import 'package:fluffychat/widgets/future_loading_dialog.dart';
 import 'package:fluffychat/widgets/layouts/max_width_body.dart';
 import 'package:flutter/material.dart';
@@ -14,10 +16,13 @@ class SettingsIgnoreListView extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final cyber = CyberColors.of(context);
 
     final client = Matrix.of(context).client;
     return Scaffold(
       appBar: AppBar(
+        backgroundColor: Colors.transparent,
+        elevation: 0,
         leading: const Center(child: BackButton()),
         title: Text(L10n.of(context).blockedUsers),
       ),
@@ -39,44 +44,56 @@ class SettingsIgnoreListView extends StatelessWidget {
               mainAxisSize: .min,
               children: [
                 Padding(
-                  padding: const EdgeInsets.all(16.0),
+                  padding: const EdgeInsets.all(FluffySpacing.lg),
                   child: Column(
                     mainAxisSize: .min,
                     children: [
-                      TextField(
-                        controller: controller.controller,
-                        autocorrect: false,
-                        textInputAction: TextInputAction.done,
-                        onSubmitted: (_) => controller.ignoreUser(context),
-                        decoration: InputDecoration(
-                          errorText: controller.errorText,
-                          hintText: '@bad_guy:domain.abc',
-                          floatingLabelBehavior: FloatingLabelBehavior.always,
-                          labelText: L10n.of(context).blockUsername,
-                          suffixIcon: IconButton(
-                            tooltip: L10n.of(context).block,
-                            icon: const Icon(Icons.add),
-                            onPressed: () => controller.ignoreUser(context),
+                      CyberField(
+                        child: TextField(
+                          controller: controller.controller,
+                          autocorrect: false,
+                          textInputAction: TextInputAction.done,
+                          onSubmitted: (_) => controller.ignoreUser(context),
+                          decoration: InputDecoration(
+                            border: InputBorder.none,
+                            enabledBorder: InputBorder.none,
+                            focusedBorder: InputBorder.none,
+                            errorText: controller.errorText,
+                            hintText: '@bad_guy:domain.abc',
+                            floatingLabelBehavior: FloatingLabelBehavior.always,
+                            labelText: L10n.of(context).blockUsername,
+                            suffixIcon: IconButton(
+                              tooltip: L10n.of(context).block,
+                              icon: Icon(Icons.add, color: cyber.magenta),
+                              onPressed: () => controller.ignoreUser(context),
+                            ),
                           ),
                         ),
                       ),
-                      const SizedBox(height: 16),
+                      const SizedBox(height: FluffySpacing.lg),
                       Text(
                         L10n.of(context).blockListDescription,
-                        style: const TextStyle(color: Colors.orange),
+                        style: FluffyTypography.bodyS.copyWith(
+                          color: cyber.warn,
+                        ),
                       ),
                     ],
                   ),
                 ),
-                Divider(color: theme.dividerColor),
+                Divider(color: cyber.glassBorder),
                 Expanded(
                   child: ListView.builder(
                     itemCount: client.ignoredUsers.length,
-                    itemBuilder: (c, i) => ListTile(
-                      title: Text(client.ignoredUsers[i]),
+                    itemBuilder: (c, i) => CyberSettingsTile(
+                      icon: Icons.block_outlined,
+                      accent: cyber.magenta,
+                      title: client.ignoredUsers[i],
                       trailing: IconButton(
                         tooltip: L10n.of(context).delete,
-                        icon: const Icon(Icons.delete_outlined),
+                        icon: Icon(
+                          Icons.delete_outlined,
+                          color: theme.colorScheme.error,
+                        ),
                         onPressed: () => showFutureLoadingDialog(
                           context: context,
                           future: () =>

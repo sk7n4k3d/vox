@@ -1,6 +1,8 @@
+import 'package:fluffychat/config/design_tokens.dart';
 import 'package:fluffychat/l10n/l10n.dart';
 import 'package:fluffychat/pages/image_viewer/video_player.dart';
 import 'package:fluffychat/utils/platform_infos.dart';
+import 'package:fluffychat/widgets/cyber/cyber_widgets.dart';
 import 'package:fluffychat/widgets/hover_builder.dart';
 import 'package:fluffychat/widgets/mxc_image.dart';
 import 'package:flutter/material.dart';
@@ -15,52 +17,55 @@ class ImageViewerView extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final cyber = CyberColors.of(context);
     final iconButtonStyle = IconButton.styleFrom(
-      backgroundColor: Colors.black.withAlpha(200),
-      foregroundColor: Colors.white,
+      backgroundColor: cyber.glassFillStrong,
+      foregroundColor: cyber.cyan,
+      shape: const RoundedRectangleBorder(borderRadius: FluffyRadius.brMd),
+      side: BorderSide(color: cyber.glassBorder),
     );
     return GestureDetector(
       onTap: () => Navigator.of(context).pop(),
       child: Scaffold(
-        backgroundColor: Colors.black.withAlpha(128),
+        backgroundColor: Colors.black.withValues(alpha: 0.5),
         extendBodyBehindAppBar: true,
         appBar: AppBar(
+          backgroundColor: Colors.transparent,
           elevation: 0,
           leading: IconButton(
             style: iconButtonStyle,
             icon: const Icon(Icons.close),
             onPressed: Navigator.of(context).pop,
-            color: Colors.white,
+            color: cyber.cyan,
             tooltip: L10n.of(context).close,
           ),
-          backgroundColor: Colors.transparent,
           actions: [
             IconButton(
               style: iconButtonStyle,
               icon: const Icon(Icons.reply_outlined),
               onPressed: controller.forwardAction,
-              color: Colors.white,
+              color: cyber.cyan,
               tooltip: L10n.of(context).share,
             ),
-            const SizedBox(width: 8),
+            const SizedBox(width: FluffySpacing.sm),
             IconButton(
               style: iconButtonStyle,
               icon: const Icon(Icons.download_outlined),
               onPressed: () => controller.saveFileAction(context),
-              color: Colors.white,
+              color: cyber.cyan,
               tooltip: L10n.of(context).downloadFile,
             ),
-            const SizedBox(width: 8),
+            const SizedBox(width: FluffySpacing.sm),
             if (PlatformInfos.isMobile)
               // Use builder context to correctly position the share dialog on iPad
               Padding(
-                padding: const EdgeInsets.only(right: 8.0),
+                padding: const EdgeInsets.only(right: FluffySpacing.sm),
                 child: Builder(
                   builder: (context) => IconButton(
                     style: iconButtonStyle,
                     onPressed: () => controller.shareFileAction(context),
                     tooltip: L10n.of(context).share,
-                    color: Colors.white,
+                    color: cyber.cyan,
                     icon: Icon(Icons.adaptive.share_outlined),
                   ),
                 ),
@@ -82,7 +87,7 @@ class ImageViewerView extends StatelessWidget {
                     switch (event.messageType) {
                       case MessageTypes.Video:
                         return Padding(
-                          padding: const EdgeInsets.only(top: 52.0),
+                          padding: const EdgeInsets.only(top: FluffySpacing.xxxl),
                           child: Center(
                             child: GestureDetector(
                               // Ignore taps to not go back here:
@@ -127,7 +132,7 @@ class ImageViewerView extends StatelessWidget {
                     children: [
                       if (controller.canGoBack)
                         Padding(
-                          padding: const EdgeInsets.all(12.0),
+                          padding: const EdgeInsets.all(FluffySpacing.md),
                           child: IconButton(
                             style: iconButtonStyle,
                             tooltip: L10n.of(context).previous,
@@ -137,7 +142,7 @@ class ImageViewerView extends StatelessWidget {
                         ),
                       if (controller.canGoNext)
                         Padding(
-                          padding: const EdgeInsets.all(12.0),
+                          padding: const EdgeInsets.all(FluffySpacing.md),
                           child: IconButton(
                             style: iconButtonStyle,
                             tooltip: L10n.of(context).next,
