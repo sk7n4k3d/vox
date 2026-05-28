@@ -95,7 +95,11 @@ class ChatEventList extends StatelessWidget {
                   final visibleIndex = timeline.events.lastIndexWhere(
                     (event) => !event.isCollapsedState && event.isVisibleInGui,
                   );
-                  if (visibleIndex > timeline.events.length - 50) {
+                  // lastIndexWhere renvoie -1 si aucun event visible : sur une
+                  // timeline courte (<50), `-1 > length-50` serait vrai et
+                  // déclencherait un requestHistory parasite. On exige >= 0.
+                  if (visibleIndex >= 0 &&
+                      visibleIndex > timeline.events.length - 50) {
                     WidgetsBinding.instance.addPostFrameCallback(
                       controller.requestHistory,
                     );

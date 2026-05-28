@@ -86,6 +86,32 @@ class UrlLauncher {
           return;
         }
       }
+      // arbitrary-uri-scheme-launch — n'ouvre que des schemes explicitement sûrs.
+      // Sans cette allowlist, un href HTML/markdown malveillant (intent:, file:,
+      // javascript:, content:…) atteignait directement le launcher de la plateforme
+      // (intent injection sur Android < 12). Les URIs matrix/deeplinks sont déjà
+      // routés plus haut via openMatrixToUrl().
+      const safeSchemes = {
+        'geo',
+        'mailto',
+        'tel',
+        'sms',
+        'bitcoin',
+        'bitcoincash',
+        'ethereum',
+        'monero',
+        'lightning',
+        'tg',
+        'sip',
+        'sips',
+      };
+      if (!safeSchemes.contains(uri.scheme.toLowerCase())) {
+        Logs().w('Refusing to launch unsafe URL scheme: ${uri.scheme}');
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(L10n.of(context).cantOpenUri(url!))),
+        );
+        return;
+      }
       launchUrlString(url!);
       return;
     }

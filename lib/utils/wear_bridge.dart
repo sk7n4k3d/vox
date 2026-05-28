@@ -215,7 +215,7 @@ class WearBridge {
         return null;
       }
     }
-    if (raw == null || raw.isEmpty) return null;
+    if (raw.isEmpty) return null;
 
     // Décode + downscale + JPEG q75 via package:image.
     // Run hors UI thread pour ne pas bloquer le rendering.

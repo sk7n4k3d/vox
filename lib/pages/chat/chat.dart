@@ -553,6 +553,15 @@ class ChatController extends State<ChatPageWithRoom>
     timeline?.cancelSubscriptions();
     timeline = null;
     inputFocus.removeListener(_inputFocusListener);
+    // Timers laissés vivants après dispose = fuite (et callbacks sur un state
+    // détruit). On annule les trois.
+    typingCoolDown?.cancel();
+    typingCoolDown = null;
+    typingTimeout?.cancel();
+    typingTimeout = null;
+    _storeInputTimeoutTimer?.cancel();
+    _storeInputTimeoutTimer = null;
+    scrollController.removeListener(_updateScrollController);
     if (currentlyTyping) room.setTyping(false);
     super.dispose();
   }
