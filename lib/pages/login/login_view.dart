@@ -1,4 +1,5 @@
 import 'package:fluffychat/l10n/l10n.dart';
+import 'package:fluffychat/widgets/cyber/cyber_widgets.dart';
 import 'package:fluffychat/widgets/layouts/login_scaffold.dart';
 import 'package:flutter/material.dart';
 
@@ -12,6 +13,7 @@ class LoginView extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final cyber = CyberColors.of(context);
 
     final homeserver = controller.widget.client.homeserver
         ?.toString()
@@ -52,9 +54,12 @@ class LoginView extends StatelessWidget {
                         ? null
                         : [AutofillHints.username],
                     decoration: InputDecoration(
-                      prefixIcon: const Icon(Icons.account_box_outlined),
+                      prefixIcon: Icon(
+                        Icons.account_box_outlined,
+                        color: cyber.cyan,
+                      ),
                       errorText: controller.usernameError,
-                      errorStyle: const TextStyle(color: Colors.orange),
+                      errorStyle: TextStyle(color: cyber.warn),
                       hintText: '@username:domain',
                       labelText: L10n.of(context).matrixId,
                     ),
@@ -74,16 +79,16 @@ class LoginView extends StatelessWidget {
                     obscureText: !controller.showPassword,
                     onSubmitted: (_) => controller.login(),
                     decoration: InputDecoration(
-                      prefixIcon: const Icon(Icons.lock_outlined),
+                      prefixIcon: Icon(Icons.lock_outlined, color: cyber.cyan),
                       errorText: controller.passwordError,
-                      errorStyle: const TextStyle(color: Colors.orange),
+                      errorStyle: TextStyle(color: cyber.warn),
                       suffixIcon: IconButton(
                         onPressed: controller.toggleShowPassword,
                         icon: Icon(
                           controller.showPassword
                               ? Icons.visibility_off_outlined
                               : Icons.visibility_outlined,
-                          color: Colors.black,
+                          color: theme.colorScheme.onSurfaceVariant,
                         ),
                       ),
                       hintText: '******',
@@ -94,15 +99,11 @@ class LoginView extends StatelessWidget {
                 const SizedBox(height: 16),
                 Padding(
                   padding: const EdgeInsets.symmetric(horizontal: 24.0),
-                  child: ElevatedButton(
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: theme.colorScheme.primary,
-                      foregroundColor: theme.colorScheme.onPrimary,
-                    ),
+                  child: CyberPrimaryButton(
+                    label: L10n.of(context).login,
+                    icon: Icons.login_rounded,
+                    loading: controller.loading,
                     onPressed: controller.loading ? null : controller.login,
-                    child: controller.loading
-                        ? const LinearProgressIndicator()
-                        : Text(L10n.of(context).login),
                   ),
                 ),
                 const SizedBox(height: 16),

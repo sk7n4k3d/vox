@@ -1,9 +1,8 @@
 import 'dart:ui';
 
-import 'package:flutter/material.dart';
-
 import 'package:fluffychat/config/cyberpunk_theme_extension.dart';
 import 'package:fluffychat/config/design_tokens.dart';
+import 'package:flutter/material.dart';
 
 /// CYBERCORE shared building blocks — used to bring every remaining vanilla
 /// screen (auth, settings sub-pages, chat details, new chat, viewers…) up to
