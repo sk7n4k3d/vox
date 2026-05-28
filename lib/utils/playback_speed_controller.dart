@@ -51,9 +51,18 @@ class PlaybackSpeedController extends ChangeNotifier
 
   Future<void> cycle() async {
     final indexExact = cyclePresets.indexOf(_speed);
-    final next = indexExact < 0
-        ? cyclePresets.first
-        : cyclePresets[(indexExact + 1) % cyclePresets.length];
+    final double next;
+    if (indexExact >= 0) {
+      // On est pile sur un preset du cycle : on avance au suivant (wrap).
+      next = cyclePresets[(indexExact + 1) % cyclePresets.length];
+    } else {
+      // Vitesse intermédiaire réglée via le bottom-sheet (ex. 1.25) : on avance
+      // au premier preset strictement supérieur, sinon on wrap au premier.
+      next = cyclePresets.firstWhere(
+        (p) => p > _speed,
+        orElse: () => cyclePresets.first,
+      );
+    }
     await setSpeed(next);
   }
 

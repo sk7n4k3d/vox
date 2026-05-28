@@ -73,10 +73,22 @@ void main() {
       expect(notified, 2);
     });
 
-    test('cycle from arbitrary intermediate speed advances past it', () async {
+    test('cycle from arbitrary intermediate speed advances to next preset',
+        () async {
       final controller = PlaybackSpeedController();
       await controller.setSpeed(1.25);
       await controller.cycle();
+      // Depuis 1.25 (hors cycle), on avance au premier cyclePreset strictement
+      // supérieur, soit 1.5 — pas un saut au max.
+      expect(controller.value, 1.5);
+    });
+
+    test('cycle from intermediate speed above all presets wraps to first',
+        () async {
+      final controller = PlaybackSpeedController();
+      await controller.setSpeed(1.75);
+      await controller.cycle();
+      // 1.75 > tous les cyclePresets sauf 2.0 → 2.0 est le suivant.
       expect(controller.value, 2.0);
     });
   });
