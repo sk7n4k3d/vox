@@ -3,6 +3,7 @@ import 'package:fluffychat/config/themes.dart';
 import 'package:fluffychat/l10n/l10n.dart';
 import 'package:fluffychat/pages/chat/chat_input_row.dart';
 import 'package:fluffychat/pages/chat/recording_view_model.dart';
+import 'package:fluffychat/widgets/cyber/cyber_widgets.dart';
 import 'package:flutter/material.dart';
 
 class RecordingInputRow extends StatelessWidget {
@@ -79,7 +80,7 @@ class RecordingInputRow extends StatelessWidget {
                         margin: const EdgeInsets.only(left: 2),
                         width: width.toDouble(),
                         decoration: BoxDecoration(
-                          color: theme.colorScheme.primary,
+                          color: CyberColors.of(context).cyan,
                           borderRadius: BorderRadius.circular(2),
                         ),
                         height: maxDecibalWidth * (amplitude / 100),
@@ -153,7 +154,7 @@ class RecordingInputRow extends StatelessWidget {
                           margin: const EdgeInsets.only(left: 2),
                           width: width.toDouble(),
                           decoration: BoxDecoration(
-                            color: theme.colorScheme.primary,
+                            color: CyberColors.of(context).cyan,
                             borderRadius: BorderRadius.circular(2),
                           ),
                           height: maxDecibalWidth * (amplitude / 100),

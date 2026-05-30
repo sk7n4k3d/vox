@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:fluffychat/config/design_tokens.dart';
 import 'package:fluffychat/l10n/l10n.dart';
 import 'package:fluffychat/pages/chat/chat.dart';
@@ -31,6 +33,23 @@ class VoiceRecordButton extends StatefulWidget {
 class _VoiceRecordButtonState extends State<VoiceRecordButton> {
   Offset _origin = Offset.zero;
   bool _pressActive = false;
+  Timer? _cancelTimer;
+
+  @override
+  void dispose() {
+    _cancelTimer?.cancel();
+    super.dispose();
+  }
+
+  void _scheduleCancel() {
+    final state = widget.recordingState;
+    _cancelTimer?.cancel();
+    _cancelTimer = Timer(const Duration(milliseconds: 200), () {
+      if (!mounted || !state.mounted) return;
+      if (state.isRecording) state.cancel();
+      widget.gestureNotifier.value = VoiceRecordGestureState.zero;
+    });
+  }
 
   void _showTooltipSnackBar() {
     final bottomInset = MediaQuery.viewInsetsOf(context).bottom;
@@ -80,11 +99,7 @@ class _VoiceRecordButtonState extends State<VoiceRecordButton> {
     if (gestureState.reachedCancelThreshold(screenWidth)) {
       HapticFeedback.mediumImpact();
       state.markCancelling(true);
-      Future.delayed(const Duration(milliseconds: 200), () {
-        if (!mounted || !state.mounted) return;
-        if (state.isRecording) state.cancel();
-        widget.gestureNotifier.value = VoiceRecordGestureState.zero;
-      });
+      _scheduleCancel();
     }
   }
 
@@ -111,11 +126,7 @@ class _VoiceRecordButtonState extends State<VoiceRecordButton> {
 
     if (offset.dx <= -screenWidth * kCancelThresholdRatio) {
       state.markCancelling(true);
-      Future.delayed(const Duration(milliseconds: 200), () {
-        if (!mounted || !state.mounted) return;
-        if (state.isRecording) state.cancel();
-        widget.gestureNotifier.value = VoiceRecordGestureState.zero;
-      });
+      _scheduleCancel();
       return;
     }
 

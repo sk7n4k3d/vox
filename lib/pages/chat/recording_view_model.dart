@@ -67,19 +67,39 @@ class RecordingViewModelState extends State<RecordingViewModel> {
     if (PlatformInfos.isAndroid) {
       final info = await DeviceInfoPlugin().androidInfo;
       if (info.version.sdkInt < 19) {
-        showOkAlertDialog(
-          context: context,
-          title: L10n.of(context).unsupportedAndroidVersion,
-          message: L10n.of(context).unsupportedAndroidVersionLong,
-          okLabel: L10n.of(context).close,
-        );
+        if (mounted) {
+          showOkAlertDialog(
+            context: context,
+            title: L10n.of(context).unsupportedAndroidVersion,
+            message: L10n.of(context).unsupportedAndroidVersionLong,
+            okLabel: L10n.of(context).close,
+          );
+        }
+        // Always clear the transient `isStarting` flag on early return,
+        // otherwise the overlay/button stay stuck in a half-recording state
+        // and the slide-to-cancel / lock UI never shows again.
+        if (mounted) setState(_reset);
         return;
       }
     }
-    if (await AudioRecorder().hasPermission() == false) return;
 
     final audioRecorder = _audioRecorder ??= AudioRecorder();
-    setState(() {});
+    // Single permission check (was duplicated). On denial, reset so the UI
+    // returns to idle instead of being wedged in `isStarting`.
+    if (await audioRecorder.hasPermission() != true) {
+      if (mounted) {
+        showOkAlertDialog(
+          context: context,
+          title: L10n.of(context).oopsSomethingWentWrong,
+          message: L10n.of(context).noPermission,
+        );
+        setState(_reset);
+      } else {
+        _reset();
+      }
+      return;
+    }
+    if (mounted) setState(() {});
 
     try {
       final codec =
@@ -96,20 +116,6 @@ class RecordingViewModelState extends State<RecordingViewModel> {
         path = path_lib.join(tempDir.path, fileName);
       }
 
-      final result = await audioRecorder.hasPermission();
-      if (result != true) {
-        if (mounted) {
-          showOkAlertDialog(
-            context: context,
-            title: L10n.of(context).oopsSomethingWentWrong,
-            message: L10n.of(context).noPermission,
-          );
-          setState(_reset);
-        } else {
-          _reset();
-        }
-        return;
-      }
       await WakelockPlus.enable();
 
       await audioRecorder.start(
@@ -151,9 +157,13 @@ class RecordingViewModelState extends State<RecordingViewModel> {
     _recorderSubscription = Timer.periodic(const Duration(milliseconds: 100), (
       _,
     ) async {
+      // Capture the recorder locally: it can be nulled by cancel()/dispose()
+      // between this tick and the awaited getAmplitude(), which would throw on
+      // `_audioRecorder!`.
+      final recorder = _audioRecorder;
+      if (!mounted || recorder == null) return;
+      final amplitude = await recorder.getAmplitude();
       if (!mounted || _audioRecorder == null) return;
-      final amplitude = await _audioRecorder!.getAmplitude();
-      if (!mounted) return;
       var value = 100 + amplitude.current * 2;
       value = value < 1 ? 1 : value;
       amplitudeTimeline.add(value);

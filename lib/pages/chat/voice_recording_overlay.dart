@@ -1,11 +1,21 @@
 import 'dart:ui';
 
+import 'package:fluffychat/config/cyberpunk_theme_extension.dart';
 import 'package:fluffychat/config/design_tokens.dart';
 import 'package:fluffychat/l10n/l10n.dart';
 import 'package:fluffychat/pages/chat/recording_view_model.dart';
 import 'package:fluffychat/pages/chat/voice_record_gesture_state.dart';
+import 'package:fluffychat/widgets/cyber/cyber_fx.dart';
+import 'package:fluffychat/widgets/cyber/cyber_widgets.dart';
 import 'package:flutter/material.dart';
 
+/// CYBERCORE premium recording overlay — a floating glass panel that sits above
+/// the input bar while you hold-to-record. Live waveform driven by the
+/// recorder amplitude, a magenta slide-to-cancel hint that intensifies as you
+/// drag left, and a cyan lock badge that rises as you drag up.
+///
+/// Shown whenever recording is starting/active and not yet locked. Reduce-motion
+/// pauses the pulse/scroll animations.
 class VoiceRecordingOverlay extends StatelessWidget {
   final RecordingViewModelState state;
   final ValueNotifier<VoiceRecordGestureState> gestureNotifier;
@@ -25,35 +35,49 @@ class VoiceRecordingOverlay extends StatelessWidget {
       child: ValueListenableBuilder<VoiceRecordGestureState>(
         valueListenable: gestureNotifier,
         builder: (context, gestureState, _) {
-          final theme = Theme.of(context);
+          final cyber = CyberColors.of(context);
           final l10n = L10n.of(context);
-          final hintOpacity =
-              (1.0 - gestureState.cancelProgress).clamp(0.0, 1.0);
-          final lockProgress = gestureState.lockProgress;
-          final scheme = theme.colorScheme;
+          final reduce = CyberMotion.reduced(context);
+          final cancelProgress = gestureState.cancelProgress.clamp(0.0, 1.0);
+          final lockProgress = gestureState.lockProgress.clamp(0.0, 1.0);
+          final cancelling = state.isCancelling || cancelProgress > 0.6;
 
           return Padding(
             padding: const EdgeInsets.symmetric(
-              horizontal: 16,
-              vertical: 12,
+              horizontal: FluffySpacing.lg,
+              vertical: FluffySpacing.md,
             ),
             child: Row(
               children: [
-                _PulseRecDot(color: scheme.error),
-                const SizedBox(width: 10),
-                _LiveTimer(state: state, color: scheme.onSurfaceVariant),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Opacity(
-                    opacity: hintOpacity,
-                    child: _SlideToCancelHint(
-                      color: scheme.onSurfaceVariant,
-                      label: l10n.voiceMessageSlideToCancel,
-                    ),
-                  ),
+                _PulseRecDot(
+                  color: cancelling ? cyber.magenta : cyber.cyan,
+                  reduce: reduce,
                 ),
-                const SizedBox(width: 8),
-                _LockBadge(progress: lockProgress, scheme: scheme),
+                const SizedBox(width: FluffySpacing.md),
+                _LiveTimer(state: state, color: cyber.cyan),
+                const SizedBox(width: FluffySpacing.md),
+                Expanded(
+                  child: cancelling
+                      ? _CancelHint(color: cyber.magenta, label: l10n.cancel)
+                      : _LiveWaveform(
+                          state: state,
+                          color: cyber.cyan,
+                          fade: 1.0 - cancelProgress,
+                        ),
+                ),
+                const SizedBox(width: FluffySpacing.md),
+                _SlideToCancelChevrons(
+                  color: cyber.magenta,
+                  label: l10n.voiceMessageSlideToCancel,
+                  progress: cancelProgress,
+                  reduce: reduce,
+                ),
+                const SizedBox(width: FluffySpacing.md),
+                _LockBadge(
+                  progress: lockProgress,
+                  cyber: cyber,
+                  reduce: reduce,
+                ),
               ],
             ),
           );
@@ -63,8 +87,8 @@ class VoiceRecordingOverlay extends StatelessWidget {
   }
 }
 
-/// Smooth size+opacity+blur exit. Returns SizedBox(0) when fully closed so no
-/// pixels remain in the layout tree.
+/// Floating glass shell with smooth height+opacity entrance, hairline + faint
+/// cyan glow. Collapses to a zero-height box when hidden.
 class _OverlayShell extends StatelessWidget {
   final bool visible;
   final Widget child;
@@ -73,12 +97,7 @@ class _OverlayShell extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final scheme = theme.colorScheme;
-    final tinted = Color.alphaBlend(
-      scheme.primary.withValues(alpha: 0.06),
-      scheme.surfaceContainerHighest,
-    );
+    final cyber = CyberColors.of(context);
     return TweenAnimationBuilder<double>(
       tween: Tween(begin: 0, end: visible ? 1.0 : 0.0),
       duration: visible ? FluffyDurations.medium : FluffyDurations.fast,
@@ -87,31 +106,44 @@ class _OverlayShell extends StatelessWidget {
         if (t <= 0.001) {
           return const SizedBox(width: double.infinity, height: 0);
         }
+        final tc = t.clamp(0.0, 1.0);
         return ClipRect(
           child: Align(
-            alignment: Alignment.topCenter,
-            heightFactor: t.clamp(0.0, 1.0),
+            alignment: Alignment.bottomCenter,
+            heightFactor: tc,
             child: Opacity(
-              opacity: t.clamp(0.0, 1.0),
-              child: BackdropFilter(
-                filter: ImageFilter.blur(sigmaX: 12, sigmaY: 12),
-                child: Container(
-                  width: double.infinity,
-                  height: 72,
+              opacity: tc,
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(
+                  FluffySpacing.sm,
+                  FluffySpacing.sm,
+                  FluffySpacing.sm,
+                  FluffySpacing.xs,
+                ),
+                child: DecoratedBox(
                   decoration: BoxDecoration(
-                    color: tinted,
-                    border: Border(
-                      top: BorderSide(
-                        color: scheme.outlineVariant.withValues(alpha: 0.4),
-                        width: 0.5,
+                    borderRadius: FluffyRadius.brLg,
+                    boxShadow: FluffyElevation.glowCyan(cyber.cyan, alpha: 0.18),
+                  ),
+                  child: ClipRRect(
+                    borderRadius: FluffyRadius.brLg,
+                    child: BackdropFilter(
+                      filter: ImageFilter.blur(
+                        sigmaX: cyber.blurSigmaSheet,
+                        sigmaY: cyber.blurSigmaSheet,
                       ),
-                      bottom: BorderSide(
-                        color: scheme.outlineVariant.withValues(alpha: 0.4),
-                        width: 0.5,
+                      child: Container(
+                        width: double.infinity,
+                        height: 100,
+                        decoration: BoxDecoration(
+                          color: cyber.glassFillStrong,
+                          borderRadius: FluffyRadius.brLg,
+                          border: Border.all(color: cyber.glassBorder),
+                        ),
+                        child: animatedChild,
                       ),
                     ),
                   ),
-                  child: animatedChild,
                 ),
               ),
             ),
@@ -123,10 +155,12 @@ class _OverlayShell extends StatelessWidget {
   }
 }
 
+/// Pulsing record dot with a soft expanding halo.
 class _PulseRecDot extends StatefulWidget {
   final Color color;
+  final bool reduce;
 
-  const _PulseRecDot({required this.color});
+  const _PulseRecDot({required this.color, required this.reduce});
 
   @override
   State<_PulseRecDot> createState() => _PulseRecDotState();
@@ -134,15 +168,25 @@ class _PulseRecDot extends StatefulWidget {
 
 class _PulseRecDotState extends State<_PulseRecDot>
     with SingleTickerProviderStateMixin {
-  late final AnimationController _pulse;
+  late final AnimationController _pulse = AnimationController(
+    vsync: this,
+    duration: const Duration(milliseconds: 800),
+  );
 
   @override
   void initState() {
     super.initState();
-    _pulse = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 800),
-    )..repeat(reverse: true);
+    if (!widget.reduce) _pulse.repeat(reverse: true);
+  }
+
+  @override
+  void didUpdateWidget(_PulseRecDot old) {
+    super.didUpdateWidget(old);
+    if (widget.reduce && _pulse.isAnimating) {
+      _pulse.stop();
+    } else if (!widget.reduce && !_pulse.isAnimating) {
+      _pulse.repeat(reverse: true);
+    }
   }
 
   @override
@@ -158,25 +202,31 @@ class _PulseRecDotState extends State<_PulseRecDot>
       builder: (context, _) {
         final t = Curves.easeInOutSine.transform(_pulse.value);
         return SizedBox(
-          width: 14,
-          height: 14,
+          width: 16,
+          height: 16,
           child: Stack(
             alignment: Alignment.center,
             children: [
               Container(
-                width: 14,
-                height: 14,
+                width: 16,
+                height: 16,
                 decoration: BoxDecoration(
-                  color: widget.color.withValues(alpha: 0.25 * (1 - t)),
+                  color: widget.color.withValues(alpha: 0.22 * (1 - t)),
                   shape: BoxShape.circle,
                 ),
               ),
               Container(
-                width: 10,
-                height: 10,
+                width: 11,
+                height: 11,
                 decoration: BoxDecoration(
-                  color: widget.color.withValues(alpha: 0.65 + 0.35 * t),
+                  color: widget.color.withValues(alpha: 0.7 + 0.3 * t),
                   shape: BoxShape.circle,
+                  boxShadow: [
+                    BoxShadow(
+                      color: widget.color.withValues(alpha: 0.5 * t),
+                      blurRadius: 6,
+                    ),
+                  ],
                 ),
               ),
             ],
@@ -187,90 +237,76 @@ class _PulseRecDotState extends State<_PulseRecDot>
   }
 }
 
-class _LiveTimer extends StatefulWidget {
+/// Monospace live timer (mm:ss), tabular figures.
+class _LiveTimer extends StatelessWidget {
   final RecordingViewModelState state;
   final Color color;
 
   const _LiveTimer({required this.state, required this.color});
 
   @override
-  State<_LiveTimer> createState() => _LiveTimerState();
-}
-
-class _LiveTimerState extends State<_LiveTimer> {
-  @override
   Widget build(BuildContext context) {
-    final d = widget.state.duration;
+    final d = state.duration;
     final mm = d.inMinutes.remainder(60).toString().padLeft(2, '0');
     final ss = d.inSeconds.remainder(60).toString().padLeft(2, '0');
     return Text(
       '$mm:$ss',
-      style: TextStyle(
-        color: widget.color,
-        fontFamily: 'monospace',
-        fontSize: 13,
-        fontWeight: FontWeight.w500,
+      style: FluffyTypography.code.copyWith(
+        color: color,
+        fontWeight: FontWeight.w600,
         fontFeatures: const [FontFeature.tabularFigures()],
       ),
     );
   }
 }
 
-class _SlideToCancelHint extends StatefulWidget {
+/// Live waveform: scrolling cyan bars driven by the recorder amplitude
+/// timeline. Most recent samples on the right.
+class _LiveWaveform extends StatelessWidget {
+  final RecordingViewModelState state;
   final Color color;
-  final String label;
+  final double fade;
 
-  const _SlideToCancelHint({required this.color, required this.label});
-
-  @override
-  State<_SlideToCancelHint> createState() => _SlideToCancelHintState();
-}
-
-class _SlideToCancelHintState extends State<_SlideToCancelHint>
-    with SingleTickerProviderStateMixin {
-  late final AnimationController _slide;
-
-  @override
-  void initState() {
-    super.initState();
-    _slide = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 1400),
-    )..repeat(reverse: true);
-  }
-
-  @override
-  void dispose() {
-    _slide.dispose();
-    super.dispose();
-  }
+  const _LiveWaveform({
+    required this.state,
+    required this.color,
+    required this.fade,
+  });
 
   @override
   Widget build(BuildContext context) {
-    return AnimatedBuilder(
-      animation: _slide,
-      builder: (context, _) {
-        final t = Curves.easeInOutSine.transform(_slide.value);
-        final dx = -4.0 - t * 4.0;
-        return Center(
-          child: Transform.translate(
-            offset: Offset(dx, 0),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Icon(Icons.chevron_left, size: 18, color: widget.color),
-                const SizedBox(width: 2),
-                Text(
-                  widget.label,
-                  style: TextStyle(
-                    color: widget.color,
-                    fontSize: 13,
-                    fontWeight: FontWeight.w500,
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        const barWidth = 3.0;
+        const gap = 2.0;
+        final maxBars = (constraints.maxWidth / (barWidth + gap)).floor();
+        final samples = state.amplitudeTimeline.reversed
+            .take(maxBars)
+            .toList()
+            .reversed
+            .toList();
+        return Opacity(
+          opacity: fade.clamp(0.2, 1.0),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.end,
+            crossAxisAlignment: CrossAxisAlignment.center,
+            children: [
+              for (var i = 0; i < samples.length; i++)
+                Padding(
+                  padding: const EdgeInsets.only(left: gap),
+                  child: Container(
+                    width: barWidth,
+                    height: (28.0 * (samples[i] / 100)).clamp(3.0, 28.0),
+                    decoration: BoxDecoration(
+                      color: color.withValues(
+                        // newest bars brightest
+                        alpha: 0.4 + 0.6 * (i / samples.length),
+                      ),
+                      borderRadius: BorderRadius.circular(2),
+                    ),
                   ),
-                  overflow: TextOverflow.ellipsis,
                 ),
-              ],
-            ),
+            ],
           ),
         );
       },
@@ -278,11 +314,116 @@ class _SlideToCancelHintState extends State<_SlideToCancelHint>
   }
 }
 
+/// Full-width "release to cancel" treatment shown once cancel is imminent.
+class _CancelHint extends StatelessWidget {
+  final Color color;
+  final String label;
+
+  const _CancelHint({required this.color, required this.label});
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.center,
+      children: [
+        Icon(Icons.delete_outline_rounded, size: 20, color: color),
+        const SizedBox(width: FluffySpacing.sm),
+        Flexible(
+          child: Text(
+            label,
+            overflow: TextOverflow.ellipsis,
+            style: FluffyTypography.labelL.copyWith(
+              color: color,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+/// Animated "‹ ‹ slide to cancel" chevrons that drift left; tint ramps to
+/// magenta as cancelProgress grows.
+class _SlideToCancelChevrons extends StatefulWidget {
+  final Color color;
+  final String label;
+  final double progress;
+  final bool reduce;
+
+  const _SlideToCancelChevrons({
+    required this.color,
+    required this.label,
+    required this.progress,
+    required this.reduce,
+  });
+
+  @override
+  State<_SlideToCancelChevrons> createState() => _SlideToCancelChevronsState();
+}
+
+class _SlideToCancelChevronsState extends State<_SlideToCancelChevrons>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _drift = AnimationController(
+    vsync: this,
+    duration: const Duration(milliseconds: 1400),
+  );
+
+  @override
+  void initState() {
+    super.initState();
+    if (!widget.reduce) _drift.repeat(reverse: true);
+  }
+
+  @override
+  void didUpdateWidget(_SlideToCancelChevrons old) {
+    super.didUpdateWidget(old);
+    if (widget.reduce && _drift.isAnimating) {
+      _drift.stop();
+    } else if (!widget.reduce && !_drift.isAnimating) {
+      _drift.repeat(reverse: true);
+    }
+  }
+
+  @override
+  void dispose() {
+    _drift.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    // Hidden when cancel is essentially triggered (the _CancelHint takes over).
+    if (widget.progress > 0.6) return const SizedBox.shrink();
+    return AnimatedBuilder(
+      animation: _drift,
+      builder: (context, _) {
+        final t = Curves.easeInOutSine.transform(_drift.value);
+        final dx = -2.0 - t * 4.0;
+        return Transform.translate(
+          offset: Offset(dx, 0),
+          child: Icon(
+            Icons.keyboard_double_arrow_left_rounded,
+            size: 18,
+            color: widget.color.withValues(alpha: 0.55 + 0.45 * widget.progress),
+          ),
+        );
+      },
+    );
+  }
+}
+
+/// Cyan lock badge that rises and lights up as lockProgress increases.
 class _LockBadge extends StatefulWidget {
   final double progress;
-  final ColorScheme scheme;
+  final CyberpunkTheme cyber;
+  final bool reduce;
 
-  const _LockBadge({required this.progress, required this.scheme});
+  const _LockBadge({
+    required this.progress,
+    required this.cyber,
+    required this.reduce,
+  });
 
   @override
   State<_LockBadge> createState() => _LockBadgeState();
@@ -290,15 +431,25 @@ class _LockBadge extends StatefulWidget {
 
 class _LockBadgeState extends State<_LockBadge>
     with SingleTickerProviderStateMixin {
-  late final AnimationController _bob;
+  late final AnimationController _bob = AnimationController(
+    vsync: this,
+    duration: const Duration(milliseconds: 1100),
+  );
 
   @override
   void initState() {
     super.initState();
-    _bob = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 1100),
-    )..repeat(reverse: true);
+    if (!widget.reduce) _bob.repeat(reverse: true);
+  }
+
+  @override
+  void didUpdateWidget(_LockBadge old) {
+    super.didUpdateWidget(old);
+    if (widget.reduce && _bob.isAnimating) {
+      _bob.stop();
+    } else if (!widget.reduce && !_bob.isAnimating) {
+      _bob.repeat(reverse: true);
+    }
   }
 
   @override
@@ -310,49 +461,49 @@ class _LockBadgeState extends State<_LockBadge>
   @override
   Widget build(BuildContext context) {
     final reached = widget.progress >= 0.5;
-    final accent = reached ? widget.scheme.primary : widget.scheme.tertiary;
+    final accent = reached ? widget.cyber.cyan : widget.cyber.violet;
     return AnimatedBuilder(
       animation: _bob,
       builder: (context, _) {
         final wobble = Curves.easeInOutSine.transform(_bob.value);
         final translateY = -wobble * 3 + (-widget.progress * 16);
-        final scale = 1.0 + widget.progress * 0.15;
+        final scale = 1.0 + widget.progress * 0.18;
         return Transform.translate(
           offset: Offset(0, translateY),
           child: Transform.scale(
             scale: scale,
             child: Container(
-              width: 36,
-              height: 48,
+              width: 38,
+              height: 50,
               decoration: BoxDecoration(
                 color: Color.alphaBlend(
-                  accent.withValues(alpha: 0.10),
-                  widget.scheme.surfaceContainerHigh,
+                  accent.withValues(alpha: 0.12),
+                  widget.cyber.glassFillStrong,
                 ),
-                borderRadius: BorderRadius.circular(18),
+                borderRadius: FluffyRadius.brLg,
                 border: Border.all(
                   color: reached
-                      ? widget.scheme.primary
-                      : widget.scheme.outlineVariant,
+                      ? accent
+                      : widget.cyber.glassBorder,
                   width: reached ? 1.5 : 0.5,
                 ),
+                boxShadow: reached
+                    ? FluffyElevation.glowCyan(accent, alpha: 0.4)
+                    : null,
               ),
               child: Column(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
                   Icon(
-                    reached ? Icons.lock : Icons.lock_outline,
+                    reached ? Icons.lock_rounded : Icons.lock_outline_rounded,
                     size: 18,
-                    color: reached
-                        ? widget.scheme.primary
-                        : widget.scheme.onSurfaceVariant,
+                    color: reached ? accent : widget.cyber.violet,
                   ),
                   const SizedBox(height: 2),
                   Icon(
-                    Icons.keyboard_arrow_up,
+                    Icons.keyboard_arrow_up_rounded,
                     size: 12,
-                    color: widget.scheme.onSurfaceVariant
-                        .withValues(alpha: 0.7),
+                    color: accent.withValues(alpha: 0.7),
                   ),
                 ],
               ),
