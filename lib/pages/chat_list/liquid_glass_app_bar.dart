@@ -3,6 +3,7 @@ import 'dart:ui';
 import 'package:fluffychat/config/cyberpunk_theme_extension.dart';
 import 'package:fluffychat/config/design_tokens.dart';
 import 'package:fluffychat/l10n/l10n.dart';
+import 'package:fluffychat/widgets/avatar.dart';
 import 'package:fluffychat/widgets/matrix.dart';
 import 'package:flutter/material.dart';
 import 'package:matrix/matrix.dart';
@@ -33,12 +34,14 @@ Future<Profile?> _ownProfileCached(Client client) {
 /// the scrolling content is visible under the blur.
 class LiquidGlassAppBar extends StatelessWidget
     implements PreferredSizeWidget {
-  /// Total visual height of the bar (excludes status bar — that's handled
-  /// internally via SafeArea top padding).
+  /// Title row height (large display title + leading avatar + action icons).
   static const double _barHeight = 64.0;
 
-  /// Optional greeting line height (added when [showGreeting] is true).
-  static const double _greetingHeight = 28.0;
+  /// Greeting line height (added when [showGreeting] is true).
+  static const double _greetingHeight = 22.0;
+
+  /// Glass search field height (always rendered — 2026 pull-bar pattern).
+  static const double _searchHeight = 52.0;
 
   /// Called when the user taps the search icon.
   final VoidCallback? onSearchTap;
@@ -66,7 +69,10 @@ class LiquidGlassAppBar extends StatelessWidget
 
   @override
   Size get preferredSize => Size.fromHeight(
-        showGreeting ? _barHeight + _greetingHeight : _barHeight,
+        _barHeight +
+            (showGreeting ? _greetingHeight : 0) +
+            _searchHeight +
+            8,
       );
 
   @override
@@ -113,46 +119,50 @@ class LiquidGlassAppBar extends StatelessWidget
                         height: _barHeight,
                         child: Row(
                           children: [
-                            if (leadingAvatar != null) ...[
-                              InkWell(
-                                onTap: onSettingsTap,
-                                customBorder: const CircleBorder(),
-                                child: leadingAvatar,
-                              ),
-                              const SizedBox(width: 12),
-                            ],
+                            // Profile avatar as the settings entry point
+                            // (Telegram/Beeper pattern) with a cyan ring + glow.
+                            _ProfileAvatarButton(
+                              onTap: onSettingsTap,
+                              cyber: cyber,
+                            ),
+                            const SizedBox(width: 12),
                             Expanded(
-                              child: Text(
-                                L10n.of(context).chats,
-                                style: FluffyTypography.display.copyWith(
-                                  color: colorScheme.onSurface,
-                                  fontSize: 26,
-                                ),
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
+                              child: Column(
+                                mainAxisAlignment: MainAxisAlignment.center,
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    L10n.of(context).chats,
+                                    style: FluffyTypography.display.copyWith(
+                                      color: colorScheme.onSurface,
+                                      fontSize: 26,
+                                      letterSpacing: 0.5,
+                                    ),
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                  if (showGreeting)
+                                    SizedBox(
+                                      height: _greetingHeight,
+                                      child: _GreetingLine(),
+                                    ),
+                                ],
                               ),
                             ),
                             _AppBarIconButton(
-                              icon: Icons.search_outlined,
-                              tooltip: L10n.of(context).search,
-                              onPressed: onSearchTap,
+                              icon: Icons.edit_square,
+                              tooltip: L10n.of(context).newChat,
+                              accent: cyber.magenta,
+                              onPressed: onNewChatTap,
                             ),
-                            if (leadingAvatar == null) ...[
-                              const SizedBox(width: 4),
-                              _AppBarIconButton(
-                                icon: Icons.settings_outlined,
-                                tooltip: L10n.of(context).settings,
-                                onPressed: onSettingsTap,
-                              ),
-                            ],
                           ],
                         ),
                       ),
-                      if (showGreeting)
-                        SizedBox(
-                          height: _greetingHeight,
-                          child: _GreetingLine(),
-                        ),
+                      const SizedBox(height: 8),
+                      _GlassSearchField(
+                        cyber: cyber,
+                        onTap: onSearchTap,
+                      ),
                     ],
                   ),
                 ),
@@ -168,28 +178,119 @@ class LiquidGlassAppBar extends StatelessWidget
 class _AppBarIconButton extends StatelessWidget {
   final IconData icon;
   final String tooltip;
+  final Color accent;
   final VoidCallback? onPressed;
 
   const _AppBarIconButton({
     required this.icon,
     required this.tooltip,
+    required this.accent,
     required this.onPressed,
   });
 
   @override
   Widget build(BuildContext context) {
-    final colorScheme = Theme.of(context).colorScheme;
     return IconButton(
       tooltip: tooltip,
       onPressed: onPressed,
-      icon: Icon(icon, size: 24),
+      icon: Icon(icon, size: 22),
       style: IconButton.styleFrom(
-        foregroundColor: colorScheme.onSurface,
-        backgroundColor: colorScheme.surfaceContainerHighest.withValues(
-          alpha: 0.4,
-        ),
+        foregroundColor: accent,
+        backgroundColor: accent.withValues(alpha: 0.12),
+        side: BorderSide(color: accent.withValues(alpha: 0.35)),
         shape: const CircleBorder(),
         padding: const EdgeInsets.all(10),
+      ),
+    );
+  }
+}
+
+/// Left profile avatar entry point for Settings, ringed in cyan with a soft
+/// glow — replaces the dull grey settings cog.
+class _ProfileAvatarButton extends StatelessWidget {
+  final VoidCallback? onTap;
+  final CyberpunkTheme cyber;
+
+  const _ProfileAvatarButton({required this.onTap, required this.cyber});
+
+  @override
+  Widget build(BuildContext context) {
+    final client = Matrix.of(context).client;
+    return InkWell(
+      onTap: onTap,
+      customBorder: const CircleBorder(),
+      child: FutureBuilder<Profile?>(
+        future: _ownProfileCached(client),
+        builder: (context, snapshot) {
+          final url = snapshot.data?.avatarUrl;
+          final initial = (snapshot.data?.displayName ??
+                  client.userID?.localpart ??
+                  '?')
+              .trim();
+          final letter = initial.isEmpty ? '?' : initial[0].toUpperCase();
+          return Container(
+            width: 42,
+            height: 42,
+            padding: const EdgeInsets.all(2),
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              border: Border.all(color: cyber.cyan, width: 1.5),
+              boxShadow: [
+                BoxShadow(
+                  color: cyber.cyan.withValues(alpha: 0.4),
+                  blurRadius: 8,
+                ),
+              ],
+            ),
+            child: Avatar(
+              mxContent: url,
+              name: letter,
+              size: 38,
+            ),
+          );
+        },
+      ),
+    );
+  }
+}
+
+/// Full-width glassy search field (2026 pull-bar pattern) — tapping it opens
+/// the existing search flow.
+class _GlassSearchField extends StatelessWidget {
+  final CyberpunkTheme cyber;
+  final VoidCallback? onTap;
+
+  const _GlassSearchField({required this.cyber, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: FluffyRadius.brStadium,
+        child: Container(
+          height: 44,
+          padding: const EdgeInsets.symmetric(horizontal: FluffySpacing.lg),
+          decoration: BoxDecoration(
+            color: cyber.glassFillLight,
+            borderRadius: FluffyRadius.brStadium,
+            border: Border.all(color: cyber.glassBorder),
+          ),
+          child: Row(
+            children: [
+              Icon(Icons.search_rounded, size: 20, color: cyber.cyan),
+              const SizedBox(width: FluffySpacing.md),
+              Text(
+                L10n.of(context).search,
+                style: FluffyTypography.bodyM.copyWith(
+                  color: theme.colorScheme.onSurfaceVariant,
+                ),
+              ),
+            ],
+          ),
+        ),
       ),
     );
   }

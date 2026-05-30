@@ -5,6 +5,7 @@ import 'package:fluffychat/l10n/l10n.dart';
 import 'package:fluffychat/pages/chat_list/chat_list.dart';
 import 'package:fluffychat/pages/chat_list/chat_list_item.dart';
 import 'package:fluffychat/pages/chat_list/dummy_chat_list_item.dart';
+import 'package:fluffychat/pages/chat_list/liquid_glass_app_bar.dart';
 import 'package:fluffychat/pages/chat_list/search_title.dart';
 import 'package:fluffychat/pages/chat_list/space_view.dart';
 import 'package:fluffychat/pages/chat_list/status_msg_list.dart';
@@ -78,8 +79,11 @@ class ChatListViewBody extends StatelessWidget {
         // that was doubled up before and produced a phantom gap.
         final showLiquidAppBar =
             !controller.isSearchMode && controller.activeSpaceId == null;
+        // Reserve exactly the AppBar's own preferredSize (title + greeting +
+        // glass search bar). Single source of truth so the reserve stays in
+        // sync with the bar layout.
         final topInset = showLiquidAppBar
-            ? 64.0 + 28.0 // bar + greeting
+            ? const LiquidGlassAppBar(showGreeting: true).preferredSize.height
             : 0.0;
 
         return SafeArea(
