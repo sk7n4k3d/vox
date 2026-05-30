@@ -12,10 +12,12 @@ import 'package:fluffychat/pages/chat/pinned_events.dart';
 import 'package:fluffychat/pages/chat/reply_display.dart';
 import 'package:fluffychat/utils/account_config.dart';
 import 'package:fluffychat/utils/localized_exception_extension.dart';
+import 'package:fluffychat/widgets/cyber/cyber_fx.dart';
 import 'package:fluffychat/widgets/future_loading_dialog.dart';
 import 'package:fluffychat/widgets/matrix.dart';
 import 'package:fluffychat/widgets/mxc_image.dart';
 import 'package:flutter/material.dart';
+import 'package:glow_effects/glow_effects.dart';
 import 'package:matrix/matrix.dart';
 
 import '../../utils/stream_extension.dart';
@@ -156,6 +158,23 @@ class ChatView extends StatelessWidget {
                 onDragExited: controller.onDragExited,
                 child: Stack(
                   children: <Widget>[
+                    // CYBERCORE — subtle animated aurora backdrop behind the
+                    // timeline when no custom wallpaper is set. Isolated in a
+                    // RepaintBoundary so it never invalidates the message list's
+                    // layer, hosted by CyberManaged (auto-downscales / disables
+                    // under low FPS) and faded low to keep messages readable.
+                    // CyberManaged renders nothing under reduce-motion.
+                    if (accountConfig.wallpaperUrl == null)
+                      Positioned.fill(
+                        child: RepaintBoundary(
+                          child: Opacity(
+                            opacity: 0.22,
+                            child: CyberManaged(
+                              effect: const AuroraEffect(speed: 0.35),
+                            ),
+                          ),
+                        ),
+                      ),
                     if (accountConfig.wallpaperUrl != null)
                       Opacity(
                         opacity: accountConfig.wallpaperOpacity ?? 0.5,
