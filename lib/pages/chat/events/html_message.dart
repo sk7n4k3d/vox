@@ -1,6 +1,7 @@
 import 'dart:collection';
 
 import 'package:collection/collection.dart';
+import 'package:fluffychat/config/design_tokens.dart';
 import 'package:fluffychat/pages/chat/events/code_block_widget.dart';
 import 'package:fluffychat/utils/event_checkbox_extension.dart';
 import 'package:fluffychat/widgets/avatar.dart';
@@ -558,7 +559,19 @@ class HtmlMessage extends StatelessWidget {
     final element = _parseHtmlCached(html);
     return Text.rich(
       _renderHtml(element, context),
-      style: TextStyle(fontSize: fontSize, color: textColor),
+      // Pin the root inline style so markdown renders at the same perceived
+      // size as plain text. Without an explicit fontFamily/height the root
+      // Text.rich inherits the ambient DefaultTextStyle (textTheme.bodyMedium,
+      // Inter with height: 1.45), inflating line height and making rich text
+      // look larger than the nominal fontSizeFactor. We keep fontSize driven
+      // by the caller (fontSizeFactor * messageFontSize) and only fix the
+      // family + line height to the value used elsewhere in this renderer.
+      style: TextStyle(
+        fontFamily: FluffyTypography.inter,
+        height: 1.25,
+        fontSize: fontSize,
+        color: textColor,
+      ),
       maxLines: limitHeight ? 64 : null,
       overflow: TextOverflow.fade,
       selectionColor: textColor.withAlpha(128),
