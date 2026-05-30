@@ -498,30 +498,6 @@ class Message extends StatelessWidget {
                               ),
                               onPressed: () => onSelect(event),
                             ),
-                          )
-                        else if (ownMessage)
-                          SizedBox(
-                            width: Avatar.defaultSize,
-                            child: Center(
-                              child: SizedBox(
-                                width: 18,
-                                height: 18,
-                                child: event.status == EventStatus.error
-                                    ? _MessageErrorBadge(
-                                        magenta: cyber?.magenta ??
-                                            theme.colorScheme.error,
-                                      )
-                                    : event.fileSendingStatus != null
-                                    ? CircularProgressIndicator.adaptive(
-                                        strokeWidth: 1.5,
-                                        valueColor: AlwaysStoppedAnimation(
-                                          cyber?.cyan ??
-                                              theme.colorScheme.primary,
-                                        ),
-                                      )
-                                    : null,
-                              ),
-                            ),
                           ),
                         // Inbound messages: drop the legacy left-aligned big
                         // avatar — the avatar now lives inline with the sender
@@ -863,6 +839,32 @@ class Message extends StatelessWidget {
                             ],
                           ),
                         ),
+                        // Own messages: send-status indicator (spinner / error
+                        // badge) sits at the END of the message — to the right
+                        // of the bubble — instead of being stranded on the far
+                        // left of the full-width row.
+                        if (ownMessage && !longPressSelect)
+                          Padding(
+                            padding: const EdgeInsets.only(left: 4.0, top: 14.0),
+                            child: SizedBox(
+                              width: 18,
+                              height: 18,
+                              child: event.status == EventStatus.error
+                                  ? _MessageErrorBadge(
+                                      magenta: cyber?.magenta ??
+                                          theme.colorScheme.error,
+                                    )
+                                  : event.fileSendingStatus != null
+                                  ? CircularProgressIndicator.adaptive(
+                                      strokeWidth: 1.5,
+                                      valueColor: AlwaysStoppedAnimation(
+                                        cyber?.cyan ??
+                                            theme.colorScheme.primary,
+                                      ),
+                                    )
+                                  : null,
+                            ),
+                          ),
                       ],
                     ),
                   ],
