@@ -149,12 +149,9 @@ class LiquidGlassAppBar extends StatelessWidget
                                 ],
                               ),
                             ),
-                            _AppBarIconButton(
-                              icon: Icons.edit_square,
-                              tooltip: L10n.of(context).newChat,
-                              accent: cyber.magenta,
-                              onPressed: onNewChatTap,
-                            ),
+                            // Nouveau-message retiré ici : le FAB en bas à droite
+                            // s'en charge (évite le doublon). L'avatar gauche =
+                            // Réglages, la barre de recherche glass au centre.
                           ],
                         ),
                       ),
@@ -170,36 +167,6 @@ class LiquidGlassAppBar extends StatelessWidget
             ),
           ),
         ),
-      ),
-    );
-  }
-}
-
-class _AppBarIconButton extends StatelessWidget {
-  final IconData icon;
-  final String tooltip;
-  final Color accent;
-  final VoidCallback? onPressed;
-
-  const _AppBarIconButton({
-    required this.icon,
-    required this.tooltip,
-    required this.accent,
-    required this.onPressed,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return IconButton(
-      tooltip: tooltip,
-      onPressed: onPressed,
-      icon: Icon(icon, size: 22),
-      style: IconButton.styleFrom(
-        foregroundColor: accent,
-        backgroundColor: accent.withValues(alpha: 0.12),
-        side: BorderSide(color: accent.withValues(alpha: 0.35)),
-        shape: const CircleBorder(),
-        padding: const EdgeInsets.all(10),
       ),
     );
   }
