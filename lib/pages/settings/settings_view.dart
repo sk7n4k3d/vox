@@ -2,6 +2,7 @@ import 'package:fluffychat/config/cyberpunk_theme_extension.dart';
 import 'package:fluffychat/config/setting_keys.dart';
 import 'package:fluffychat/l10n/l10n.dart';
 import 'package:fluffychat/utils/platform_infos.dart';
+import 'package:fluffychat/widgets/cyber/cyber_fx.dart';
 import 'package:fluffychat/widgets/matrix.dart';
 import 'package:fluffychat/widgets/theme_builder.dart';
 import 'package:flutter/material.dart';
@@ -44,7 +45,11 @@ class SettingsView extends StatelessWidget {
 
     return Scaffold(
       appBar: AppBar(
-        title: Text(l10n.settings),
+        title: CyberGlitchText(
+          l10n.settings,
+          style: theme.appBarTheme.titleTextStyle ??
+              theme.textTheme.titleLarge,
+        ),
         leading: Center(
           child: BackButton(onPressed: () => context.go('/rooms')),
         ),

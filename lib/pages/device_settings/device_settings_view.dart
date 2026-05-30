@@ -2,9 +2,11 @@ import 'package:fluffychat/config/design_tokens.dart';
 import 'package:fluffychat/config/themes.dart';
 import 'package:fluffychat/l10n/l10n.dart';
 import 'package:fluffychat/pages/device_settings/device_settings.dart';
+import 'package:fluffychat/widgets/cyber/cyber_fx.dart';
 import 'package:fluffychat/widgets/cyber/cyber_widgets.dart';
 import 'package:fluffychat/widgets/layouts/max_width_body.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_animate/flutter_animate.dart';
 
 import 'user_device_list_item.dart';
 
@@ -21,7 +23,7 @@ class DevicesSettingsView extends StatelessWidget {
         centerTitle: FluffyThemes.isColumnMode(context),
         backgroundColor: Colors.transparent,
         elevation: 0,
-        title: Text(L10n.of(context).devices),
+        title: CyberGlitchText(L10n.of(context).devices),
       ),
       body: MaxWidthBody(
         child: FutureBuilder<bool>(
@@ -76,10 +78,18 @@ class DevicesSettingsView extends StatelessWidget {
                           ),
                         ),
                       if (controller.thisDevice != null) ...[
-                        CyberSectionHeader(
-                          L10n.of(context).thisDevice,
-                          accent: cyber.violet,
-                        ),
+                        CyberMotion.reduced(context)
+                            ? CyberSectionHeader(
+                                L10n.of(context).thisDevice,
+                                accent: cyber.violet,
+                              )
+                            : CyberSectionHeader(
+                                L10n.of(context).thisDevice,
+                                accent: cyber.violet,
+                              )
+                                .animate(onPlay: (c) => c.stop())
+                                .fadeIn(duration: FluffyDurations.fast)
+                                .slideX(begin: -0.1),
                         UserDeviceListItem(
                           controller.thisDevice!,
                           rename: controller.renameDeviceAction,

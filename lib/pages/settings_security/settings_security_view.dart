@@ -5,11 +5,13 @@ import 'package:fluffychat/config/themes.dart';
 import 'package:fluffychat/l10n/l10n.dart';
 import 'package:fluffychat/utils/beautify_string_extension.dart';
 import 'package:fluffychat/utils/platform_infos.dart';
+import 'package:fluffychat/widgets/cyber/cyber_fx.dart';
 import 'package:fluffychat/widgets/cyber/cyber_widgets.dart';
 import 'package:fluffychat/widgets/layouts/max_width_body.dart';
 import 'package:fluffychat/widgets/matrix.dart';
 import 'package:fluffychat/widgets/settings_switch_list_tile.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_animate/flutter_animate.dart';
 import 'package:go_router/go_router.dart';
 import 'package:matrix/matrix.dart';
 
@@ -24,12 +26,16 @@ class SettingsSecurityView extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final cyber = CyberColors.of(context);
+    final reduceMotion = CyberMotion.reduced(context);
 
     return Scaffold(
       appBar: AppBar(
         backgroundColor: Colors.transparent,
         elevation: 0,
-        title: Text(L10n.of(context).security),
+        title: CyberGlitchText(
+          L10n.of(context).security,
+          style: theme.appBarTheme.titleTextStyle,
+        ),
         automaticallyImplyLeading: !FluffyThemes.isColumnMode(context),
         centerTitle: FluffyThemes.isColumnMode(context),
       ),
@@ -53,10 +59,18 @@ class SettingsSecurityView extends StatelessWidget {
               }
               return Column(
                 children: [
-                  CyberSectionHeader(
-                    L10n.of(context).privacy,
-                    accent: cyber.success,
-                  ),
+                  reduceMotion
+                      ? CyberSectionHeader(
+                          L10n.of(context).privacy,
+                          accent: cyber.success,
+                        )
+                      : CyberSectionHeader(
+                          L10n.of(context).privacy,
+                          accent: cyber.success,
+                        )
+                          .animate(onPlay: (c) => c.stop())
+                          .fadeIn(duration: FluffyDurations.fast)
+                          .slideX(begin: -0.1),
                   SettingsSwitchListTile.adaptive(
                     title: L10n.of(context).sendTypingNotifications,
                     subtitle: L10n.of(
@@ -90,10 +104,18 @@ class SettingsSecurityView extends StatelessWidget {
                       ),
                   },
                   Divider(color: cyber.glassBorder),
-                  CyberSectionHeader(
-                    L10n.of(context).shareKeysWith,
-                    accent: cyber.success,
-                  ),
+                  reduceMotion
+                      ? CyberSectionHeader(
+                          L10n.of(context).shareKeysWith,
+                          accent: cyber.success,
+                        )
+                      : CyberSectionHeader(
+                          L10n.of(context).shareKeysWith,
+                          accent: cyber.success,
+                        )
+                          .animate(onPlay: (c) => c.stop())
+                          .fadeIn(duration: FluffyDurations.fast)
+                          .slideX(begin: -0.1),
                   Padding(
                     padding: const EdgeInsets.fromLTRB(
                       FluffySpacing.xl,
@@ -137,10 +159,18 @@ class SettingsSecurityView extends StatelessWidget {
                     ),
                   ),
                   Divider(color: cyber.glassBorder),
-                  CyberSectionHeader(
-                    L10n.of(context).account,
-                    accent: cyber.success,
-                  ),
+                  reduceMotion
+                      ? CyberSectionHeader(
+                          L10n.of(context).account,
+                          accent: cyber.success,
+                        )
+                      : CyberSectionHeader(
+                          L10n.of(context).account,
+                          accent: cyber.success,
+                        )
+                          .animate(onPlay: (c) => c.stop())
+                          .fadeIn(duration: FluffyDurations.fast)
+                          .slideX(begin: -0.1),
                   ListTile(
                     title: Text(
                       L10n.of(context).yourPublicKey,

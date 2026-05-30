@@ -9,11 +9,13 @@ import 'package:fluffychat/pages/chat/events/state_message.dart';
 import 'package:fluffychat/utils/account_config.dart';
 import 'package:fluffychat/utils/color_value.dart';
 import 'package:fluffychat/widgets/avatar.dart';
+import 'package:fluffychat/widgets/cyber/cyber_fx.dart';
 import 'package:fluffychat/widgets/cyber/cyber_widgets.dart';
 import 'package:fluffychat/widgets/layouts/max_width_body.dart';
 import 'package:fluffychat/widgets/matrix.dart';
 import 'package:fluffychat/widgets/mxc_image.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_animate/flutter_animate.dart';
 import 'package:matrix/matrix.dart';
 
 import '../../config/app_config.dart';
@@ -29,6 +31,7 @@ class SettingsStyleView extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final cyber = CyberColors.of(context);
+    final reduceMotion = CyberMotion.reduced(context);
 
     const colorPickerSize = 32.0;
     final client = Matrix.of(context).client;
@@ -38,7 +41,7 @@ class SettingsStyleView extends StatelessWidget {
         centerTitle: FluffyThemes.isColumnMode(context),
         backgroundColor: Colors.transparent,
         elevation: 0,
-        title: Text(L10n.of(context).changeTheme),
+        title: CyberGlitchText(L10n.of(context).changeTheme),
       ),
       backgroundColor: theme.colorScheme.surface,
       body: MaxWidthBody(
@@ -74,7 +77,9 @@ class SettingsStyleView extends StatelessWidget {
             CyberSectionHeader(
               L10n.of(context).setColorTheme,
               accent: cyber.violet,
-            ),
+            ).animate(target: reduceMotion ? 1 : null).fadeIn(
+                  duration: FluffyDurations.fast,
+                ).slideX(begin: -0.1),
             DynamicColorBuilder(
               builder: (light, dark) {
                 final systemColor =
@@ -136,7 +141,9 @@ class SettingsStyleView extends StatelessWidget {
             CyberSectionHeader(
               L10n.of(context).messagesStyle,
               accent: cyber.violet,
-            ),
+            ).animate(target: reduceMotion ? 1 : null).fadeIn(
+                  duration: FluffyDurations.fast,
+                ).slideX(begin: -0.1),
             StreamBuilder(
               stream: client.onSync.stream.where(
                 (syncUpdate) =>
@@ -364,7 +371,9 @@ class SettingsStyleView extends StatelessWidget {
             CyberSectionHeader(
               L10n.of(context).overview,
               accent: cyber.violet,
-            ),
+            ).animate(target: reduceMotion ? 1 : null).fadeIn(
+                  duration: FluffyDurations.fast,
+                ).slideX(begin: -0.1),
             SettingsSwitchListTile.adaptive(
               title: L10n.of(context).presencesToggle,
               setting: AppSettings.showPresences,

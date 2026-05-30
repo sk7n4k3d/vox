@@ -3,11 +3,13 @@ import 'package:fluffychat/config/setting_keys.dart';
 import 'package:fluffychat/config/themes.dart';
 import 'package:fluffychat/l10n/l10n.dart';
 import 'package:fluffychat/utils/platform_infos.dart';
+import 'package:fluffychat/widgets/cyber/cyber_fx.dart';
 import 'package:fluffychat/widgets/cyber/cyber_widgets.dart';
 import 'package:fluffychat/widgets/layouts/max_width_body.dart';
 import 'package:fluffychat/widgets/matrix.dart';
 import 'package:fluffychat/widgets/settings_switch_list_tile.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_animate/flutter_animate.dart';
 import 'package:go_router/go_router.dart';
 
 import 'settings_chat.dart';
@@ -16,16 +18,32 @@ class SettingsChatView extends StatelessWidget {
   final SettingsChatController controller;
   const SettingsChatView(this.controller, {super.key});
 
+  /// One-shot entry animation for a static section header. Falls back to the
+  /// plain header under reduce-motion (no animation, no repeat).
+  static Widget _animatedHeader(bool reduceMotion, Widget header) {
+    if (reduceMotion) return header;
+    return header
+        .animate(onPlay: (controller) => controller.stop())
+        .fadeIn(duration: FluffyDurations.fast)
+        .slideX(begin: -0.1);
+  }
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final cyber = CyberColors.of(context);
+    final reduceMotion = CyberMotion.reduced(context);
 
     return Scaffold(
       appBar: AppBar(
         backgroundColor: Colors.transparent,
         elevation: 0,
-        title: Text(L10n.of(context).chat),
+        title: CyberGlitchText(
+          L10n.of(context).chat,
+          style: FluffyTypography.headlineM.copyWith(
+            color: theme.colorScheme.onSurface,
+          ),
+        ),
         automaticallyImplyLeading: !FluffyThemes.isColumnMode(context),
         centerTitle: FluffyThemes.isColumnMode(context),
       ),
@@ -49,9 +67,12 @@ class SettingsChatView extends StatelessWidget {
           child: MaxWidthBody(
             child: Column(
               children: [
-                CyberSectionHeader(
-                  L10n.of(context).chat,
-                  accent: cyber.cyan,
+                _animatedHeader(
+                  reduceMotion,
+                  CyberSectionHeader(
+                    L10n.of(context).chat,
+                    accent: cyber.cyan,
+                  ),
                 ),
                 Padding(
                   padding: const EdgeInsets.symmetric(
@@ -102,9 +123,12 @@ class SettingsChatView extends StatelessWidget {
                     ),
                   ),
                 ),
-                CyberSectionHeader(
-                  L10n.of(context).customEmojisAndStickers,
-                  accent: cyber.cyan,
+                _animatedHeader(
+                  reduceMotion,
+                  CyberSectionHeader(
+                    L10n.of(context).customEmojisAndStickers,
+                    accent: cyber.cyan,
+                  ),
                 ),
                 Padding(
                   padding: const EdgeInsets.symmetric(
@@ -123,9 +147,12 @@ class SettingsChatView extends StatelessWidget {
                     ),
                   ),
                 ),
-                CyberSectionHeader(
-                  L10n.of(context).calls,
-                  accent: cyber.magenta,
+                _animatedHeader(
+                  reduceMotion,
+                  CyberSectionHeader(
+                    L10n.of(context).calls,
+                    accent: cyber.magenta,
+                  ),
                 ),
                 Padding(
                   padding: const EdgeInsets.symmetric(

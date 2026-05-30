@@ -4,9 +4,11 @@ import 'package:fluffychat/config/themes.dart';
 import 'package:fluffychat/l10n/l10n.dart';
 import 'package:fluffychat/pages/settings_notifications/push_rule_extensions.dart';
 import 'package:fluffychat/utils/adaptive_bottom_sheet.dart';
+import 'package:fluffychat/widgets/cyber/cyber_fx.dart';
 import 'package:fluffychat/widgets/cyber/cyber_widgets.dart';
 import 'package:fluffychat/widgets/layouts/max_width_body.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_animate/flutter_animate.dart';
 import 'package:matrix/matrix.dart';
 
 import '../../utils/localized_exception_extension.dart';
@@ -37,7 +39,7 @@ class SettingsNotificationsView extends StatelessWidget {
         centerTitle: FluffyThemes.isColumnMode(context),
         backgroundColor: Colors.transparent,
         elevation: 0,
-        title: Text(L10n.of(context).notifications),
+        title: CyberGlitchText(L10n.of(context).notifications),
       ),
       body: MaxWidthBody(
         child: StreamBuilder(
@@ -51,6 +53,7 @@ class SettingsNotificationsView extends StatelessWidget {
           builder: (BuildContext context, _) {
             final theme = Theme.of(context);
             final cyber = CyberColors.of(context);
+            final reduceMotion = CyberMotion.reduced(context);
             return SelectionArea(
               child: Column(
                 children: [
@@ -59,7 +62,7 @@ class SettingsNotificationsView extends StatelessWidget {
                       CyberSectionHeader(
                         category.kind.localized(L10n.of(context)),
                         accent: cyber.magenta,
-                      ),
+                      ).animatedHeader(reduceMotion),
                       Padding(
                         padding: const EdgeInsets.symmetric(
                           horizontal: FluffySpacing.lg,
@@ -106,7 +109,7 @@ class SettingsNotificationsView extends StatelessWidget {
                   CyberSectionHeader(
                     'Sonnerie appel entrant',
                     accent: cyber.violet,
-                  ),
+                  ).animatedHeader(reduceMotion),
                   Padding(
                     padding: const EdgeInsets.symmetric(
                       horizontal: FluffySpacing.lg,
@@ -121,7 +124,7 @@ class SettingsNotificationsView extends StatelessWidget {
                   CyberSectionHeader(
                     L10n.of(context).devices,
                     accent: cyber.violet,
-                  ),
+                  ).animatedHeader(reduceMotion),
                   FutureBuilder<List<Pusher>?>(
                     future: controller.pusherFuture ??= Matrix.of(
                       context,
@@ -190,6 +193,17 @@ class SettingsNotificationsView extends StatelessWidget {
         ),
       ),
     );
+  }
+}
+
+extension on Widget {
+  /// One-shot entry animation for static section headers (fade + slide-in).
+  /// Returns the plain widget under reduce-motion.
+  Widget animatedHeader(bool reduceMotion) {
+    if (reduceMotion) return this;
+    return animate(onPlay: (controller) => controller.stop())
+        .fadeIn(duration: FluffyDurations.fast)
+        .slideX(begin: -0.1);
   }
 }
 

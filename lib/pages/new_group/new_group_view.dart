@@ -4,6 +4,7 @@ import 'package:fluffychat/l10n/l10n.dart';
 import 'package:fluffychat/pages/new_group/new_group.dart';
 import 'package:fluffychat/utils/localized_exception_extension.dart';
 import 'package:fluffychat/widgets/avatar.dart';
+import 'package:fluffychat/widgets/cyber/cyber_fx.dart';
 import 'package:fluffychat/widgets/cyber/cyber_widgets.dart';
 import 'package:fluffychat/widgets/layouts/max_width_body.dart';
 import 'package:flutter/material.dart';
@@ -30,7 +31,7 @@ class NewGroupView extends StatelessWidget {
             onPressed: controller.loading ? null : Navigator.of(context).pop,
           ),
         ),
-        title: Text(
+        title: CyberGlitchText(
           isSpace ? L10n.of(context).newSpace : L10n.of(context).createGroup,
           style: FluffyTypography.headlineM.copyWith(
             color: theme.colorScheme.onSurface,

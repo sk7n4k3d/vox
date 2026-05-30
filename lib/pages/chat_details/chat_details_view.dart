@@ -6,10 +6,12 @@ import 'package:fluffychat/utils/fluffy_share.dart';
 import 'package:fluffychat/utils/matrix_sdk_extensions/matrix_locals.dart';
 import 'package:fluffychat/widgets/avatar.dart';
 import 'package:fluffychat/widgets/chat_settings_popup_menu.dart';
+import 'package:fluffychat/widgets/cyber/cyber_fx.dart';
 import 'package:fluffychat/widgets/cyber/cyber_widgets.dart';
 import 'package:fluffychat/widgets/layouts/max_width_body.dart';
 import 'package:fluffychat/widgets/matrix.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_animate/flutter_animate.dart';
 import 'package:flutter_linkify/flutter_linkify.dart';
 import 'package:go_router/go_router.dart';
 import 'package:matrix/matrix.dart';
@@ -23,10 +25,21 @@ class ChatDetailsView extends StatelessWidget {
 
   const ChatDetailsView(this.controller, {super.key});
 
+  /// One-shot fade+slide entrance for static section headers. Returns the
+  /// header untouched under reduce-motion.
+  Widget _animatedHeader(Widget header, bool reduceMotion) {
+    if (reduceMotion) return header;
+    return header
+        .animate(onPlay: (c) => c.stop())
+        .fadeIn(duration: FluffyDurations.fast)
+        .slideX(begin: -0.1);
+  }
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final cyber = CyberColors.of(context);
+    final reduceMotion = CyberMotion.reduced(context);
 
     final room = Matrix.of(context).client.getRoomById(controller.roomId!);
     if (room == null) {
@@ -84,7 +97,7 @@ class ChatDetailsView extends StatelessWidget {
               if (controller.widget.embeddedCloseButton == null)
                 ChatSettingsPopupMenu(room, false),
             ],
-            title: Text(
+            title: CyberGlitchText(
               L10n.of(context).chatDetails,
               style: FluffyTypography.headlineM.copyWith(
                 color: theme.colorScheme.onSurface,
@@ -113,17 +126,20 @@ class ChatDetailsView extends StatelessWidget {
                                             null
                                         ? 'embedded_content_banner'
                                         : 'content_banner',
-                                    child: Avatar(
-                                      mxContent: room.avatar,
-                                      name: displayname,
-                                      size: Avatar.defaultSize * 2.5,
-                                      onTap: roomAvatar != null
-                                          ? () => showDialog(
-                                              context: context,
-                                              builder: (_) =>
-                                                  MxcImageViewer(roomAvatar),
-                                            )
-                                          : null,
+                                    child: CyberNeonFrame(
+                                      color: cyber.cyan,
+                                      child: Avatar(
+                                        mxContent: room.avatar,
+                                        name: displayname,
+                                        size: Avatar.defaultSize * 2.5,
+                                        onTap: roomAvatar != null
+                                            ? () => showDialog(
+                                                context: context,
+                                                builder: (_) =>
+                                                    MxcImageViewer(roomAvatar),
+                                              )
+                                            : null,
+                                      ),
                                     ),
                                   ),
                                   if (!room.isDirectChat &&
@@ -223,9 +239,12 @@ class ChatDetailsView extends StatelessWidget {
                         ),
                         if (room.canChangeStateEvent(EventTypes.RoomTopic) ||
                             room.topic.isNotEmpty) ...[
-                          CyberSectionHeader(
-                            L10n.of(context).chatDescription,
-                            accent: cyber.cyan,
+                          _animatedHeader(
+                            CyberSectionHeader(
+                              L10n.of(context).chatDescription,
+                              accent: cyber.cyan,
+                            ),
+                            reduceMotion,
                           ),
                           Padding(
                             padding: const EdgeInsets.symmetric(
@@ -284,9 +303,12 @@ class ChatDetailsView extends StatelessWidget {
                           const SizedBox(height: FluffySpacing.lg),
                         ],
                         if (!room.isDirectChat) ...[
-                          CyberSectionHeader(
-                            L10n.of(context).settings,
-                            accent: cyber.cyan,
+                          _animatedHeader(
+                            CyberSectionHeader(
+                              L10n.of(context).settings,
+                              accent: cyber.cyan,
+                            ),
+                            reduceMotion,
                           ),
                           Padding(
                             padding: const EdgeInsets.symmetric(
@@ -327,11 +349,14 @@ class ChatDetailsView extends StatelessWidget {
                           ),
                           const SizedBox(height: FluffySpacing.lg),
                         ],
-                        CyberSectionHeader(
-                          L10n.of(
-                            context,
-                          ).countParticipants(actualMembersCount),
-                          accent: cyber.violet,
+                        _animatedHeader(
+                          CyberSectionHeader(
+                            L10n.of(
+                              context,
+                            ).countParticipants(actualMembersCount),
+                            accent: cyber.violet,
+                          ),
+                          reduceMotion,
                         ),
                         if (!room.isDirectChat && room.canInvite)
                           Padding(
