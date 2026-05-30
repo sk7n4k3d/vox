@@ -88,8 +88,33 @@ class RoomsRepository(private val context: Context) {
     }
 
     companion object {
+        /** Path du DataItem rooms, partagé avec les listeners headless. */
+        const val PATH = ROOMS_PATH
+        const val KEY = ROOMS_KEY
+
         /** Garde-fou OOM sur les payloads DataItem entrants (cf. decode). */
         private const val MAX_PAYLOAD_BYTES = 512 * 1024
+
+        private val sharedJson = Json { ignoreUnknownKeys = true }
+
+        /**
+         * Décodage statique réutilisable hors instance (ex: [WearListenerService]
+         * réveillé par GMS qui décode le DataItem rooms pour [MessageNotifier]).
+         * Applique le même garde-fou taille que [decode].
+         */
+        fun decodeSnapshot(raw: ByteArray?): RoomsSnapshot? {
+            if (raw == null || raw.isEmpty()) return null
+            if (raw.size > MAX_PAYLOAD_BYTES) {
+                Log.w(TAG, "rooms DataItem too large: ${raw.size} bytes, dropping (static)")
+                return null
+            }
+            return try {
+                sharedJson.decodeFromString<RoomsSnapshot>(String(raw, StandardCharsets.UTF_8))
+            } catch (t: Throwable) {
+                Log.w(TAG, "static decode failed (${raw.size} bytes)", t)
+                null
+            }
+        }
 
         /**
          * Signal global émis par [WearListenerService] quand un ping MessageClient

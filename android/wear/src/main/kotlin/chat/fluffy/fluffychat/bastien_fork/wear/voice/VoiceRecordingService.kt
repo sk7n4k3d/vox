@@ -49,6 +49,13 @@ class VoiceRecordingService : Service() {
     private var timerJob: Job? = null
     private var currentRoomId: String? = null
 
+    // rc-wear-notif-headless-upload — quand l'enregistrement est lancé depuis une
+    // notification (action "Vocal"), aucune UI n'observe RecordingState.Done pour
+    // déclencher l'upload. Dans ce mode, le service upload lui-même au stop. Le flag
+    // est aussi porté dans RecordingState.Done pour que RoomDetailScreen n'uploade
+    // PAS une seconde fois quand l'app est ouverte (anti double-envoi).
+    private var autoUpload: Boolean = false
+
     // rc-wear-bootstrap-double-start-race — onStartCommand peut être ré-entré
     // (double-tap UI). Le check recorder?.isRecording() n'est pas atomique : deux
     // handleStart() concurrents créaient deux VoiceRecorder sur le même MIC. Ce
@@ -62,7 +69,8 @@ class VoiceRecordingService : Service() {
         when (intent?.action) {
             ACTION_START -> {
                 val roomId = intent.getStringExtra(EXTRA_ROOM_ID) ?: return START_NOT_STICKY
-                handleStart(roomId)
+                val auto = intent.getBooleanExtra(EXTRA_AUTO_UPLOAD, false)
+                handleStart(roomId, auto)
             }
             ACTION_STOP -> handleStop()
             ACTION_CANCEL -> handleCancel()
@@ -71,12 +79,13 @@ class VoiceRecordingService : Service() {
     }
 
     @Synchronized
-    private fun handleStart(roomId: String) {
+    private fun handleStart(roomId: String, auto: Boolean) {
         if (isStarting || recorder?.isRecording() == true) {
             Log.w(TAG, "already recording/starting, ignore start")
             return
         }
         isStarting = true
+        autoUpload = auto
         ensureChannel()
         startForegroundWithNotif(roomId, 0)
 
@@ -111,12 +120,27 @@ class VoiceRecordingService : Service() {
         timerJob?.cancel()
         timerJob = null
         val result = rec.stop()
+        val roomId = currentRoomId ?: ""
+        val wasAuto = autoUpload
         cleanup()
         if (result != null) {
+            // Mode headless (déclenché depuis une notif) : aucune UI n'observe
+            // RecordingState.Done, on lance l'upload nous-mêmes. En mode UI
+            // (wasAuto=false), c'est RoomDetailScreen qui upload sur Done — le flag
+            // autoUpload dans l'état lui sert à NE PAS doubler l'envoi.
+            if (wasAuto && roomId.isNotBlank()) {
+                runCatching {
+                    VoiceUploader.upload(applicationContext, roomId, result.file, result.durationMs)
+                }.onFailure { Log.w(TAG, "headless upload dispatch failed", it) }
+            } else if (wasAuto) {
+                Log.w(TAG, "headless stop with blank roomId, dropping audio")
+                result.file.delete()
+            }
             _recordingState.value = RecordingState.Done(
-                roomId = currentRoomId ?: "",
+                roomId = roomId,
                 file = result.file,
-                durationMs = result.durationMs
+                durationMs = result.durationMs,
+                autoUpload = wasAuto
             )
         } else {
             _recordingState.value = RecordingState.Error("stop returned null")
@@ -137,6 +161,7 @@ class VoiceRecordingService : Service() {
 
     private fun cleanup() {
         recorder = null
+        autoUpload = false
         wakeLock?.let {
             if (it.isHeld) it.release()
         }
@@ -257,14 +282,21 @@ class VoiceRecordingService : Service() {
         private const val ACTION_STOP = "chat.fluffy.fluffychat.bastien_fork.wear.voice.STOP"
         private const val ACTION_CANCEL = "chat.fluffy.fluffychat.bastien_fork.wear.voice.CANCEL"
         private const val EXTRA_ROOM_ID = "roomId"
+        private const val EXTRA_AUTO_UPLOAD = "autoUpload"
 
         private val _recordingState = MutableStateFlow<RecordingState>(RecordingState.Idle)
         val recordingState: StateFlow<RecordingState> = _recordingState.asStateFlow()
 
-        fun start(context: Context, roomId: String) {
+        /**
+         * @param autoUpload true quand l'enregistrement est lancé sans UI ouverte
+         *   (action de notification) : le service déclenche lui-même l'upload au stop.
+         *   false en mode UI : RoomDetailScreen observe RecordingState.Done et upload.
+         */
+        fun start(context: Context, roomId: String, autoUpload: Boolean = false) {
             val intent = Intent(context, VoiceRecordingService::class.java).apply {
                 action = ACTION_START
                 putExtra(EXTRA_ROOM_ID, roomId)
+                putExtra(EXTRA_AUTO_UPLOAD, autoUpload)
             }
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
                 context.startForegroundService(intent)
@@ -296,6 +328,11 @@ class VoiceRecordingService : Service() {
 sealed class RecordingState {
     data object Idle : RecordingState()
     data class Recording(val roomId: String, val elapsedMs: Int) : RecordingState()
-    data class Done(val roomId: String, val file: File, val durationMs: Int) : RecordingState()
+    data class Done(
+        val roomId: String,
+        val file: File,
+        val durationMs: Int,
+        val autoUpload: Boolean = false
+    ) : RecordingState()
     data class Error(val message: String) : RecordingState()
 }

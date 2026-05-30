@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:io';
 import 'dart:ui';
 
 import 'package:collection/collection.dart';
@@ -15,6 +16,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:flutter_shortcuts_new/flutter_shortcuts_new.dart';
 import 'package:matrix/matrix.dart';
+import 'package:path_provider/path_provider.dart';
 
 const notificationAvatarDimension = 128;
 
@@ -241,6 +243,27 @@ Future<void> _tryPushHelper(
   final id = notification.roomId.hashCode;
 
   final senderName = event.senderFromMemoryOrFallback.calcDisplayname();
+
+  // Rich notification: attach an inline image preview for picture messages so
+  // the photo shows directly in the notification (MessagingStyle dataUri).
+  String? imageUri;
+  if (PlatformInfos.isAndroid &&
+      event.messageType == MessageTypes.Image &&
+      !event.redacted) {
+    try {
+      final matrixFile =
+          await event.downloadAndDecryptAttachment(getThumbnail: true);
+      final tmpDir = await getTemporaryDirectory();
+      final file = File(
+        '${tmpDir.path}/notif_${event.eventId.hashCode}.bin',
+      );
+      await file.writeAsBytes(matrixFile.bytes);
+      imageUri = file.path;
+    } catch (_) {
+      imageUri = null; // best-effort; fall back to text-only notification
+    }
+  }
+
   // Show notification
 
   final newMessage = Message(
@@ -254,6 +277,8 @@ Future<void> _tryPushHelper(
           ? null
           : ByteArrayAndroidIcon(senderAvatarFile),
     ),
+    dataMimeType: imageUri == null ? null : 'image/jpeg',
+    dataUri: imageUri,
   );
 
   final messagingStyleInformation = PlatformInfos.isAndroid

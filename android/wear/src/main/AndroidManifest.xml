@@ -38,6 +38,7 @@
         <activity
             android:name=".MainActivity"
             android:exported="true"
+            android:launchMode="singleTask"
             android:taskAffinity=".main"
             android:theme="@android:style/Theme.DeviceDefault">
             <intent-filter>
@@ -95,6 +96,12 @@
             android:name=".voice.VoiceRecordingService"
             android:exported="false"
             android:foregroundServiceType="microphone" />
+
+        <!-- Actions des notifications messages : reply vocal headless + RemoteInput texte.
+             Déclenché uniquement par nos PendingIntent internes → exported=false. -->
+        <receiver
+            android:name=".notif.NotificationActionReceiver"
+            android:exported="false" />
 
         <receiver
             android:name=".bridge.BootReceiver"

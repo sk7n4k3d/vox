@@ -117,7 +117,11 @@ fun RoomDetailScreen(
     LaunchedEffect(recordingState) {
         when (val s = recordingState) {
             is RecordingState.Done -> {
-                VoiceUploader.upload(context, s.roomId, s.file, s.durationMs)
+                // En mode headless (déclenché depuis une notif), le service a déjà
+                // lancé l'upload : ne pas doubler l'envoi ici.
+                if (!s.autoUpload) {
+                    VoiceUploader.upload(context, s.roomId, s.file, s.durationMs)
+                }
                 VoiceRecordingService.resetState()
             }
             is RecordingState.Error -> {
