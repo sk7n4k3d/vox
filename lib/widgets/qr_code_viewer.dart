@@ -13,9 +13,15 @@ import 'package:qr_image/qr_image.dart';
 import '../config/themes.dart';
 
 Future<void> showQrCodeViewer(BuildContext context, String content) =>
-    showDialog(
-      context: context,
-      builder: (context) => QrCodeViewer(content: content),
+    // Pushed as a real fullscreen route (not showDialog) so the [Scaffold]'s
+    // own AppBar close button pops the correct navigator entry. Inside a
+    // non-fullscreen dialog the Scaffold could swallow the pop, leaving the
+    // viewer stuck (user had to kill the app).
+    Navigator.of(context).push<void>(
+      MaterialPageRoute<void>(
+        fullscreenDialog: true,
+        builder: (context) => QrCodeViewer(content: content),
+      ),
     );
 
 class QrCodeViewer extends StatelessWidget {
