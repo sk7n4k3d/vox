@@ -783,6 +783,14 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "2.1.3"
+  glow_effects:
+    dependency: "direct main"
+    description:
+      name: glow_effects
+      sha256: "1d2e355e3331ae5b46ecb47534299796ce13303144b61fe1830896d12cbd830e"
+      url: "https://pub.dev"
+    source: hosted
+    version: "0.2.0"
   go_router:
     dependency: "direct main"
     description:
