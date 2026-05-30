@@ -269,8 +269,11 @@ class CyberBackdrop extends StatelessWidget {
   }
 }
 
-/// A gradient cyan→magenta primary CTA with glow — the signature action button.
-class CyberPrimaryButton extends StatelessWidget {
+/// A gradient cyan→magenta primary CTA with glow + an animated light sweep —
+/// the signature action button. The sweep is a cheap CPU shader-mask (no GPU
+/// fragment shader), paused under reduce-motion, so it is safe even inside
+/// scrollable forms.
+class CyberPrimaryButton extends StatefulWidget {
   final String label;
   final VoidCallback? onPressed;
   final bool loading;
@@ -285,9 +288,39 @@ class CyberPrimaryButton extends StatelessWidget {
   });
 
   @override
+  State<CyberPrimaryButton> createState() => _CyberPrimaryButtonState();
+}
+
+class _CyberPrimaryButtonState extends State<CyberPrimaryButton>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _sweep = AnimationController(
+    vsync: this,
+    duration: const Duration(milliseconds: 2400),
+  );
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final reduce = MediaQuery.maybeOf(context)?.disableAnimations ?? false;
+    final enabled = widget.onPressed != null && !widget.loading;
+    if (enabled && !reduce && !_sweep.isAnimating) {
+      _sweep.repeat();
+    } else if ((!enabled || reduce) && _sweep.isAnimating) {
+      _sweep.stop();
+    }
+  }
+
+  @override
+  void dispose() {
+    _sweep.dispose();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
     final cyber = CyberColors.of(context);
-    final enabled = onPressed != null && !loading;
+    final enabled = widget.onPressed != null && !widget.loading;
+    final reduce = MediaQuery.maybeOf(context)?.disableAnimations ?? false;
     return Opacity(
       opacity: enabled ? 1 : 0.5,
       child: DecoratedBox(
@@ -302,46 +335,83 @@ class CyberPrimaryButton extends StatelessWidget {
               ? FluffyElevation.glowMagenta(cyber.magenta, alpha: 0.4)
               : null,
         ),
-        child: Material(
-          color: Colors.transparent,
+        child: ClipRRect(
           borderRadius: FluffyRadius.brMd,
-          child: InkWell(
-            borderRadius: FluffyRadius.brMd,
-            onTap: enabled ? onPressed : null,
-            child: Padding(
-              padding: const EdgeInsets.symmetric(
-                horizontal: FluffySpacing.xl,
-                vertical: FluffySpacing.lg,
-              ),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.center,
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  if (loading)
-                    const SizedBox(
-                      width: 18,
-                      height: 18,
-                      child: CircularProgressIndicator(
-                        strokeWidth: 2,
-                        color: Colors.black,
-                      ),
-                    )
-                  else ...[
-                    if (icon != null) ...[
-                      Icon(icon, color: Colors.black, size: 20),
-                      const SizedBox(width: FluffySpacing.sm),
-                    ],
-                    Text(
-                      label,
-                      style: FluffyTypography.title.copyWith(
-                        color: Colors.black,
-                        fontWeight: FontWeight.w700,
-                      ),
-                    ),
-                  ],
+          child: Stack(
+            children: [
+              if (enabled && !reduce)
+                Positioned.fill(
+                  child: AnimatedBuilder(
+                    animation: _sweep,
+                    builder: (context, _) {
+                      final x = -1.0 + _sweep.value * 3.0;
+                      return DecoratedBox(
+                        decoration: BoxDecoration(
+                          gradient: LinearGradient(
+                            begin: Alignment(x - 0.3, 0),
+                            end: Alignment(x + 0.3, 0),
+                            colors: [
+                              Colors.white.withValues(alpha: 0.0),
+                              Colors.white.withValues(alpha: 0.28),
+                              Colors.white.withValues(alpha: 0.0),
+                            ],
+                          ),
+                        ),
+                      );
+                    },
+                  ),
+                ),
+              _buttonContent(context, cyber, enabled),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buttonContent(
+    BuildContext context,
+    CyberpunkTheme cyber,
+    bool enabled,
+  ) {
+    return Material(
+      color: Colors.transparent,
+      borderRadius: FluffyRadius.brMd,
+      child: InkWell(
+        borderRadius: FluffyRadius.brMd,
+        onTap: enabled ? widget.onPressed : null,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(
+            horizontal: FluffySpacing.xl,
+            vertical: FluffySpacing.lg,
+          ),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              if (widget.loading)
+                const SizedBox(
+                  width: 18,
+                  height: 18,
+                  child: CircularProgressIndicator(
+                    strokeWidth: 2,
+                    color: Colors.black,
+                  ),
+                )
+              else ...[
+                if (widget.icon != null) ...[
+                  Icon(widget.icon, color: Colors.black, size: 20),
+                  const SizedBox(width: FluffySpacing.sm),
                 ],
-              ),
-            ),
+                Text(
+                  widget.label,
+                  style: FluffyTypography.title.copyWith(
+                    color: Colors.black,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ],
+            ],
           ),
         ),
       ),
