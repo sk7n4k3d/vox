@@ -1,5 +1,6 @@
 import 'package:collection/collection.dart';
 import 'package:dynamic_color/dynamic_color.dart';
+import 'package:fluffychat/config/setting_keys.dart';
 import 'package:fluffychat/utils/color_value.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
@@ -76,6 +77,19 @@ class ThemeController extends State<ThemeBuilder> {
     }
     setState(() {
       _primaryColor = newPrimaryColor;
+    });
+  }
+
+  /// Selects a premium theme preset (see CyberThemes). Persists the id and
+  /// clears any custom primary color so the preset's own seed takes effect,
+  /// then rebuilds the whole app via setState.
+  Future<void> setCyberTheme(String presetId) async {
+    final preferences = _sharedPreferences ??=
+        await SharedPreferences.getInstance();
+    await AppSettings.cyberThemeId.setItem(presetId);
+    await preferences.remove(widget.primaryColorSettingsKey);
+    setState(() {
+      _primaryColor = null;
     });
   }
 

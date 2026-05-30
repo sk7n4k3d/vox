@@ -1,5 +1,5 @@
 import 'package:fluffychat/config/app_config.dart';
-import 'package:fluffychat/config/cyberpunk_theme_extension.dart';
+import 'package:fluffychat/config/cyber_themes.dart';
 import 'package:fluffychat/config/design_tokens.dart';
 import 'package:fluffychat/config/setting_keys.dart';
 import 'package:flutter/material.dart';
@@ -42,9 +42,12 @@ abstract class FluffyThemes {
     Brightness brightness, [
     Color? seed,
   ]) {
+    // Premium theme preset selected in Settings > Appearance drives both the
+    // Material seed color and the CYBERCORE accent tokens.
+    final preset = CyberThemes.byName(AppSettings.cyberThemeId.value);
     final colorScheme = ColorScheme.fromSeed(
       brightness: brightness,
-      seedColor: seed ?? Color(AppSettings.colorSchemeSeedInt.value),
+      seedColor: seed ?? preset.seed,
     );
     final isColumnMode = FluffyThemes.isColumnMode(context);
     return ThemeData(
@@ -58,11 +61,9 @@ abstract class FluffyThemes {
       textTheme: FluffyTypography.textThemeFor(colorScheme),
       primaryTextTheme: FluffyTypography.textThemeFor(colorScheme),
       extensions: <ThemeExtension<dynamic>>[
-        // Sprint 2 audit finding-001 : light() retiré (dupliquait dark()).
-        // ThemeMode est forcé dark dans FluffyChatApp build, mais on garde
-        // l'extension dark partout pour les sub-widgets qui interrogeraient
-        // une variante light involontairement.
-        CyberpunkTheme.dark(),
+        // Accent tokens come from the selected premium preset (default =
+        // CYBERCORE, identical to the historical CyberpunkTheme.dark()).
+        preset.tokens,
       ],
       dividerColor: brightness == Brightness.dark
           ? colorScheme.surfaceContainerHighest

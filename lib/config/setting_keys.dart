@@ -75,7 +75,10 @@ enum AppSettings<T> {
   //   "jarvis" — bundled phone.ogg asset (res/raw/jarvis_call.ogg)
   //   "system" — Android default ringtone
   //   "silent" — no sound (notification + vibration only)
-  callRingtone<String>('chat.fluffy.call_ringtone', 'jarvis');
+  callRingtone<String>('chat.fluffy.call_ringtone', 'jarvis'),
+  // Selected premium theme preset id (see CyberThemes): cybercore | nexus |
+  // aurora | ember | monochrome.
+  cyberThemeId<String>('chat.fluffy.cyber_theme_id', 'cybercore');
 
   final String key;
   final T defaultValue;

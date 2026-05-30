@@ -1,6 +1,7 @@
 import 'dart:ui';
 
 import 'package:dynamic_color/dynamic_color.dart';
+import 'package:fluffychat/config/cyber_themes.dart';
 import 'package:fluffychat/config/design_tokens.dart';
 import 'package:fluffychat/config/setting_keys.dart';
 import 'package:fluffychat/config/themes.dart';
@@ -14,6 +15,7 @@ import 'package:fluffychat/widgets/cyber/cyber_widgets.dart';
 import 'package:fluffychat/widgets/layouts/max_width_body.dart';
 import 'package:fluffychat/widgets/matrix.dart';
 import 'package:fluffychat/widgets/mxc_image.dart';
+import 'package:fluffychat/widgets/theme_builder.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import 'package:matrix/matrix.dart';
@@ -48,6 +50,8 @@ class SettingsStyleView extends StatelessWidget {
         child: Column(
           crossAxisAlignment: .stretch,
           children: [
+            const CyberSectionHeader('THÈME PREMIUM', accent: Color(0xFFA78BFA)),
+            _CyberThemePicker(reduceMotion: reduceMotion),
             Padding(
               padding: const EdgeInsets.all(FluffySpacing.md),
               child: SegmentedButton<ThemeMode>(
@@ -381,6 +385,124 @@ class SettingsStyleView extends StatelessWidget {
             SettingsSwitchListTile.adaptive(
               title: L10n.of(context).displayNavigationRail,
               setting: AppSettings.displayNavigationRail,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// Horizontal picker for the premium theme presets. Each card shows the accent
+/// swatches, the name and a short description; tapping it re-skins the whole app
+/// instantly via [ThemeController.setCyberTheme].
+class _CyberThemePicker extends StatelessWidget {
+  final bool reduceMotion;
+
+  const _CyberThemePicker({required this.reduceMotion});
+
+  @override
+  Widget build(BuildContext context) {
+    final selectedId = AppSettings.cyberThemeId.value;
+    return SizedBox(
+      height: 132,
+      child: ListView.separated(
+        scrollDirection: Axis.horizontal,
+        padding: const EdgeInsets.symmetric(
+          horizontal: FluffySpacing.lg,
+          vertical: FluffySpacing.sm,
+        ),
+        itemCount: CyberThemes.all.length,
+        separatorBuilder: (_, _) =>
+            const SizedBox(width: FluffySpacing.md),
+        itemBuilder: (context, i) {
+          final preset = CyberThemes.all[i];
+          final selected = preset.id.name == selectedId;
+          return _ThemeCard(
+            preset: preset,
+            selected: selected,
+            onTap: () =>
+                ThemeController.of(context).setCyberTheme(preset.id.name),
+          );
+        },
+      ),
+    );
+  }
+}
+
+class _ThemeCard extends StatelessWidget {
+  final CyberThemePreset preset;
+  final bool selected;
+  final VoidCallback onTap;
+
+  const _ThemeCard({
+    required this.preset,
+    required this.selected,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final tokens = preset.tokens;
+    return GestureDetector(
+      onTap: onTap,
+      child: AnimatedContainer(
+        duration: FluffyDurations.fast,
+        width: 150,
+        padding: const EdgeInsets.all(FluffySpacing.md),
+        decoration: BoxDecoration(
+          color: theme.colorScheme.surfaceContainerHigh,
+          borderRadius: FluffyRadius.brLg,
+          border: Border.all(
+            color: selected ? tokens.cyan : theme.colorScheme.outlineVariant,
+            width: selected ? 2 : 0.5,
+          ),
+          boxShadow: selected
+              ? [BoxShadow(color: tokens.cyan.withValues(alpha: 0.4), blurRadius: 14)]
+              : null,
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                for (final c in [tokens.cyan, tokens.magenta, tokens.violet])
+                  Container(
+                    width: 18,
+                    height: 18,
+                    margin: const EdgeInsets.only(right: 4),
+                    decoration: BoxDecoration(
+                      color: c,
+                      shape: BoxShape.circle,
+                      boxShadow: [
+                        BoxShadow(color: c.withValues(alpha: 0.5), blurRadius: 6),
+                      ],
+                    ),
+                  ),
+                const Spacer(),
+                if (selected)
+                  Icon(Icons.check_circle_rounded, color: tokens.cyan, size: 20),
+              ],
+            ),
+            const SizedBox(height: FluffySpacing.sm),
+            Text(
+              preset.label,
+              style: FluffyTypography.title.copyWith(
+                color: theme.colorScheme.onSurface,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+            const SizedBox(height: FluffySpacing.xxs),
+            Expanded(
+              child: Text(
+                preset.description,
+                style: FluffyTypography.bodyS.copyWith(
+                  color: theme.colorScheme.onSurfaceVariant,
+                ),
+                maxLines: 3,
+                overflow: TextOverflow.ellipsis,
+              ),
             ),
           ],
         ),
