@@ -877,10 +877,15 @@ class Message extends StatelessWidget {
                   child: !hasReactions
                       ? const SizedBox.shrink()
                       : Padding(
-                          padding: EdgeInsets.only(
+                          // La refonte full-width a déplacé l'avatar inbound
+                          // dans le header au-dessus de la bulle (bulle à
+                          // left:0). On retire donc l'ancien offset
+                          // Avatar.defaultSize : les réactions s'alignent
+                          // désormais sous la bulle, pas décalées de ~56px.
+                          padding: const EdgeInsets.only(
                             top: 1.0,
-                            left: (ownMessage ? 0 : Avatar.defaultSize) + 12.0,
-                            right: ownMessage ? 0 : 12.0,
+                            left: 12.0,
+                            right: 12.0,
                           ),
                           child: MessageReactions(event, timeline),
                         ),
@@ -896,7 +901,7 @@ class Message extends StatelessWidget {
                             padding: const EdgeInsets.only(
                               top: 2.0,
                               bottom: 8.0,
-                              left: Avatar.defaultSize + 8,
+                              left: 12.0,
                             ),
                             child: ConstrainedBox(
                               constraints: const BoxConstraints(
