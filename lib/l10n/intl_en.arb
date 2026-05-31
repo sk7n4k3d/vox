@@ -1039,7 +1039,7 @@
         "type": "String",
         "placeholders": {}
     },
-    "inviteText": "{username} invited you to FluffyChat.\n1. Visit fluffychat.im and install the app \n2. Sign up or sign in \n3. Open the invite link: \n {link}",
+    "inviteText": "{username} invited you to VOX.\n1. Visit fluffychat.im and install the app \n2. Sign up or sign in \n3. Open the invite link: \n {link}",
     "@inviteText": {
         "type": "String",
         "placeholders": {
@@ -1205,8 +1205,8 @@
         "type": "String",
         "placeholders": {}
     },
-    "newMessageInFluffyChat": "💬 New message in FluffyChat",
-    "@newMessageInFluffyChat": {
+    "newMessageInVOX": "💬 New message in VOX",
+    "@newMessageInVOX": {
         "type": "String",
         "placeholders": {}
     },
@@ -2539,7 +2539,7 @@
     "oneOfYourDevicesIsNotVerified": "One of your devices is not verified",
     "noticeChatBackupDeviceVerification": "Note: When you connect all your devices to the chat backup, they are automatically verified.",
     "continueText": "Continue",
-    "welcomeText": "Hey Hey 👋 This is FluffyChat. You can sign in to any homeserver, which is compatible with https://matrix.org. And then chat with anyone. It's a huge decentralized messaging network!",
+    "welcomeText": "Hey Hey 👋 This is VOX. You can sign in to any homeserver, which is compatible with https://matrix.org. And then chat with anyone. It's a huge decentralized messaging network!",
     "blur": "Blur:",
     "opacity": "Opacity:",
     "setWallpaper": "Set wallpaper",
@@ -2775,9 +2775,9 @@
     "advancedConfigurations": "Advanced configurations",
     "signIn": "Sign in",
     "createNewAccount": "Create new account",
-    "signUpGreeting": "FluffyChat is decentralized! Select a server where you want to create your account and let's go!",
+    "signUpGreeting": "VOX is decentralized! Select a server where you want to create your account and let's go!",
     "signInGreeting": "You already have an account in Matrix? Welcome back! Select your homeserver and sign in.",
-    "appIntro": "With FluffyChat you can chat with your friends. It's a secure decentralized [matrix] messenger! Learn more on https://matrix.org if you like or just sign up.",
+    "appIntro": "With VOX you can chat with your friends. It's a secure decentralized [matrix] messenger! Learn more on https://matrix.org if you like or just sign up.",
     "theProcessWasCanceled": "The process was canceled.",
     "join": "Join",
     "searchOrEnterHomeserverAddress": "Search or enter homeserver address",
@@ -2796,12 +2796,12 @@
     },
     "createNewChat": "Create new chat",
     "reset": "Reset",
-    "supportFluffyChat": "Support FluffyChat",
+    "supportVOX": "Support VOX",
     "support": "Support",
-    "fluffyChatSupportBannerMessage": "FluffyChat needs YOUR help!\n❤️❤️❤️\nFluffyChat will always be free, but development and hosting still cost money.\nThe future of the project depends on support from people like you.",
-    "skipSupportingFluffyChat": "Skip supporting FluffyChat",
+    "fluffyChatSupportBannerMessage": "VOX needs YOUR help!\n❤️❤️❤️\nVOX will always be free, but development and hosting still cost money.\nThe future of the project depends on support from people like you.",
+    "skipSupportingVOX": "Skip supporting VOX",
     "iDoNotWantToSupport": "I do not want to support",
-    "iAlreadySupportFluffyChat": "I already support FluffyChat",
+    "iAlreadySupportVOX": "I already support VOX",
     "setLowPriority": "Set low priority",
     "unsetLowPriority": "Unset low priority",
     "removeCallFromChat": "Remove call from chat",

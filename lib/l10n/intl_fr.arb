@@ -921,7 +921,7 @@
         "type": "String",
         "placeholders": {}
     },
-    "inviteText": "{username} vous a invité·e sur FluffyChat.\n1. Visiter fluffychat.im et installer l'application\n2. Inscrivez-vous ou connectez-vous\n3. Ouvrez le lien d'invitation :\n{link}",
+    "inviteText": "{username} vous a invité·e sur VOX.\n1. Visiter fluffychat.im et installer l'application\n2. Inscrivez-vous ou connectez-vous\n3. Ouvrez le lien d'invitation :\n{link}",
     "@inviteText": {
         "type": "String",
         "placeholders": {
@@ -1083,8 +1083,8 @@
         "type": "String",
         "placeholders": {}
     },
-    "newMessageInFluffyChat": "💬 Nouveau message dans FluffyChat",
-    "@newMessageInFluffyChat": {
+    "newMessageInVOX": "💬 Nouveau message dans VOX",
+    "@newMessageInVOX": {
         "type": "String",
         "placeholders": {}
     },
@@ -2893,6 +2893,21 @@
     },
     "sectionEarlier": "Plus tôt",
     "@sectionEarlier": {
+        "type": "String",
+        "placeholders": {}
+    },
+    "appIntro": "Avec VOX, discutez avec vos proches en messages chiffrés et en SMS, le tout au même endroit. Messagerie [matrix] sécurisée et décentralisée. Connectez-vous ou créez un compte pour commencer.",
+    "@appIntro": {
+        "type": "String",
+        "placeholders": {}
+    },
+    "welcomeText": "Bienvenue sur VOX 👋 Connectez-vous à n'importe quel serveur compatible matrix.org, puis discutez avec qui vous voulez — chats chiffrés et SMS réunis.",
+    "@welcomeText": {
+        "type": "String",
+        "placeholders": {}
+    },
+    "signUpGreeting": "VOX est décentralisé ! Choisissez le serveur où créer votre compte et c'est parti.",
+    "@signUpGreeting": {
         "type": "String",
         "placeholders": {}
     }
