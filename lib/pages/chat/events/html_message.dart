@@ -1,6 +1,7 @@
 import 'dart:collection';
 
 import 'package:collection/collection.dart';
+import 'package:fluffychat/config/cyberpunk_theme_extension.dart';
 import 'package:fluffychat/config/design_tokens.dart';
 import 'package:fluffychat/pages/chat/events/code_block_widget.dart';
 import 'package:fluffychat/utils/event_checkbox_extension.dart';
@@ -327,11 +328,21 @@ class HtmlMessage extends StatelessWidget {
           ),
         );
       case 'blockquote':
+        final cyber = Theme.of(context).extension<CyberpunkTheme>() ??
+            CyberpunkTheme.dark();
         return WidgetSpan(
           child: Container(
-            padding: const EdgeInsets.only(left: 8.0),
+            margin: const EdgeInsets.symmetric(vertical: 4.0),
+            padding: const EdgeInsets.fromLTRB(12.0, 8.0, 10.0, 8.0),
             decoration: BoxDecoration(
-              border: Border(left: BorderSide(color: textColor, width: 5)),
+              color: cyber.cyan.withValues(alpha: 0.06),
+              borderRadius: const BorderRadius.only(
+                topRight: Radius.circular(8),
+                bottomRight: Radius.circular(8),
+              ),
+              border: Border(
+                left: BorderSide(color: cyber.cyan, width: 3),
+              ),
             ),
             child: Text.rich(
               TextSpan(
@@ -342,9 +353,9 @@ class HtmlMessage extends StatelessWidget {
                 ),
               ),
               style: TextStyle(
-                fontStyle: FontStyle.italic,
                 fontSize: fontSize,
-                color: textColor,
+                height: 1.4,
+                color: textColor.withValues(alpha: 0.85),
               ),
             ),
           ),
@@ -388,22 +399,26 @@ class HtmlMessage extends StatelessWidget {
         if (node.parent?.localName == 'pre') {
           return const TextSpan();
         }
-        final scheme = Theme.of(context).colorScheme;
+        final cyber = Theme.of(context).extension<CyberpunkTheme>() ??
+            CyberpunkTheme.dark();
         return WidgetSpan(
           alignment: PlaceholderAlignment.middle,
           child: Container(
             decoration: BoxDecoration(
-              color: scheme.surfaceContainerHigh,
-              border: Border.all(color: scheme.outlineVariant, width: 0.5),
-              borderRadius: BorderRadius.circular(4),
+              color: cyber.cyan.withValues(alpha: 0.1),
+              border: Border.all(
+                color: cyber.cyan.withValues(alpha: 0.3),
+                width: 0.5,
+              ),
+              borderRadius: BorderRadius.circular(6),
             ),
             padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
             child: Text(
               node.text,
               style: TextStyle(
-                fontFamily: 'monospace',
-                fontSize: fontSize * 0.92,
-                color: scheme.onSurfaceVariant,
+                fontFamily: FluffyTypography.mono,
+                fontSize: fontSize * 0.9,
+                color: cyber.cyan,
               ),
             ),
           ),
@@ -433,7 +448,23 @@ class HtmlMessage extends StatelessWidget {
           ),
         );
       case 'hr':
-        return const WidgetSpan(child: Divider());
+        final cyber = Theme.of(context).extension<CyberpunkTheme>() ??
+            CyberpunkTheme.dark();
+        return WidgetSpan(
+          child: Container(
+            margin: const EdgeInsets.symmetric(vertical: 10.0),
+            height: 1,
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                colors: [
+                  cyber.cyan.withValues(alpha: 0.0),
+                  cyber.cyan.withValues(alpha: 0.5),
+                  cyber.cyan.withValues(alpha: 0.0),
+                ],
+              ),
+            ),
+          ),
+        );
       case 'details':
         var obscure = true;
         return WidgetSpan(
