@@ -24,6 +24,14 @@
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <uses-permission android:name="android.permission.USE_FULL_SCREEN_INTENT" />
 
+    <!-- SMS (couche native VOX — Étape 1) -->
+    <uses-permission android:name="android.permission.SEND_SMS" />
+    <uses-permission android:name="android.permission.READ_SMS" />
+    <uses-permission android:name="android.permission.RECEIVE_SMS" />
+    <uses-permission android:name="android.permission.RECEIVE_MMS" />
+    <!-- Optionnel : résolution displayName des numéros. Non bloquant si refusé. -->
+    <uses-permission android:name="android.permission.READ_CONTACTS" />
+
     <!-- To make app compatible with tablets -->
     <uses-feature android:name="android.hardware.camera" android:required="false"/>
     <uses-feature android:name="android.hardware.microphone" android:required="false" />
@@ -103,6 +111,19 @@
                 <category android:name="android.intent.category.DEFAULT" />
                 <data android:mimeType="*/*" />
             </intent-filter>
+
+            <!-- SMS : SENDTO sms/smsto/mms/mmsto — requis pour être candidat
+                 au rôle RoleManager.ROLE_SMS (app SMS par défaut). -->
+            <intent-filter>
+                <action android:name="android.intent.action.SEND" />
+                <action android:name="android.intent.action.SENDTO" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="sms" />
+                <data android:scheme="smsto" />
+                <data android:scheme="mms" />
+                <data android:scheme="mmsto" />
+            </intent-filter>
         </activity>
 
         <activity
@@ -162,6 +183,59 @@
         <meta-data
             android:name="com.google.android.gms.car.application"
             android:resource="@xml/automotive_app_desc"/>
+
+        <!-- ════════════════════════════════════════════════════════════════
+             SMS — couche native VOX (Étape 1).
+             Les 3 composants ci-dessous (SMS_DELIVER, WAP_PUSH_DELIVER,
+             RESPOND_VIA_MESSAGE) sont OBLIGATOIRES pour que VOX apparaisse
+             dans « app SMS par défaut ». En enlever un retire VOX de la liste.
+             ════════════════════════════════════════════════════════════════ -->
+
+        <!-- SMS entrants (déclenché uniquement si VOX est l'app par défaut) -->
+        <receiver
+            android:name=".sms.SmsDeliverReceiver"
+            android:exported="true"
+            android:permission="android.permission.BROADCAST_SMS">
+            <intent-filter>
+                <action android:name="android.provider.Telephony.SMS_DELIVER" />
+            </intent-filter>
+        </receiver>
+
+        <!-- MMS entrants — stub Étape 1 (requis pour le rôle, traitement Étape 2) -->
+        <receiver
+            android:name=".sms.MmsDeliverReceiver"
+            android:exported="true"
+            android:permission="android.permission.BROADCAST_WAP_PUSH">
+            <intent-filter>
+                <action android:name="android.provider.Telephony.WAP_PUSH_DELIVER" />
+                <data android:mimeType="application/vnd.wap.mms-message" />
+            </intent-filter>
+        </receiver>
+
+        <!-- Réponse rapide depuis l'écran d'appel — stub Étape 1 (requis pour le rôle) -->
+        <service
+            android:name=".sms.HeadlessSmsSendService"
+            android:exported="true"
+            android:permission="android.permission.SEND_RESPOND_VIA_MESSAGE">
+            <intent-filter>
+                <action android:name="android.intent.action.RESPOND_VIA_MESSAGE" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:scheme="sms" />
+                <data android:scheme="smsto" />
+                <data android:scheme="mms" />
+                <data android:scheme="mmsto" />
+            </intent-filter>
+        </service>
+
+        <!-- Statut d'envoi/remise des SMS sortants (PendingIntents internes) -->
+        <receiver
+            android:name=".sms.SmsSentReceiver"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="eu.devlabz.vox.SMS_SENT" />
+                <action android:name="eu.devlabz.vox.SMS_DELIVERED" />
+            </intent-filter>
+        </receiver>
 
         <!-- Don't delete the meta-data below.
              This is used by the Flutter tool to generate GeneratedPluginRegistrant.java -->
