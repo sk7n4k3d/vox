@@ -12,7 +12,9 @@ import 'package:flutter/material.dart';
 /// CYBERCORE premium recording overlay — a floating glass panel that sits above
 /// the input bar while you hold-to-record. Live waveform driven by the
 /// recorder amplitude, a magenta slide-to-cancel hint that intensifies as you
-/// drag left, and a cyan lock badge that rises as you drag up.
+/// drag left, and a GREEN lock badge that rises as you drag up. Green (lock /
+/// "secure") vs magenta (cancel / "danger") gives the two gestures an
+/// unmistakable color contrast.
 ///
 /// Shown whenever recording is starting/active and not yet locked. Reduce-motion
 /// pauses the pulse/scroll animations.
@@ -413,7 +415,7 @@ class _SlideToCancelChevronsState extends State<_SlideToCancelChevrons>
   }
 }
 
-/// Cyan lock badge that rises and lights up as lockProgress increases.
+/// Green lock badge that rises and lights up as lockProgress increases.
 class _LockBadge extends StatefulWidget {
   final double progress;
   final CyberpunkTheme cyber;
@@ -461,7 +463,9 @@ class _LockBadgeState extends State<_LockBadge>
   @override
   Widget build(BuildContext context) {
     final reached = widget.progress >= 0.5;
-    final accent = reached ? widget.cyber.cyan : widget.cyber.violet;
+    // Verrouillage = VERT néon (success). Sémantique "valider/sécuriser",
+    // contraste maximal avec l'annulation rouge/magenta — plus aucune confusion.
+    final accent = widget.cyber.success;
     return AnimatedBuilder(
       animation: _bob,
       builder: (context, _) {
@@ -477,18 +481,23 @@ class _LockBadgeState extends State<_LockBadge>
               height: 50,
               decoration: BoxDecoration(
                 color: Color.alphaBlend(
-                  accent.withValues(alpha: 0.12),
+                  accent.withValues(alpha: reached ? 0.2 : 0.1),
                   widget.cyber.glassFillStrong,
                 ),
                 borderRadius: FluffyRadius.brLg,
                 border: Border.all(
                   color: reached
                       ? accent
-                      : widget.cyber.glassBorder,
-                  width: reached ? 1.5 : 0.5,
+                      : accent.withValues(alpha: 0.4),
+                  width: reached ? 1.5 : 0.8,
                 ),
                 boxShadow: reached
-                    ? FluffyElevation.glowCyan(accent, alpha: 0.4)
+                    ? [
+                        BoxShadow(
+                          color: accent.withValues(alpha: 0.5),
+                          blurRadius: 14,
+                        ),
+                      ]
                     : null,
               ),
               child: Column(
@@ -497,7 +506,7 @@ class _LockBadgeState extends State<_LockBadge>
                   Icon(
                     reached ? Icons.lock_rounded : Icons.lock_outline_rounded,
                     size: 18,
-                    color: reached ? accent : widget.cyber.violet,
+                    color: accent,
                   ),
                   const SizedBox(height: 2),
                   Icon(
