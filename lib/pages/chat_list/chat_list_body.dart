@@ -7,8 +7,10 @@ import 'package:fluffychat/pages/chat_list/chat_list_item.dart';
 import 'package:fluffychat/pages/chat_list/dummy_chat_list_item.dart';
 import 'package:fluffychat/pages/chat_list/liquid_glass_app_bar.dart';
 import 'package:fluffychat/pages/chat_list/search_title.dart';
+import 'package:fluffychat/pages/chat_list/sms_list_item.dart';
 import 'package:fluffychat/pages/chat_list/space_view.dart';
 import 'package:fluffychat/pages/chat_list/status_msg_list.dart';
+import 'package:fluffychat/utils/sms/sms_bridge.dart';
 import 'package:fluffychat/utils/stream_extension.dart';
 import 'package:fluffychat/widgets/adaptive_dialogs/public_room_dialog.dart';
 import 'package:fluffychat/widgets/avatar.dart';
@@ -218,33 +220,50 @@ class ChatListViewBody extends StatelessWidget {
                   ),
                 ),
               if (client.prevBatch != null)
-                SliverList.builder(
-                  // Sprint 2 V3 — chatlist items + section headers injected
-                  // inline. Each transition between time buckets (Today /
-                  // Yesterday / This Week / Earlier) inserts a header row.
-                  itemCount: _ChatListSections.totalCount(rooms),
-                  itemBuilder: (BuildContext context, int i) {
-                    final entry = _ChatListSections.entryAt(rooms, i);
-                    if (entry.isHeader) {
-                      return _ChatListSectionHeader(label: entry.headerLabel!);
-                    }
-                    final room = entry.room!;
-                    final space = spaceDelegateCandidates[room.id];
-                    return _StaggeredFadeIn(
-                      // Stagger only the visible top of the list; beyond
-                      // 12 items we play the entry at the same delay (avoid
-                      // multi-second cascade on big lists).
-                      delayMs: (i.clamp(0, 12)) * 35,
-                      child: ChatListItem(
-                        room,
-                        space: space,
-                        key: Key('chat_list_item_${room.id}'),
-                        filter: filter,
-                        onTap: () => controller.onChatTap(room),
-                        onLongPress: (context) =>
-                            controller.chatContextAction(room, context, space),
-                        activeChat: controller.activeChat == room.id,
-                      ),
+                Builder(
+                  builder: (context) {
+                    // Merge Matrix rooms + native SMS conversations into one
+                    // date-sorted layout (SMS only present when VOX is the
+                    // default SMS app, and not while searching).
+                    final sms = controller.isSearchMode
+                        ? const <SmsConversation>[]
+                        : controller.smsConversations;
+                    final entries = _ChatListSections.layout(rooms, sms);
+                    return SliverList.builder(
+                      itemCount: entries.length,
+                      itemBuilder: (BuildContext context, int i) {
+                        final entry = entries[i];
+                        if (entry.isHeader) {
+                          return _ChatListSectionHeader(
+                            label: entry.headerLabel!,
+                          );
+                        }
+                        if (entry.sms != null) {
+                          return _StaggeredFadeIn(
+                            delayMs: (i.clamp(0, 12)) * 35,
+                            child: SmsListItem(
+                              key: Key('sms_item_${entry.sms!.threadId}'),
+                              conversation: entry.sms!,
+                              onTap: () => controller.onSmsTap(entry.sms!),
+                            ),
+                          );
+                        }
+                        final room = entry.room!;
+                        final space = spaceDelegateCandidates[room.id];
+                        return _StaggeredFadeIn(
+                          delayMs: (i.clamp(0, 12)) * 35,
+                          child: ChatListItem(
+                            room,
+                            space: space,
+                            key: Key('chat_list_item_${room.id}'),
+                            filter: filter,
+                            onTap: () => controller.onChatTap(room),
+                            onLongPress: (context) => controller
+                                .chatContextAction(room, context, space),
+                            activeChat: controller.activeChat == room.id,
+                          ),
+                        );
+                      },
                     );
                   },
                 ),
@@ -343,8 +362,7 @@ class _ChatListSections {
   static const String thisWeek = 'thisWeek';
   static const String earlier = 'earlier';
 
-  static String _bucketFor(Room room) {
-    final ts = room.lastEvent?.originServerTs ?? DateTime.now();
+  static String _bucketForTs(DateTime ts) {
     final now = DateTime.now();
     final dThat = DateTime(ts.year, ts.month, ts.day);
     final dNow = DateTime(now.year, now.month, now.day);
@@ -355,36 +373,67 @@ class _ChatListSections {
     return earlier;
   }
 
-  /// Returns the list of (bucket, indexInRooms) pairs flattened with header
-  /// markers. Used by `entryAt` / `totalCount`.
-  static List<_ChatListEntry> _layout(List<Room> rooms) {
+  /// Merges Matrix rooms and native SMS conversations into a single
+  /// date-sorted list with time-bucket header rows. Matrix rooms keep their
+  /// natural order from the SDK; SMS conversations are interleaved by their
+  /// last-message timestamp. Header inserted on each bucket transition.
+  static List<_ChatListEntry> layout(
+    List<Room> rooms,
+    List<SmsConversation> sms,
+  ) {
+    // Build a unified, timestamp-sorted item list (descending = most recent
+    // first), matching the room list ordering convention.
+    final items = <({DateTime ts, Room? room, SmsConversation? sms})>[];
+    for (final r in rooms) {
+      items.add((
+        ts: r.lastEvent?.originServerTs ?? DateTime.now(),
+        room: r,
+        sms: null,
+      ));
+    }
+    for (final s in sms) {
+      items.add((
+        ts: DateTime.fromMillisecondsSinceEpoch(s.date),
+        room: null,
+        sms: s,
+      ));
+    }
+    items.sort((a, b) => b.ts.compareTo(a.ts));
+
     final entries = <_ChatListEntry>[];
     String? lastBucket;
-    for (var i = 0; i < rooms.length; i++) {
-      final bucket = _bucketFor(rooms[i]);
+    for (final it in items) {
+      final bucket = _bucketForTs(it.ts);
       if (bucket != lastBucket) {
         entries.add(_ChatListEntry.header(bucket));
         lastBucket = bucket;
       }
-      entries.add(_ChatListEntry.room(rooms[i]));
+      if (it.room != null) {
+        entries.add(_ChatListEntry.room(it.room));
+      } else {
+        entries.add(_ChatListEntry.sms(it.sms));
+      }
     }
     return entries;
   }
-
-  static int totalCount(List<Room> rooms) => _layout(rooms).length;
-
-  static _ChatListEntry entryAt(List<Room> rooms, int i) =>
-      _layout(rooms)[i];
 }
 
 class _ChatListEntry {
   final Room? room;
+  final SmsConversation? sms;
   final String? headerLabel;
 
-  _ChatListEntry.header(this.headerLabel) : room = null;
-  _ChatListEntry.room(this.room) : headerLabel = null;
+  _ChatListEntry.header(this.headerLabel)
+      : room = null,
+        sms = null;
+  _ChatListEntry.room(this.room)
+      : headerLabel = null,
+        sms = null;
+  _ChatListEntry.sms(this.sms)
+      : headerLabel = null,
+        room = null;
 
-  bool get isHeader => room == null;
+  bool get isHeader => room == null && sms == null;
 }
 
 /// Sprint 2 V3 — section header row, scroll-along (pas sticky en Sprint 2 mais

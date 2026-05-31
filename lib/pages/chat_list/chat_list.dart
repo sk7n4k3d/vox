@@ -5,11 +5,13 @@ import 'package:cross_file/cross_file.dart';
 import 'package:fluffychat/config/app_config.dart';
 import 'package:fluffychat/l10n/l10n.dart';
 import 'package:fluffychat/pages/chat_list/chat_list_view.dart';
+import 'package:fluffychat/pages/sms_chat/sms_chat_page.dart';
 import 'package:fluffychat/utils/localized_exception_extension.dart';
 import 'package:fluffychat/utils/matrix_sdk_extensions/matrix_locals.dart';
 import 'package:fluffychat/utils/platform_infos.dart';
 import 'package:fluffychat/utils/show_scaffold_dialog.dart';
 import 'package:fluffychat/utils/show_update_snackbar.dart';
+import 'package:fluffychat/utils/sms/sms_bridge.dart';
 import 'package:fluffychat/widgets/adaptive_dialogs/show_modal_action_popup.dart';
 import 'package:fluffychat/widgets/adaptive_dialogs/show_ok_cancel_alert_dialog.dart';
 import 'package:fluffychat/widgets/adaptive_dialogs/show_text_input_dialog.dart';
@@ -144,6 +146,32 @@ class ChatListController extends State<ChatList>
   List<Room> get filteredRooms => Matrix.of(
     context,
   ).client.rooms.where(getRoomFilterByActiveFilter(activeFilter)).toList();
+
+  /// SMS conversations merged into the chat list (only when VOX is the default
+  /// SMS app). Loaded natively via [SmsBridge]; refreshed on each incoming SMS.
+  List<SmsConversation> smsConversations = const [];
+  StreamSubscription<SmsIncoming>? _smsSub;
+
+  Future<void> _loadSmsConversations() async {
+    if (!await SmsBridge.instance.isDefaultSmsApp()) return;
+    final convs = await SmsBridge.instance.listConversations();
+    if (!mounted) return;
+    setState(() => smsConversations = convs);
+  }
+
+  /// Opens an SMS conversation in the dedicated [SmsChatPage].
+  void onSmsTap(SmsConversation conv) {
+    Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => SmsChatPage(
+          threadId: conv.threadId,
+          address: conv.address,
+          displayName: conv.displayName,
+        ),
+      ),
+    );
+    SmsBridge.instance.markRead(conv.threadId);
+  }
 
   bool isSearchMode = false;
   Future<QueryPublicRoomsResponse>? publicRoomsResponse;
@@ -361,6 +389,10 @@ class ChatListController extends State<ChatList>
 
     scrollController.addListener(_onScroll);
     _waitForFirstSync();
+    _loadSmsConversations();
+    _smsSub = SmsBridge.instance.incoming.listen((_) {
+      _loadSmsConversations();
+    });
     _hackyWebRTCFixForWeb();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) {
@@ -385,6 +417,7 @@ class ChatListController extends State<ChatList>
   void dispose() {
     _intentDataStreamSubscription?.cancel();
     _intentFileStreamSubscription?.cancel();
+    _smsSub?.cancel();
     scrollController.removeListener(_onScroll);
     super.dispose();
   }
