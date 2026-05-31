@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg width="1200" height="480" viewBox="0 0 1200 480" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="wmGrad" x1="0" y1="0" x2="1200" y2="0" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#00F0FF"/>
+      <stop offset="1" stop-color="#FF2E92"/>
+    </linearGradient>
+    <filter id="wmGlow" x="-30%" y="-30%" width="160%" height="160%">
+      <feGaussianBlur stdDeviation="9" result="b"/>
+      <feMerge>
+        <feMergeNode in="b"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+  </defs>
+
+  <!-- transparent background; rendered over the splash color -->
+  <g font-family="Orbitron, Rajdhani, sans-serif" font-weight="800"
+     font-size="320" letter-spacing="14" text-anchor="middle">
+    <!-- cyan ghost (glitch left) -->
+    <text x="588" y="350" fill="#00F0FF" opacity="0.5">VOX</text>
+    <!-- magenta ghost (glitch right) -->
+    <text x="612" y="350" fill="#FF2E92" opacity="0.5">VOX</text>
+    <!-- main gradient wordmark -->
+    <text x="600" y="350" fill="url(#wmGrad)" filter="url(#wmGlow)">VOX</text>
+  </g>
+</svg>

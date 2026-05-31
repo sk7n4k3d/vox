@@ -78,7 +78,7 @@ android {
     }
 
     defaultConfig {
-        applicationId = "chat.fluffy.fluffychat.bastien_fork"
+        applicationId = "eu.devlabz.vox"
         minSdk = flutter.minSdkVersion
         targetSdk = flutter.targetSdkVersion
         versionCode = flutter.versionCode

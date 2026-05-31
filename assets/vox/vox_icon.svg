@@ -1,0 +1,49 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg width="1024" height="1024" viewBox="0 0 1024 1024" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <!-- Cyan -> magenta diagonal gradient -->
+    <linearGradient id="voxGrad" x1="260" y1="300" x2="780" y2="320" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#00F0FF"/>
+      <stop offset="0.5" stop-color="#7A6BFF"/>
+      <stop offset="1" stop-color="#FF2E92"/>
+    </linearGradient>
+    <radialGradient id="voxBg" cx="0.38" cy="0.30" r="0.95">
+      <stop offset="0" stop-color="#0A0418"/>
+      <stop offset="1" stop-color="#05010E"/>
+    </radialGradient>
+    <filter id="glow" x="-40%" y="-40%" width="180%" height="180%">
+      <feGaussianBlur stdDeviation="14" result="b"/>
+      <feMerge>
+        <feMergeNode in="b"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+  </defs>
+
+  <!-- Rounded square background (adaptive-icon safe zone friendly) -->
+  <rect x="0" y="0" width="1024" height="1024" rx="224" fill="url(#voxBg)"/>
+
+  <!-- RGB glitch split: cyan ghost shifted left, magenta ghost shifted right -->
+  <g opacity="0.55">
+    <path d="M286 300 L512 690 L738 300" transform="translate(-14,6)"
+          fill="none" stroke="#00F0FF" stroke-width="96"
+          stroke-linejoin="round" stroke-linecap="round"/>
+  </g>
+  <g opacity="0.55">
+    <path d="M286 300 L512 690 L738 300" transform="translate(14,-6)"
+          fill="none" stroke="#FF2E92" stroke-width="96"
+          stroke-linejoin="round" stroke-linecap="round"/>
+  </g>
+
+  <!-- Main V, gradient + neon glow -->
+  <path d="M286 300 L512 690 L738 300" filter="url(#glow)"
+        fill="none" stroke="url(#voxGrad)" stroke-width="104"
+        stroke-linejoin="round" stroke-linecap="round"/>
+
+  <!-- Waveform tail off the right branch (voice cue) -->
+  <g stroke="#FF2E92" stroke-width="34" stroke-linecap="round" filter="url(#glow)">
+    <line x1="788" y1="330" x2="788" y2="288"/>
+    <line x1="846" y1="330" x2="846" y2="236"/>
+    <line x1="904" y1="330" x2="904" y2="300"/>
+  </g>
+</svg>

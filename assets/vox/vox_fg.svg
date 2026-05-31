@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Adaptive-icon foreground: V + waveform on transparent bg, scaled into the
+     ~66% safe zone (108dp canvas, content within central 72dp). -->
+<svg width="1024" height="1024" viewBox="0 0 1024 1024" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="fgGrad" x1="330" y1="400" x2="700" y2="415" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#00F0FF"/>
+      <stop offset="0.5" stop-color="#7A6BFF"/>
+      <stop offset="1" stop-color="#FF2E92"/>
+    </linearGradient>
+    <filter id="fgGlow" x="-40%" y="-40%" width="180%" height="180%">
+      <feGaussianBlur stdDeviation="10" result="b"/>
+      <feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+  </defs>
+  <!-- glitch ghosts -->
+  <g opacity="0.5"><path d="M360 400 L512 660 L664 400" transform="translate(-10,4)"
+    fill="none" stroke="#00F0FF" stroke-width="74" stroke-linejoin="round" stroke-linecap="round"/></g>
+  <g opacity="0.5"><path d="M360 400 L512 660 L664 400" transform="translate(10,-4)"
+    fill="none" stroke="#FF2E92" stroke-width="74" stroke-linejoin="round" stroke-linecap="round"/></g>
+  <!-- main V -->
+  <path d="M360 400 L512 660 L664 400" filter="url(#fgGlow)"
+    fill="none" stroke="url(#fgGrad)" stroke-width="82" stroke-linejoin="round" stroke-linecap="round"/>
+  <!-- waveform -->
+  <g stroke="#FF2E92" stroke-width="26" stroke-linecap="round" filter="url(#fgGlow)">
+    <line x1="684" y1="420" x2="684" y2="386"/>
+    <line x1="728" y1="420" x2="728" y2="346"/>
+    <line x1="772" y1="420" x2="772" y2="398"/>
+  </g>
+</svg>

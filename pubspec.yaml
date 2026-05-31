@@ -99,8 +99,8 @@ dev_dependencies:
   translations_cleaner: ^0.1.1
 
 flutter_native_splash:
-  color: "#ffffff"
-  color_dark: "#000000"
+  color: "#05010E"
+  color_dark: "#05010E"
   image: "assets/info-logo.png"
 
 flutter:
