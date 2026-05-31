@@ -1205,8 +1205,8 @@
         "type": "String",
         "placeholders": {}
     },
-    "newMessageInVOX": "💬 New message in VOX",
-    "@newMessageInVOX": {
+    "newMessageInFluffyChat": "💬 New message in VOX",
+    "@newMessageInFluffyChat": {
         "type": "String",
         "placeholders": {}
     },
@@ -2796,12 +2796,12 @@
     },
     "createNewChat": "Create new chat",
     "reset": "Reset",
-    "supportVOX": "Support VOX",
+    "supportFluffyChat": "Support VOX",
     "support": "Support",
     "fluffyChatSupportBannerMessage": "VOX needs YOUR help!\n❤️❤️❤️\nVOX will always be free, but development and hosting still cost money.\nThe future of the project depends on support from people like you.",
-    "skipSupportingVOX": "Skip supporting VOX",
+    "skipSupportingFluffyChat": "Skip supporting VOX",
     "iDoNotWantToSupport": "I do not want to support",
-    "iAlreadySupportVOX": "I already support VOX",
+    "iAlreadySupportFluffyChat": "I already support VOX",
     "setLowPriority": "Set low priority",
     "unsetLowPriority": "Unset low priority",
     "removeCallFromChat": "Remove call from chat",

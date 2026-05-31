@@ -1083,8 +1083,8 @@
         "type": "String",
         "placeholders": {}
     },
-    "newMessageInVOX": "💬 Nouveau message dans VOX",
-    "@newMessageInVOX": {
+    "newMessageInFluffyChat": "💬 Nouveau message dans VOX",
+    "@newMessageInFluffyChat": {
         "type": "String",
         "placeholders": {}
     },
