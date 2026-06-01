@@ -1,8 +1,12 @@
 import 'dart:async';
 import 'dart:io';
 
+import 'package:fluffychat/config/app_config.dart';
 import 'package:fluffychat/config/cyberpunk_theme_extension.dart';
 import 'package:fluffychat/config/design_tokens.dart';
+import 'package:fluffychat/config/setting_keys.dart';
+import 'package:fluffychat/config/themes.dart';
+import 'package:fluffychat/pages/chat/chat_date_separator.dart';
 import 'package:fluffychat/utils/scheduled/scheduled_messages.dart';
 import 'package:fluffychat/utils/sms/sms_bridge.dart';
 import 'package:fluffychat/widgets/cyber/cyber_widgets.dart';
@@ -553,16 +557,13 @@ class _SmsChatPageState extends State<SmsChatPage> {
     }
     return ListView.builder(
       controller: _scroll,
-      padding: const EdgeInsets.fromLTRB(
-        FluffySpacing.lg,
-        FluffySpacing.lg,
-        FluffySpacing.lg,
-        FluffySpacing.sm,
-      ),
+      padding: const EdgeInsets.symmetric(horizontal: FluffySpacing.sm),
       itemCount: _messages.length,
       itemBuilder: (context, index) {
         final message = _messages[index];
         final previous = index > 0 ? _messages[index - 1] : null;
+        final next =
+            index < _messages.length - 1 ? _messages[index + 1] : null;
         // New calendar day → inline date separator above the bubble.
         final showDateSeparator =
             previous == null || !_sameDay(previous.date, message.date);
@@ -571,16 +572,36 @@ class _SmsChatPageState extends State<SmsChatPage> {
         final showTimestamp = showDateSeparator ||
             (message.date - previous.date).abs() > 5 * 60 * 1000 ||
             previous.isFromMe != message.isFromMe;
+        // Matrix-style grouping. The list is chronological (oldest at top), so
+        // "previous" is the older neighbour and "next" the newer one. A group
+        // breaks on a sender change, a >5 min gap, or a day change — the same
+        // break that drives [showTimestamp], mirroring Matrix's `displayTime`
+        // controlling `nextEventSameSender`.
+        const groupGapMs = 5 * 60 * 1000;
+        final previousSameSender = previous != null &&
+            previous.isFromMe == message.isFromMe &&
+            !showDateSeparator &&
+            (message.date - previous.date).abs() <= groupGapMs;
+        final nextSameSender = next != null &&
+            next.isFromMe == message.isFromMe &&
+            _sameDay(message.date, next.date) &&
+            (next.date - message.date).abs() <= groupGapMs;
         return Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             if (showDateSeparator)
-              _DateSeparator(millis: message.date, theme: theme, cyber: cyber),
+              ChatDateSeparator(
+                date: DateTime.fromMillisecondsSinceEpoch(message.date),
+              ),
             _SmsBubble(
               message: message,
               cyber: cyber,
               theme: theme,
               showTimestamp: showTimestamp,
+              previousSameSender: previousSameSender,
+              nextSameSender: nextSameSender,
+              senderInitial: _initial(),
+              senderName: _title,
               resolveImagePath: _resolveMmsPart,
               onOpenLink: _openLink,
               onLongPress: () => _onMessageLongPress(message),
@@ -674,78 +695,6 @@ class _SmsChatPageState extends State<SmsChatPage> {
   }
 }
 
-/// Inline day divider (Aujourd'hui / Hier / dd MMM) between message groups,
-/// rendered as a centered glass pill with a hairline border.
-class _DateSeparator extends StatelessWidget {
-  final int millis;
-  final ThemeData theme;
-  final CyberpunkTheme cyber;
-
-  const _DateSeparator({
-    required this.millis,
-    required this.theme,
-    required this.cyber,
-  });
-
-  static const List<String> _months = [
-    'janv.',
-    'févr.',
-    'mars',
-    'avr.',
-    'mai',
-    'juin',
-    'juil.',
-    'août',
-    'sept.',
-    'oct.',
-    'nov.',
-    'déc.',
-  ];
-
-  String _label() {
-    if (millis <= 0) return '';
-    final date = DateTime.fromMillisecondsSinceEpoch(millis);
-    final now = DateTime.now();
-    final today = DateTime(now.year, now.month, now.day);
-    final that = DateTime(date.year, date.month, date.day);
-    final diff = today.difference(that).inDays;
-    if (diff == 0) return 'Aujourd’hui';
-    if (diff == 1) return 'Hier';
-    final month = _months[date.month - 1];
-    if (date.year == now.year) return '${date.day} $month';
-    return '${date.day} $month ${date.year}';
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: FluffySpacing.md),
-      child: Center(
-        child: DecoratedBox(
-          decoration: BoxDecoration(
-            color: cyber.glassFillLight,
-            borderRadius: FluffyRadius.brFull,
-            border: Border.all(color: cyber.glassBorder),
-          ),
-          child: Padding(
-            padding: const EdgeInsets.symmetric(
-              horizontal: FluffySpacing.md,
-              vertical: FluffySpacing.xxs,
-            ),
-            child: Text(
-              _label(),
-              style: FluffyTypography.labelM.copyWith(
-                color: theme.colorScheme.onSurfaceVariant,
-                letterSpacing: 0.8,
-              ),
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-}
-
 /// A single SMS bubble: gradient cyan→magenta + right-aligned for own messages
 /// (tail bottom-right), glass + hairline-violet + left-aligned for inbound
 /// (tail bottom-left). Body text is linkified (URLs + phone numbers), shows a
@@ -755,6 +704,19 @@ class _SmsBubble extends StatelessWidget {
   final CyberpunkTheme cyber;
   final ThemeData theme;
   final bool showTimestamp;
+
+  /// Matrix-style grouping flags: whether the older / newer neighbour shares
+  /// the same sender (and day). Drive the hard-corner "tail" geometry and the
+  /// inbound avatar+name header so consecutive bubbles read as one block —
+  /// pixel-identical to [Message] in the Matrix timeline.
+  final bool previousSameSender;
+  final bool nextSameSender;
+
+  /// Single-letter initial + display name/number for the inbound avatar header
+  /// (shown only at the top of an inbound group, like Matrix).
+  final String senderInitial;
+  final String senderName;
+
   final Future<String?> Function(int partId) resolveImagePath;
   final Future<void> Function(LinkableElement link) onOpenLink;
   final VoidCallback onLongPress;
@@ -764,6 +726,10 @@ class _SmsBubble extends StatelessWidget {
     required this.cyber,
     required this.theme,
     required this.showTimestamp,
+    required this.previousSameSender,
+    required this.nextSameSender,
+    required this.senderInitial,
+    required this.senderName,
     required this.resolveImagePath,
     required this.onOpenLink,
     required this.onLongPress,
@@ -781,19 +747,71 @@ class _SmsBubble extends StatelessWidget {
       message.type == _SmsChatPageState._typeQueued ||
       message.type == _SmsChatPageState._typeOutbox;
 
+  /// Matrix bubble geometry: [AppConfig.borderRadius] everywhere, hard 4px
+  /// corner on the tail side for grouped neighbours. [Message] uses
+  /// `nextEventSameSender` for the top corner and `previousEventSameSender` for
+  /// the bottom. In our chronological list that maps to: top hardens when the
+  /// older neighbour matches, bottom when the newer one does.
+  BorderRadius _bubbleRadius(bool own) {
+    const hard = Radius.circular(4);
+    const round = Radius.circular(AppConfig.borderRadius);
+    return BorderRadius.only(
+      topLeft: !own && previousSameSender ? hard : round,
+      topRight: own && previousSameSender ? hard : round,
+      bottomLeft: !own && nextSameSender ? hard : round,
+      bottomRight: own && nextSameSender ? hard : round,
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final own = message.isFromMe;
     final align = own ? CrossAxisAlignment.end : CrossAxisAlignment.start;
     final bubble = own ? _ownBubble(context) : _inboundBubble(context);
+    // Avatar + sender name header at the top of an inbound group only — mirrors
+    // Message.dart's `!nextEventSameSender` header. The bubble below aligns
+    // under the name, not offset by the avatar (full-width inbound layout).
+    final showInboundHeader = !own && !previousSameSender;
     return Padding(
-      padding: const EdgeInsets.only(bottom: FluffySpacing.sm),
+      // Matrix spacing: tight 1px between grouped bubbles, 4px between groups
+      // (Message wraps each row in top/bottom 1|4 padding → ~2|8 cumulative).
+      padding: EdgeInsets.only(
+        top: previousSameSender ? FluffySpacing.xxs : FluffySpacing.xs,
+        bottom: nextSameSender ? FluffySpacing.xxs : FluffySpacing.xs,
+      ),
       child: Column(
         crossAxisAlignment: align,
         children: [
+          if (showInboundHeader)
+            Padding(
+              padding: const EdgeInsets.only(bottom: 6.0),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.center,
+                children: [
+                  _SenderAvatar(initial: senderInitial, cyber: cyber),
+                  const SizedBox(width: 10.0),
+                  Expanded(
+                    child: Text(
+                      senderName,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        fontFamily: FluffyTypography.inter,
+                        fontSize: 11,
+                        fontWeight: FontWeight.bold,
+                        color: theme.colorScheme.primary,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
           ConstrainedBox(
-            constraints: BoxConstraints(
-              maxWidth: MediaQuery.sizeOf(context).width * 0.80,
+            // Matrix bubble cap: columnWidth * 1.5 (= 570dp). On mobile this is
+            // wider than the viewport so the bubble effectively spans the row,
+            // matching Message.dart instead of the old 80% clamp.
+            constraints: const BoxConstraints(
+              maxWidth: FluffyThemes.columnWidth * 1.5,
             ),
             child: GestureDetector(
               onLongPress: onLongPress,
@@ -822,12 +840,7 @@ class _SmsBubble extends StatelessWidget {
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
         ),
-        borderRadius: const BorderRadius.only(
-          topLeft: FluffyRadius.lg,
-          topRight: FluffyRadius.lg,
-          bottomLeft: FluffyRadius.lg,
-          bottomRight: FluffyRadius.sm,
-        ),
+        borderRadius: _bubbleRadius(true),
       ),
       child: Opacity(
         opacity: _pending ? 0.75 : 1,
@@ -845,12 +858,7 @@ class _SmsBubble extends StatelessWidget {
     return DecoratedBox(
       decoration: BoxDecoration(
         color: cyber.glassFillLight,
-        borderRadius: const BorderRadius.only(
-          topLeft: FluffyRadius.lg,
-          topRight: FluffyRadius.lg,
-          bottomLeft: FluffyRadius.sm,
-          bottomRight: FluffyRadius.lg,
-        ),
+        borderRadius: _bubbleRadius(false),
         border: Border.all(color: cyber.violet.withValues(alpha: 0.35)),
       ),
       child: _bubbleContent(
@@ -891,20 +899,32 @@ class _SmsBubble extends StatelessWidget {
           ),
         if (hasText)
           Padding(
+            // Same interior padding as the Matrix bubble (16 / 8).
             padding: const EdgeInsets.symmetric(
               horizontal: FluffySpacing.lg,
-              vertical: FluffySpacing.md,
+              vertical: FluffySpacing.sm,
             ),
             child: Linkify(
               text: message.body,
               linkifiers: _linkifiers,
               options: const LinkifyOptions(humanize: false),
               onOpen: onOpenLink,
-              style: FluffyTypography.bodyL.copyWith(
+              // Match the Matrix bubble exactly: same base font size honoring
+              // the user's text-size setting (fontSizeFactor) so SMS and Matrix
+              // bubbles read identically.
+              style: TextStyle(
+                fontFamily: FluffyTypography.inter,
+                fontSize: AppConfig.messageFontSize *
+                    AppSettings.fontSizeFactor.value,
+                height: 1.25,
                 color: textColor,
                 fontWeight: textWeight,
               ),
-              linkStyle: FluffyTypography.bodyL.copyWith(
+              linkStyle: TextStyle(
+                fontFamily: FluffyTypography.inter,
+                fontSize: AppConfig.messageFontSize *
+                    AppSettings.fontSizeFactor.value,
+                height: 1.25,
                 color: linkColor,
                 fontWeight: textWeight,
                 decoration: TextDecoration.underline,
@@ -965,6 +985,41 @@ class _SmsBubble extends StatelessWidget {
     final hh = dt.hour.toString().padLeft(2, '0');
     final mm = dt.minute.toString().padLeft(2, '0');
     return '$hh:$mm';
+  }
+}
+
+/// 36dp gradient avatar with the sender initial, shown inline next to the
+/// sender name at the top of an inbound group. Matches the Matrix [Avatar]
+/// footprint (size 36) and the AppBar avatar styling so SMS headers and Matrix
+/// headers are visually identical.
+class _SenderAvatar extends StatelessWidget {
+  final String initial;
+  final CyberpunkTheme cyber;
+
+  const _SenderAvatar({required this.initial, required this.cyber});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: 36,
+      height: 36,
+      alignment: Alignment.center,
+      decoration: BoxDecoration(
+        shape: BoxShape.circle,
+        gradient: LinearGradient(
+          colors: [cyber.cyan, cyber.magenta],
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+        ),
+      ),
+      child: Text(
+        initial,
+        style: FluffyTypography.title.copyWith(
+          color: Colors.black,
+          fontWeight: FontWeight.w700,
+        ),
+      ),
+    );
   }
 }
 
