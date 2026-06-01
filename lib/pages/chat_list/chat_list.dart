@@ -9,6 +9,7 @@ import 'package:fluffychat/pages/sms_chat/sms_chat_page.dart';
 import 'package:fluffychat/utils/localized_exception_extension.dart';
 import 'package:fluffychat/utils/matrix_sdk_extensions/matrix_locals.dart';
 import 'package:fluffychat/utils/platform_infos.dart';
+import 'package:fluffychat/utils/scheduled/scheduled_messages.dart';
 import 'package:fluffychat/utils/show_scaffold_dialog.dart';
 import 'package:fluffychat/utils/show_update_snackbar.dart';
 import 'package:fluffychat/utils/sms/sms_bridge.dart';
@@ -392,6 +393,13 @@ class ChatListController extends State<ChatList>
     _loadSmsConversations();
     _smsSub = SmsBridge.instance.incoming.listen((_) {
       _loadSmsConversations();
+    });
+    // Arm the local scheduled-message queue (schedule send) once we have a
+    // logged-in client. Idempotent.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) {
+        ScheduledMessages.instance.start(Matrix.of(context).client);
+      }
     });
     _hackyWebRTCFixForWeb();
     WidgetsBinding.instance.addPostFrameCallback((_) {

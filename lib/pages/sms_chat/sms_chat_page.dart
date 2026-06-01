@@ -3,8 +3,10 @@ import 'dart:io';
 
 import 'package:fluffychat/config/cyberpunk_theme_extension.dart';
 import 'package:fluffychat/config/design_tokens.dart';
+import 'package:fluffychat/utils/scheduled/scheduled_messages.dart';
 import 'package:fluffychat/utils/sms/sms_bridge.dart';
 import 'package:fluffychat/widgets/cyber/cyber_widgets.dart';
+import 'package:fluffychat/widgets/cyber/scheduled_send.dart';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 
@@ -218,6 +220,34 @@ class _SmsChatPageState extends State<SmsChatPage> {
         attachments: optimistic.attachments,
       );
     });
+  }
+
+  /// Long-press on the send button: queue the typed text as a scheduled SMS for
+  /// later delivery instead of sending it now. Text-only (no MMS scheduling).
+  Future<void> _schedule() async {
+    final body = _composer.text.trim();
+    if (body.isEmpty) return;
+    final when = await ScheduledSend.pickDateTime(context);
+    if (when == null || !mounted) return;
+    final sendAt = when.millisecondsSinceEpoch;
+    await ScheduledMessages.instance.schedule(
+      ScheduledMessage(
+        id: ScheduledSend.nextId(sendAt: sendAt, body: body),
+        body: body,
+        sendAt: sendAt,
+        smsAddress: widget.address,
+      ),
+    );
+    if (!mounted) return;
+    setState(() {
+      _composer.clear();
+      _hasText = false;
+    });
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text('Message programmé pour ${ScheduledSend.formatWhen(when)}'),
+      ),
+    );
   }
 
   /// Picks an image from the gallery and queues it in the composer. Defensive:
@@ -437,6 +467,10 @@ class _SmsChatPageState extends State<SmsChatPage> {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
+            ScheduledBanner(
+              selector: () =>
+                  ScheduledMessages.instance.forSms(widget.address),
+            ),
             if (hasImage)
               _PendingImagePreview(
                 path: _pendingImagePath!,
@@ -483,6 +517,7 @@ class _SmsChatPageState extends State<SmsChatPage> {
                   enabled: canSend,
                   loading: _sending,
                   onPressed: canSend ? _send : null,
+                  onLongPress: _hasText && !_sending ? _schedule : null,
                 ),
               ],
             ),
@@ -697,12 +732,14 @@ class _SendButton extends StatelessWidget {
   final bool enabled;
   final bool loading;
   final VoidCallback? onPressed;
+  final VoidCallback? onLongPress;
 
   const _SendButton({
     required this.cyber,
     required this.enabled,
     required this.loading,
     required this.onPressed,
+    this.onLongPress,
   });
 
   @override
@@ -727,6 +764,7 @@ class _SendButton extends StatelessWidget {
           clipBehavior: Clip.antiAlias,
           child: InkWell(
             onTap: onPressed,
+            onLongPress: onLongPress,
             child: SizedBox(
               width: 48,
               height: 48,

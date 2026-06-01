@@ -8,7 +8,9 @@ import 'package:fluffychat/pages/chat/voice_record_gesture_state.dart';
 import 'package:fluffychat/pages/chat/voice_recording_overlay.dart';
 import 'package:fluffychat/utils/other_party_can_receive.dart';
 import 'package:fluffychat/utils/platform_infos.dart';
+import 'package:fluffychat/utils/scheduled/scheduled_messages.dart';
 import 'package:fluffychat/widgets/avatar.dart';
+import 'package:fluffychat/widgets/cyber/scheduled_send.dart';
 import 'package:fluffychat/widgets/matrix.dart';
 import 'package:flutter/material.dart';
 import 'package:matrix/matrix.dart';
@@ -38,6 +40,31 @@ class _ChatInputRowState extends State<ChatInputRow> {
   void dispose() {
     _gestureNotifier.dispose();
     super.dispose();
+  }
+
+  /// Long-press on the send button: pick a date+time and queue the typed text
+  /// for later delivery instead of sending it now. No-op on empty text.
+  Future<void> _scheduleSend() async {
+    final body = controller.sendController.text.trim();
+    if (body.isEmpty) return;
+    final when = await ScheduledSend.pickDateTime(context);
+    if (when == null || !mounted) return;
+    final sendAt = when.millisecondsSinceEpoch;
+    await ScheduledMessages.instance.schedule(
+      ScheduledMessage(
+        id: ScheduledSend.nextId(sendAt: sendAt, body: body),
+        body: body,
+        sendAt: sendAt,
+        roomId: controller.room.id,
+      ),
+    );
+    if (!mounted) return;
+    controller.sendController.clear();
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text('Message programmé pour ${ScheduledSend.formatWhen(when)}'),
+      ),
+    );
   }
 
   @override
@@ -88,6 +115,10 @@ class _ChatInputRowState extends State<ChatInputRow> {
             VoiceRecordingOverlay(
               state: recordingViewModel,
               gestureNotifier: _gestureNotifier,
+            ),
+            ScheduledBanner(
+              selector: () =>
+                  ScheduledMessages.instance.forRoom(controller.room.id),
             ),
             content,
           ],
@@ -400,15 +431,18 @@ class _ChatInputRowState extends State<ChatInputRow> {
                             backgroundColor: theme.bubbleColor,
                             foregroundColor: theme.onBubbleColor,
                           )
-                        : IconButton(
-                            key: const Key('send_button'),
-                            tooltip: L10n.of(context).send,
-                            onPressed: controller.send,
-                            style: IconButton.styleFrom(
-                              backgroundColor: theme.bubbleColor,
-                              foregroundColor: theme.onBubbleColor,
+                        : GestureDetector(
+                            onLongPress: _scheduleSend,
+                            child: IconButton(
+                              key: const Key('send_button'),
+                              tooltip: L10n.of(context).send,
+                              onPressed: controller.send,
+                              style: IconButton.styleFrom(
+                                backgroundColor: theme.bubbleColor,
+                                foregroundColor: theme.onBubbleColor,
+                              ),
+                              icon: const Icon(Icons.send_outlined),
                             ),
-                            icon: const Icon(Icons.send_outlined),
                           ),
                   ),
                 ],
