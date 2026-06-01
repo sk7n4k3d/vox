@@ -146,6 +146,31 @@ class SmsBridgePlugin private constructor(
                 }
             }
 
+            "deleteMessage" -> {
+                val id = call.longArg("id")
+                val isMms = call.argument<Boolean>("isMms") ?: false
+                if (id == null) {
+                    result.error("BAD_ARGS", "id missing", null)
+                    return
+                }
+                scope.launch {
+                    val n = SmsBridge.deleteMessage(context, id, isMms)
+                    replyOnMain(result) { it.success(n) }
+                }
+            }
+
+            "deleteConversation" -> {
+                val threadId = call.longArg("threadId")
+                if (threadId == null) {
+                    result.error("BAD_ARGS", "threadId missing", null)
+                    return
+                }
+                scope.launch {
+                    val n = SmsBridge.deleteConversation(context, threadId)
+                    replyOnMain(result) { it.success(n) }
+                }
+            }
+
             "loadMmsPart" -> {
                 val partId = call.longArg("partId")
                 if (partId == null) {

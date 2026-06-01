@@ -31,6 +31,7 @@ dependencies:
   flutter_animate: ^4.5.0
   flutter_foreground_task: ^9.2.1
   flutter_linkify: ^6.0.0
+  linkify: ^5.0.0
   flutter_local_notifications: ^21.0.0
   flutter_localizations:
     sdk: flutter

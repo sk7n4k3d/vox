@@ -483,6 +483,61 @@ object SmsBridge {
      * est l'app par défaut, car personne d'autre ne le fera — puis envoie via SmsManager
      * avec un PendingIntent SENT par part et DELIVERED par part. Le rowId est porté dans
      * l'extra de chaque intent pour que [SmsSentReceiver] puisse mettre à jour le statut.
+     * Supprime un message (SMS ou MMS) par son id. isMms distingue la table
+     * cible (content://sms vs content://mms). Nécessite ROLE_SMS (app défaut).
+     */
+    suspend fun deleteMessage(context: Context, id: Long, isMms: Boolean): Int =
+        withContext(Dispatchers.IO) {
+            if (id <= 0L) return@withContext 0
+            try {
+                val uri = if (isMms) {
+                    ContentUris.withAppendedId(Telephony.Mms.CONTENT_URI, id)
+                } else {
+                    ContentUris.withAppendedId(Telephony.Sms.CONTENT_URI, id)
+                }
+                context.contentResolver.delete(uri, null, null)
+            } catch (e: Exception) {
+                Log.e(TAG, "deleteMessage($id, mms=$isMms) failed: ${e.message}")
+                0
+            }
+        }
+
+    /**
+     * Supprime toute une conversation (SMS + MMS) par son threadId. Utilise
+     * l'URI conversations qui purge les deux tables pour le thread.
+     */
+    suspend fun deleteConversation(context: Context, threadId: Long): Int =
+        withContext(Dispatchers.IO) {
+            if (threadId <= 0L) return@withContext 0
+            try {
+                val uri = ContentUris.withAppendedId(
+                    Telephony.Threads.CONTENT_URI,
+                    threadId,
+                )
+                context.contentResolver.delete(uri, null, null)
+            } catch (e: Exception) {
+                Log.e(TAG, "deleteConversation($threadId) failed: ${e.message}")
+                // Fallback : purge SMS puis MMS par thread_id.
+                var n = 0
+                try {
+                    n += context.contentResolver.delete(
+                        Telephony.Sms.CONTENT_URI,
+                        "${Telephony.Sms.THREAD_ID}=?",
+                        arrayOf(threadId.toString()),
+                    )
+                    n += context.contentResolver.delete(
+                        Telephony.Mms.CONTENT_URI,
+                        "${Telephony.Mms.THREAD_ID}=?",
+                        arrayOf(threadId.toString()),
+                    )
+                } catch (e2: Exception) {
+                    Log.e(TAG, "deleteConversation fallback failed: ${e2.message}")
+                }
+                n
+            }
+        }
+
+    /**
      *
      * @return le rowId inséré (> 0) en cas de succès, ou null en cas d'échec.
      */

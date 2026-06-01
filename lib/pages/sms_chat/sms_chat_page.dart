@@ -8,14 +8,20 @@ import 'package:fluffychat/utils/sms/sms_bridge.dart';
 import 'package:fluffychat/widgets/cyber/cyber_widgets.dart';
 import 'package:fluffychat/widgets/cyber/scheduled_send.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+import 'package:flutter_linkify/flutter_linkify.dart';
 import 'package:image_picker/image_picker.dart';
+import 'package:linkify/linkify.dart' show PhoneNumberLinkifier;
+import 'package:url_launcher/url_launcher_string.dart';
 
 /// CYBERCORE SMS conversation screen.
 ///
 /// Renders a single SMS thread end to end **without** the Matrix SDK — it talks
 /// straight to [SmsBridge] (native Telephony provider). Bubbles mimic the chat
-/// look (gradient cyan→magenta for own / glass for inbound) but are simple,
-/// self-contained widgets — no Matrix [Timeline] coupling.
+/// look (gradient cyan→magenta for own / glass for inbound) with a tail, a
+/// hairline violet edge inbound, inline date separators, Google-Messages-style
+/// timestamp grouping and clickable links — but are simple, self-contained
+/// widgets — no Matrix [Timeline] coupling.
 ///
 /// Defensive by design: empty lists are fine, native errors already return safe
 /// defaults from [SmsBridge], and every animation is bounded + reduce-motion
@@ -45,6 +51,10 @@ class _SmsChatPageState extends State<SmsChatPage> {
 
   /// Synthetic local id prefix for optimistic (not-yet-persisted) bubbles.
   static const String _optimisticPrefix = 'optimistic-';
+
+  /// Prefix for synthetic ids built from the live incoming stream (never a real
+  /// provider row, so deletion is local-only).
+  static const String _incomingPrefix = 'incoming-';
 
   final List<SmsMessage> _messages = [];
   final ScrollController _scroll = ScrollController();
@@ -119,15 +129,15 @@ class _SmsChatPageState extends State<SmsChatPage> {
       if (!mounted) return;
       // Only react to SMS belonging to this thread (or, as a fallback when the
       // native side omits the threadId, the same address).
-      final sameThread = sms.threadId.isNotEmpty &&
-          sms.threadId == widget.threadId;
+      final sameThread =
+          sms.threadId.isNotEmpty && sms.threadId == widget.threadId;
       final sameAddress = _normalize(sms.address) == _normalize(widget.address);
       if (!sameThread && !sameAddress) return;
 
       setState(() {
         _messages.add(
           SmsMessage(
-            id: 'incoming-${sms.date}-${_messages.length}',
+            id: '$_incomingPrefix${sms.date}-${_messages.length}',
             address: sms.address,
             body: sms.body,
             date: sms.date,
@@ -245,7 +255,8 @@ class _SmsChatPageState extends State<SmsChatPage> {
     });
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
-        content: Text('Message programmé pour ${ScheduledSend.formatWhen(when)}'),
+        content:
+            Text('Message programmé pour ${ScheduledSend.formatWhen(when)}'),
       ),
     );
   }
@@ -282,6 +293,78 @@ class _SmsChatPageState extends State<SmsChatPage> {
     return path;
   }
 
+  /// Opens an URL / phone link from a tapped message body. SMS bodies carry
+  /// plain external links (shop URLs, `tel:` numbers) — no Matrix deep-link
+  /// handling needed, so we launch straight through the OS.
+  Future<void> _openLink(LinkableElement link) async {
+    try {
+      await launchUrlString(link.url, mode: LaunchMode.externalApplication);
+    } catch (_) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Impossible d’ouvrir ce lien')),
+      );
+    }
+  }
+
+  /// Long-press on a bubble → CYBERCORE action sheet (copy / delete).
+  Future<void> _onMessageLongPress(SmsMessage message) async {
+    HapticFeedback.selectionClick();
+    final cyber = CyberColors.of(context);
+    final action = await showModalBottomSheet<_MessageAction>(
+      context: context,
+      backgroundColor: Colors.transparent,
+      builder: (context) => _MessageActionSheet(
+        cyber: cyber,
+        canCopy: message.body.isNotEmpty,
+      ),
+    );
+    if (action == null || !mounted) return;
+    switch (action) {
+      case _MessageAction.copy:
+        await Clipboard.setData(ClipboardData(text: message.body));
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Texte copié')),
+        );
+      case _MessageAction.delete:
+        await _deleteMessage(message);
+    }
+  }
+
+  /// Deletes a single message: removes it from the native provider (when it is a
+  /// real provider row, i.e. not optimistic/incoming-synthetic) then drops it
+  /// from the local list. Local-only bubbles are simply removed.
+  Future<void> _deleteMessage(SmsMessage message) async {
+    final realId = int.tryParse(message.id);
+    final isSynthetic = message.id.startsWith(_optimisticPrefix) ||
+        message.id.startsWith(_incomingPrefix);
+    if (realId != null && !isSynthetic) {
+      await SmsBridge.instance.deleteMessage(realId, isMms: message.isMms);
+    }
+    if (!mounted) return;
+    setState(() => _messages.removeWhere((m) => m.id == message.id));
+  }
+
+  /// Header menu → "Supprimer la conversation". Confirms, deletes the whole
+  /// thread natively, then pops back to the chat list.
+  Future<void> _deleteConversation() async {
+    final confirmed = await showModalBottomSheet<bool>(
+      context: context,
+      backgroundColor: Colors.transparent,
+      builder: (context) => _ConfirmDeleteSheet(
+        cyber: CyberColors.of(context),
+        title: 'Supprimer la conversation ?',
+        message:
+            'Tous les messages de ce fil seront définitivement supprimés.',
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+    await SmsBridge.instance.deleteConversation(widget.threadId);
+    if (!mounted) return;
+    Navigator.of(context).pop();
+  }
+
   void _sortMessages() {
     _messages.sort((a, b) => a.date.compareTo(b.date));
   }
@@ -313,6 +396,11 @@ class _SmsChatPageState extends State<SmsChatPage> {
     if (name != null && name.isNotEmpty) return name;
     return widget.address;
   }
+
+  /// Subtitle below the header title: "MMS" when any message carries an image,
+  /// otherwise "SMS".
+  String get _subtitle =>
+      _messages.any((m) => m.isMms && m.images.isNotEmpty) ? 'MMS' : 'SMS';
 
   String _initial() {
     final source = _title.trim();
@@ -356,6 +444,7 @@ class _SmsChatPageState extends State<SmsChatPage> {
                 begin: Alignment.topLeft,
                 end: Alignment.bottomRight,
               ),
+              boxShadow: FluffyElevation.glowCyan(cyber.cyan, alpha: 0.3),
             ),
             child: Text(
               _initial(),
@@ -380,7 +469,7 @@ class _SmsChatPageState extends State<SmsChatPage> {
                   ),
                 ),
                 Text(
-                  'SMS',
+                  _subtitle,
                   style: FluffyTypography.labelM.copyWith(
                     color: cyber.cyan,
                     letterSpacing: 1.5,
@@ -391,6 +480,43 @@ class _SmsChatPageState extends State<SmsChatPage> {
           ),
         ],
       ),
+      actions: [
+        PopupMenuButton<String>(
+          icon: Icon(
+            Icons.more_vert_rounded,
+            color: theme.colorScheme.onSurface,
+          ),
+          color: theme.colorScheme.surfaceContainerHigh,
+          shape: const RoundedRectangleBorder(
+            borderRadius: FluffyRadius.brMd,
+          ),
+          onSelected: (value) {
+            if (value == 'delete') _deleteConversation();
+          },
+          itemBuilder: (context) => [
+            PopupMenuItem<String>(
+              value: 'delete',
+              child: Row(
+                children: [
+                  Icon(
+                    Icons.delete_outline_rounded,
+                    color: cyber.magenta,
+                    size: 20,
+                  ),
+                  const SizedBox(width: FluffySpacing.md),
+                  Text(
+                    'Supprimer la conversation',
+                    style: FluffyTypography.bodyM.copyWith(
+                      color: theme.colorScheme.onSurface,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(width: FluffySpacing.xs),
+      ],
     );
   }
 
@@ -414,7 +540,7 @@ class _SmsChatPageState extends State<SmsChatPage> {
               ),
               const SizedBox(height: FluffySpacing.lg),
               Text(
-                'No messages yet',
+                'Aucun message pour l’instant',
                 textAlign: TextAlign.center,
                 style: FluffyTypography.bodyM.copyWith(
                   color: theme.colorScheme.onSurfaceVariant,
@@ -437,15 +563,29 @@ class _SmsChatPageState extends State<SmsChatPage> {
       itemBuilder: (context, index) {
         final message = _messages[index];
         final previous = index > 0 ? _messages[index - 1] : null;
-        final showTimestamp = previous == null ||
+        // New calendar day → inline date separator above the bubble.
+        final showDateSeparator =
+            previous == null || !_sameDay(previous.date, message.date);
+        // Google-Messages grouping: show the timestamp only on a sender change,
+        // a >5 min gap, or right after a date separator.
+        final showTimestamp = showDateSeparator ||
             (message.date - previous.date).abs() > 5 * 60 * 1000 ||
             previous.isFromMe != message.isFromMe;
-        return _SmsBubble(
-          message: message,
-          cyber: cyber,
-          theme: theme,
-          showTimestamp: showTimestamp,
-          resolveImagePath: _resolveMmsPart,
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            if (showDateSeparator)
+              _DateSeparator(millis: message.date, theme: theme, cyber: cyber),
+            _SmsBubble(
+              message: message,
+              cyber: cyber,
+              theme: theme,
+              showTimestamp: showTimestamp,
+              resolveImagePath: _resolveMmsPart,
+              onOpenLink: _openLink,
+              onLongPress: () => _onMessageLongPress(message),
+            ),
+          ],
         );
       },
     );
@@ -468,8 +608,7 @@ class _SmsChatPageState extends State<SmsChatPage> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             ScheduledBanner(
-              selector: () =>
-                  ScheduledMessages.instance.forSms(widget.address),
+              selector: () => ScheduledMessages.instance.forSms(widget.address),
             ),
             if (hasImage)
               _PendingImagePreview(
@@ -503,7 +642,7 @@ class _SmsChatPageState extends State<SmsChatPage> {
                       decoration: InputDecoration(
                         isCollapsed: true,
                         border: InputBorder.none,
-                        hintText: 'Text message',
+                        hintText: 'Écrivez un SMS…',
                         hintStyle: FluffyTypography.bodyL.copyWith(
                           color: theme.colorScheme.onSurfaceVariant,
                         ),
@@ -526,17 +665,99 @@ class _SmsChatPageState extends State<SmsChatPage> {
       ),
     );
   }
+
+  /// True when two epoch-millis timestamps fall on the same calendar day.
+  static bool _sameDay(int a, int b) {
+    final da = DateTime.fromMillisecondsSinceEpoch(a);
+    final db = DateTime.fromMillisecondsSinceEpoch(b);
+    return da.year == db.year && da.month == db.month && da.day == db.day;
+  }
 }
 
-/// A single SMS bubble: gradient cyan→magenta + right-aligned for own messages,
-/// glass + left-aligned for inbound. Shows a discreet timestamp and (for own
-/// messages) a small send/fail status line.
+/// Inline day divider (Aujourd'hui / Hier / dd MMM) between message groups,
+/// rendered as a centered glass pill with a hairline border.
+class _DateSeparator extends StatelessWidget {
+  final int millis;
+  final ThemeData theme;
+  final CyberpunkTheme cyber;
+
+  const _DateSeparator({
+    required this.millis,
+    required this.theme,
+    required this.cyber,
+  });
+
+  static const List<String> _months = [
+    'janv.',
+    'févr.',
+    'mars',
+    'avr.',
+    'mai',
+    'juin',
+    'juil.',
+    'août',
+    'sept.',
+    'oct.',
+    'nov.',
+    'déc.',
+  ];
+
+  String _label() {
+    if (millis <= 0) return '';
+    final date = DateTime.fromMillisecondsSinceEpoch(millis);
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    final that = DateTime(date.year, date.month, date.day);
+    final diff = today.difference(that).inDays;
+    if (diff == 0) return 'Aujourd’hui';
+    if (diff == 1) return 'Hier';
+    final month = _months[date.month - 1];
+    if (date.year == now.year) return '${date.day} $month';
+    return '${date.day} $month ${date.year}';
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: FluffySpacing.md),
+      child: Center(
+        child: DecoratedBox(
+          decoration: BoxDecoration(
+            color: cyber.glassFillLight,
+            borderRadius: FluffyRadius.brFull,
+            border: Border.all(color: cyber.glassBorder),
+          ),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(
+              horizontal: FluffySpacing.md,
+              vertical: FluffySpacing.xxs,
+            ),
+            child: Text(
+              _label(),
+              style: FluffyTypography.labelM.copyWith(
+                color: theme.colorScheme.onSurfaceVariant,
+                letterSpacing: 0.8,
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// A single SMS bubble: gradient cyan→magenta + right-aligned for own messages
+/// (tail bottom-right), glass + hairline-violet + left-aligned for inbound
+/// (tail bottom-left). Body text is linkified (URLs + phone numbers), shows a
+/// discreet timestamp and (for own messages) a small send/fail status line.
 class _SmsBubble extends StatelessWidget {
   final SmsMessage message;
   final CyberpunkTheme cyber;
   final ThemeData theme;
   final bool showTimestamp;
   final Future<String?> Function(int partId) resolveImagePath;
+  final Future<void> Function(LinkableElement link) onOpenLink;
+  final VoidCallback onLongPress;
 
   const _SmsBubble({
     required this.message,
@@ -544,7 +765,16 @@ class _SmsBubble extends StatelessWidget {
     required this.theme,
     required this.showTimestamp,
     required this.resolveImagePath,
+    required this.onOpenLink,
+    required this.onLongPress,
   });
+
+  /// URL + email (defaults) + phone number detection inside SMS bodies.
+  static const List<Linkifier> _linkifiers = [
+    UrlLinkifier(),
+    EmailLinkifier(),
+    PhoneNumberLinkifier(),
+  ];
 
   bool get _failed => message.type == _SmsChatPageState._typeFailed;
   bool get _pending =>
@@ -555,9 +785,7 @@ class _SmsBubble extends StatelessWidget {
   Widget build(BuildContext context) {
     final own = message.isFromMe;
     final align = own ? CrossAxisAlignment.end : CrossAxisAlignment.start;
-    final bubble = own
-        ? _ownBubble(context)
-        : _inboundBubble(context);
+    final bubble = own ? _ownBubble(context) : _inboundBubble(context);
     return Padding(
       padding: const EdgeInsets.only(bottom: FluffySpacing.sm),
       child: Column(
@@ -565,9 +793,12 @@ class _SmsBubble extends StatelessWidget {
         children: [
           ConstrainedBox(
             constraints: BoxConstraints(
-              maxWidth: MediaQuery.sizeOf(context).width * 0.78,
+              maxWidth: MediaQuery.sizeOf(context).width * 0.80,
             ),
-            child: bubble,
+            child: GestureDetector(
+              onLongPress: onLongPress,
+              child: bubble,
+            ),
           ),
           if (showTimestamp || own) ...[
             const SizedBox(height: FluffySpacing.xxs),
@@ -603,6 +834,7 @@ class _SmsBubble extends StatelessWidget {
         child: _bubbleContent(
           context,
           textColor: Colors.black,
+          linkColor: Colors.black,
           textWeight: FontWeight.w500,
         ),
       ),
@@ -624,16 +856,19 @@ class _SmsBubble extends StatelessWidget {
       child: _bubbleContent(
         context,
         textColor: theme.colorScheme.onSurface,
+        linkColor: cyber.cyan,
       ),
     );
   }
 
   /// Bubble interior: stacks image attachments (when any) above the text body.
   /// The text padding is dropped entirely when [message.body] is empty so an
-  /// image-only MMS keeps tight rounded corners.
+  /// image-only MMS keeps tight rounded corners. Body text is linkified: URLs
+  /// and phone numbers become tappable (cyan inbound / black own).
   Widget _bubbleContent(
     BuildContext context, {
     required Color textColor,
+    required Color linkColor,
     FontWeight? textWeight,
   }) {
     final images = message.images;
@@ -645,8 +880,7 @@ class _SmsBubble extends StatelessWidget {
         for (var i = 0; i < images.length; i++)
           Padding(
             padding: EdgeInsets.only(
-              bottom:
-                  hasText || i < images.length - 1 ? FluffySpacing.xs : 0,
+              bottom: hasText || i < images.length - 1 ? FluffySpacing.xs : 0,
             ),
             child: _MmsImage(
               partId: images[i].partId,
@@ -661,11 +895,20 @@ class _SmsBubble extends StatelessWidget {
               horizontal: FluffySpacing.lg,
               vertical: FluffySpacing.md,
             ),
-            child: Text(
-              message.body,
+            child: Linkify(
+              text: message.body,
+              linkifiers: _linkifiers,
+              options: const LinkifyOptions(humanize: false),
+              onOpen: onOpenLink,
               style: FluffyTypography.bodyL.copyWith(
                 color: textColor,
                 fontWeight: textWeight,
+              ),
+              linkStyle: FluffyTypography.bodyL.copyWith(
+                color: linkColor,
+                fontWeight: textWeight,
+                decoration: TextDecoration.underline,
+                decorationColor: linkColor,
               ),
             ),
           ),
@@ -682,13 +925,13 @@ class _SmsBubble extends StatelessWidget {
     final String statusLabel;
     final Color statusColor;
     if (_failed) {
-      statusLabel = 'Not delivered';
+      statusLabel = 'Non délivré';
       statusColor = cyber.magenta;
     } else if (_pending) {
-      statusLabel = 'Sending…';
+      statusLabel = 'Envoi…';
       statusColor = muted;
     } else {
-      statusLabel = 'Sent';
+      statusLabel = 'Envoyé';
       statusColor = cyber.success;
     }
     return Row(
@@ -724,6 +967,198 @@ class _SmsBubble extends StatelessWidget {
     return '$hh:$mm';
   }
 }
+
+/// CYBERCORE long-press action sheet for a message (copy / delete).
+class _MessageActionSheet extends StatelessWidget {
+  final CyberpunkTheme cyber;
+  final bool canCopy;
+
+  const _MessageActionSheet({required this.cyber, required this.canCopy});
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return SafeArea(
+      top: false,
+      child: Padding(
+        padding: const EdgeInsets.all(FluffySpacing.md),
+        child: CyberGlass(
+          tint: cyber.glassFillStrong,
+          padding: const EdgeInsets.symmetric(vertical: FluffySpacing.sm),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              if (canCopy)
+                _SheetTile(
+                  icon: Icons.copy_rounded,
+                  label: 'Copier le texte',
+                  color: cyber.cyan,
+                  onTap: () =>
+                      Navigator.of(context).pop(_MessageAction.copy),
+                ),
+              _SheetTile(
+                icon: Icons.delete_outline_rounded,
+                label: 'Supprimer',
+                color: cyber.magenta,
+                onTap: () => Navigator.of(context).pop(_MessageAction.delete),
+              ),
+              Padding(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: FluffySpacing.lg,
+                  vertical: FluffySpacing.xs,
+                ),
+                child: SizedBox(
+                  width: double.infinity,
+                  child: TextButton(
+                    onPressed: () => Navigator.of(context).pop(),
+                    child: Text(
+                      'Annuler',
+                      style: FluffyTypography.labelL.copyWith(
+                        color: theme.colorScheme.onSurfaceVariant,
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// CYBERCORE confirmation sheet (destructive). Returns true on confirm.
+class _ConfirmDeleteSheet extends StatelessWidget {
+  final CyberpunkTheme cyber;
+  final String title;
+  final String message;
+
+  const _ConfirmDeleteSheet({
+    required this.cyber,
+    required this.title,
+    required this.message,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return SafeArea(
+      top: false,
+      child: Padding(
+        padding: const EdgeInsets.all(FluffySpacing.md),
+        child: CyberGlass(
+          tint: cyber.glassFillStrong,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Text(
+                title,
+                style: FluffyTypography.headlineM.copyWith(
+                  color: theme.colorScheme.onSurface,
+                ),
+              ),
+              const SizedBox(height: FluffySpacing.sm),
+              Text(
+                message,
+                style: FluffyTypography.bodyM.copyWith(
+                  color: theme.colorScheme.onSurfaceVariant,
+                ),
+              ),
+              const SizedBox(height: FluffySpacing.lg),
+              Row(
+                children: [
+                  Expanded(
+                    child: TextButton(
+                      onPressed: () => Navigator.of(context).pop(false),
+                      child: Text(
+                        'Annuler',
+                        style: FluffyTypography.labelL.copyWith(
+                          color: theme.colorScheme.onSurfaceVariant,
+                        ),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: FluffySpacing.sm),
+                  Expanded(
+                    child: DecoratedBox(
+                      decoration: BoxDecoration(
+                        color: cyber.magenta.withValues(alpha: 0.16),
+                        borderRadius: FluffyRadius.brMd,
+                        border: Border.all(
+                          color: cyber.magenta.withValues(alpha: 0.5),
+                        ),
+                      ),
+                      child: TextButton(
+                        onPressed: () => Navigator.of(context).pop(true),
+                        child: Text(
+                          'Supprimer',
+                          style: FluffyTypography.labelL.copyWith(
+                            color: cyber.magenta,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// One tappable row inside a CYBERCORE action sheet.
+class _SheetTile extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final Color color;
+  final VoidCallback onTap;
+
+  const _SheetTile({
+    required this.icon,
+    required this.label,
+    required this.color,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        borderRadius: FluffyRadius.brMd,
+        onTap: onTap,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(
+            horizontal: FluffySpacing.lg,
+            vertical: FluffySpacing.md,
+          ),
+          child: Row(
+            children: [
+              Icon(icon, color: color, size: 22),
+              const SizedBox(width: FluffySpacing.lg),
+              Text(
+                label,
+                style: FluffyTypography.bodyL.copyWith(
+                  color: theme.colorScheme.onSurface,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Actions surfaced by the bubble long-press sheet.
+enum _MessageAction { copy, delete }
 
 /// Gradient circular send button matching [CyberPrimaryButton]'s look, sized for
 /// the composer. Dims + disables when there's nothing to send.
@@ -890,7 +1325,8 @@ class _PendingImagePreview extends StatelessWidget {
                 child: const SizedBox(
                   width: 24,
                   height: 24,
-                  child: Icon(Icons.close_rounded, size: 16, color: Colors.black),
+                  child:
+                      Icon(Icons.close_rounded, size: 16, color: Colors.black),
                 ),
               ),
             ),
@@ -984,8 +1420,7 @@ class _MmsImage extends StatelessWidget {
       PageRouteBuilder<void>(
         opaque: false,
         barrierColor: Colors.black,
-        transitionDuration:
-            reduce ? Duration.zero : FluffyDurations.medium,
+        transitionDuration: reduce ? Duration.zero : FluffyDurations.medium,
         reverseTransitionDuration:
             reduce ? Duration.zero : FluffyDurations.fast,
         pageBuilder: (_, _, _) => _MmsImageViewer(path: path, cyber: cyber),

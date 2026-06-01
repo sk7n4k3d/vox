@@ -156,13 +156,18 @@ class ChatListController extends State<ChatList>
   Future<void> _loadSmsConversations() async {
     if (!await SmsBridge.instance.isDefaultSmsApp()) return;
     final convs = await SmsBridge.instance.listConversations();
+    final archived = await SmsBridge.instance.archivedThreadIds();
     if (!mounted) return;
-    setState(() => smsConversations = convs);
+    // Hide archived threads from the main list.
+    setState(() => smsConversations =
+        convs.where((c) => !archived.contains(c.threadId)).toList());
   }
 
-  /// Opens an SMS conversation in the dedicated [SmsChatPage].
-  void onSmsTap(SmsConversation conv) {
-    Navigator.of(context).push(
+  /// Opens an SMS conversation in the dedicated [SmsChatPage], then refreshes
+  /// the list on return (a deleted conversation must disappear).
+  Future<void> onSmsTap(SmsConversation conv) async {
+    SmsBridge.instance.markRead(conv.threadId);
+    await Navigator.of(context).push(
       MaterialPageRoute<void>(
         builder: (_) => SmsChatPage(
           threadId: conv.threadId,
@@ -171,7 +176,19 @@ class ChatListController extends State<ChatList>
         ),
       ),
     );
-    SmsBridge.instance.markRead(conv.threadId);
+    await _loadSmsConversations();
+  }
+
+  /// Archives (or unarchives) an SMS conversation and refreshes the list.
+  Future<void> archiveSms(SmsConversation conv) async {
+    await SmsBridge.instance.setArchived(conv.threadId, true);
+    await _loadSmsConversations();
+  }
+
+  /// Deletes an SMS conversation (all messages) and refreshes the list.
+  Future<void> deleteSms(SmsConversation conv) async {
+    await SmsBridge.instance.deleteConversation(conv.threadId);
+    await _loadSmsConversations();
   }
 
   bool isSearchMode = false;

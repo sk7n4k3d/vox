@@ -14,6 +14,7 @@ import 'package:fluffychat/utils/sms/sms_bridge.dart';
 import 'package:fluffychat/utils/stream_extension.dart';
 import 'package:fluffychat/widgets/adaptive_dialogs/public_room_dialog.dart';
 import 'package:fluffychat/widgets/avatar.dart';
+import 'package:fluffychat/widgets/cyber/cyber_widgets.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:matrix/matrix.dart';
@@ -239,12 +240,62 @@ class ChatListViewBody extends StatelessWidget {
                           );
                         }
                         if (entry.sms != null) {
+                          final sms = entry.sms!;
+                          final cyber = CyberColors.of(context);
                           return _StaggeredFadeIn(
                             delayMs: (i.clamp(0, 12)) * 35,
-                            child: SmsListItem(
-                              key: Key('sms_item_${entry.sms!.threadId}'),
-                              conversation: entry.sms!,
-                              onTap: () => controller.onSmsTap(entry.sms!),
+                            child: Dismissible(
+                              key: Key('sms_dismiss_${sms.threadId}'),
+                              // Swipe left → delete (magenta), right → archive
+                              // (violet).
+                              background: _SwipeBg(
+                                color: cyber.violet,
+                                icon: Icons.archive_outlined,
+                                alignment: Alignment.centerLeft,
+                              ),
+                              secondaryBackground: _SwipeBg(
+                                color: cyber.magenta,
+                                icon: Icons.delete_outline_rounded,
+                                alignment: Alignment.centerRight,
+                              ),
+                              confirmDismiss: (dir) async {
+                                if (dir == DismissDirection.startToEnd) {
+                                  await controller.archiveSms(sms);
+                                  return false; // refresh handles removal
+                                }
+                                final ok = await showDialog<bool>(
+                                  context: context,
+                                  builder: (ctx) => AlertDialog(
+                                    title: Text(L10n.of(ctx).delete),
+                                    content: Text(
+                                      'Supprimer la conversation avec '
+                                      '${sms.title} ?',
+                                    ),
+                                    actions: [
+                                      TextButton(
+                                        onPressed: () =>
+                                            Navigator.pop(ctx, false),
+                                        child: Text(L10n.of(ctx).cancel),
+                                      ),
+                                      TextButton(
+                                        onPressed: () =>
+                                            Navigator.pop(ctx, true),
+                                        child: Text(
+                                          L10n.of(ctx).delete,
+                                          style: TextStyle(color: cyber.magenta),
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                );
+                                if (ok == true) await controller.deleteSms(sms);
+                                return false;
+                              },
+                              child: SmsListItem(
+                                key: Key('sms_item_${sms.threadId}'),
+                                conversation: sms,
+                                onTap: () => controller.onSmsTap(sms),
+                              ),
                             ),
                           );
                         }
@@ -434,6 +485,29 @@ class _ChatListEntry {
         room = null;
 
   bool get isHeader => room == null && sms == null;
+}
+
+/// Coloured swipe background for SMS conversation dismiss actions.
+class _SwipeBg extends StatelessWidget {
+  final Color color;
+  final IconData icon;
+  final AlignmentGeometry alignment;
+
+  const _SwipeBg({
+    required this.color,
+    required this.icon,
+    required this.alignment,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      color: color.withValues(alpha: 0.2),
+      alignment: alignment,
+      padding: const EdgeInsets.symmetric(horizontal: FluffySpacing.xl),
+      child: Icon(icon, color: color),
+    );
+  }
 }
 
 /// Sprint 2 V3 — section header row, scroll-along (pas sticky en Sprint 2 mais

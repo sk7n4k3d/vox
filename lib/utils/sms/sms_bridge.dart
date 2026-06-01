@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/services.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 /// Dart side of the native SMS bridge (étape 1). Talks to the Kotlin
 /// `SmsBridgePlugin` over the `eu.devlabz.vox/sms` MethodChannel + listens to
@@ -17,6 +18,42 @@ class SmsBridge {
   static const EventChannel _events = EventChannel('eu.devlabz.vox/sms_events');
 
   Stream<SmsIncoming>? _incoming;
+
+  // Archive is local-only: the Telephony provider has no standard "archived"
+  // flag for SMS, so VOX keeps the set of archived thread ids in prefs.
+  static const String _archiveKey = 'chat.fluffy.sms_archived';
+  Set<String> _archived = {};
+  bool _archivedLoaded = false;
+  final StreamController<void> _archiveChanges =
+      StreamController<void>.broadcast();
+
+  Stream<void> get archiveChanges => _archiveChanges.stream;
+
+  Future<void> _ensureArchiveLoaded() async {
+    if (_archivedLoaded) return;
+    final prefs = await SharedPreferences.getInstance();
+    _archived = (prefs.getStringList(_archiveKey) ?? const []).toSet();
+    _archivedLoaded = true;
+  }
+
+  Future<Set<String>> archivedThreadIds() async {
+    await _ensureArchiveLoaded();
+    return Set.unmodifiable(_archived);
+  }
+
+  bool isArchivedSync(String threadId) => _archived.contains(threadId);
+
+  Future<void> setArchived(String threadId, bool archived) async {
+    await _ensureArchiveLoaded();
+    if (archived) {
+      _archived.add(threadId);
+    } else {
+      _archived.remove(threadId);
+    }
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setStringList(_archiveKey, _archived.toList());
+    _archiveChanges.add(null);
+  }
 
   /// Broadcast stream of incoming SMS (only fires while VOX is the default
   /// SMS app — that's an Android constraint, not a bug).
@@ -88,6 +125,31 @@ class SmsBridge {
     try {
       return await _channel.invokeMethod<int>('markRead', {
             'threadId': threadId,
+          }) ??
+          0;
+    } on PlatformException {
+      return 0;
+    }
+  }
+
+  /// Deletes a single SMS or MMS message by its provider id.
+  Future<int> deleteMessage(int id, {required bool isMms}) async {
+    try {
+      return await _channel.invokeMethod<int>('deleteMessage', {
+            'id': id,
+            'isMms': isMms,
+          }) ??
+          0;
+    } on PlatformException {
+      return 0;
+    }
+  }
+
+  /// Deletes a whole conversation (all SMS + MMS) by thread id.
+  Future<int> deleteConversation(String threadId) async {
+    try {
+      return await _channel.invokeMethod<int>('deleteConversation', {
+            'threadId': int.tryParse(threadId) ?? 0,
           }) ??
           0;
     } on PlatformException {
