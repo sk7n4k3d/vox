@@ -94,6 +94,51 @@ class SmsBridge {
       return 0;
     }
   }
+
+  /// Extracts an MMS part (image) to a cache file and returns its local path.
+  Future<String?> loadMmsPart(int partId) async {
+    try {
+      return await _channel.invokeMethod<String>('loadMmsPart', {
+        'partId': partId,
+      });
+    } on PlatformException {
+      return null;
+    }
+  }
+
+  /// Sends an MMS (optional text + optional image path). Returns the provider
+  /// row id of the outbox entry (or null on failure).
+  Future<int?> sendMms(String address, String? body, String? imagePath) async {
+    try {
+      return await _channel.invokeMethod<int>('sendMms', {
+        'address': address,
+        'body': body,
+        'imagePath': imagePath,
+      });
+    } on PlatformException {
+      return null;
+    }
+  }
+}
+
+class SmsAttachment {
+  final int partId;
+  final String mimeType;
+  final String fileName;
+
+  const SmsAttachment({
+    required this.partId,
+    required this.mimeType,
+    required this.fileName,
+  });
+
+  factory SmsAttachment.fromMap(Map<String, dynamic> m) => SmsAttachment(
+        partId: (m['partId'] as num?)?.toInt() ?? 0,
+        mimeType: '${m['mimeType'] ?? ''}',
+        fileName: '${m['fileName'] ?? ''}',
+      );
+
+  bool get isImage => mimeType.startsWith('image/');
 }
 
 class SmsConversation {
@@ -134,6 +179,8 @@ class SmsMessage {
   final int type;
   final int status;
   final bool read;
+  final bool isMms;
+  final List<SmsAttachment> attachments;
 
   const SmsMessage({
     required this.id,
@@ -144,6 +191,8 @@ class SmsMessage {
     required this.type,
     required this.status,
     required this.read,
+    this.isMms = false,
+    this.attachments = const [],
   });
 
   factory SmsMessage.fromMap(Map<String, dynamic> m) => SmsMessage(
@@ -155,16 +204,26 @@ class SmsMessage {
         type: (m['type'] as num?)?.toInt() ?? 0,
         status: (m['status'] as num?)?.toInt() ?? -1,
         read: m['read'] == true,
+        isMms: m['isMms'] == true,
+        attachments: ((m['attachments'] as List<dynamic>?) ?? [])
+            .map((e) => SmsAttachment.fromMap(Map<String, dynamic>.from(e)))
+            .toList(),
       );
+
+  List<SmsAttachment> get images =>
+      attachments.where((a) => a.isImage).toList();
 }
 
 class SmsIncoming {
+  /// 'sms' or 'mms' (the native layer tags each event).
+  final String kind;
   final String address;
   final String body;
   final int date;
   final String threadId;
 
   const SmsIncoming({
+    required this.kind,
     required this.address,
     required this.body,
     required this.date,
@@ -172,9 +231,12 @@ class SmsIncoming {
   });
 
   factory SmsIncoming.fromMap(Map<String, dynamic> m) => SmsIncoming(
+        kind: '${m['kind'] ?? 'sms'}',
         address: '${m['address'] ?? ''}',
         body: '${m['body'] ?? ''}',
         date: (m['date'] as num?)?.toInt() ?? 0,
         threadId: '${m['threadId'] ?? ''}',
       );
+
+  bool get isMms => kind == 'mms';
 }

@@ -29,12 +29,21 @@ import kotlinx.coroutines.withContext
  *   - isDefaultSmsApp()                         -> Boolean
  *   - requestDefaultSmsRole()                   -> Boolean (true = intent lancé)
  *   - listConversations()                       -> List<Map> {threadId,address,displayName,snippet,date,unreadCount}
- *   - listMessages(threadId: Int|Long)          -> List<Map> {id,address,body,date,isFromMe,type,status,read}
+ *                                                  (inclut désormais les threads MMS-only)
+ *   - listMessages(threadId: Int|Long)          -> List<Map> {id,address,body,date,isFromMe,type,status,read,
+ *                                                              isMms:Bool, attachments:List<{partId,mimeType,fileName}>}
+ *                                                  (SMS + MMS fusionnés, triés par date ; attachments vide pour les SMS)
  *   - sendSms(address: String, body: String)    -> Long? (rowId) | null si échec
+ *   - sendMms(address: String, body: String?, imagePath: String?)
+ *                                               -> Long? (mmsId Outbox) | null si échec. Best-effort carrier.
+ *   - loadMmsPart(partId: Int|Long)             -> String? (path du fichier cache écrit) | null si échec
  *   - markRead(threadId: Int|Long)              -> Int (nb lignes mises à jour)
  *
- * Events (EventChannel) : à chaque SMS entrant, un Map est poussé :
- *   { address: String, body: String, date: Long, threadId: Long }
+ * Events (EventChannel) : à chaque message entrant, un Map est poussé avec un champ `kind` :
+ *   - SMS : { kind:"sms", address: String, body: String, date: Long, threadId: Long }
+ *   - MMS : { kind:"mms", mimeType: String, date: Long }
+ *           (best-effort : signale qu'un MMS arrive ; Dart doit refresh listMessages peu après,
+ *            le download du corps est asynchrone — cf. MmsDeliverReceiver)
  *
  * Idempotent : [register] peut être appelé à chaque création d'engine sans effet de bord.
  */
@@ -58,8 +67,18 @@ class SmsBridgePlugin private constructor(
         eventChannel.setStreamHandler(this)
 
         // Branche le callback SMS entrant vers l'EventChannel.
+        // Le payload SMS conserve son schéma Étape 1 ; on ajoute juste `kind="sms"` (additif).
         SmsBridge.onSmsReceived = { payload ->
-            main.post { eventSink?.success(payload) }
+            val enriched = HashMap<String, Any?>(payload).apply { put("kind", "sms") }
+            main.post { eventSink?.success(enriched) }
+        }
+
+        // Branche le callback MMS entrant (WAP_PUSH) vers le même EventChannel avec `kind="mms"`.
+        // Best-effort : signale juste « un MMS arrive », Dart doit refresh peu après (cf.
+        // MmsDeliverReceiver — le download du corps est asynchrone, géré par la stack système).
+        SmsBridge.onMmsReceived = { payload ->
+            val enriched = HashMap<String, Any?>(payload).apply { put("kind", "mms") }
+            main.post { eventSink?.success(enriched) }
         }
     }
 
@@ -124,6 +143,36 @@ class SmsBridgePlugin private constructor(
                 scope.launch {
                     val updated = SmsBridge.markRead(context, threadId)
                     replyOnMain(result) { it.success(updated) }
+                }
+            }
+
+            "loadMmsPart" -> {
+                val partId = call.longArg("partId")
+                if (partId == null) {
+                    result.error("BAD_ARGS", "partId missing", null)
+                    return
+                }
+                scope.launch {
+                    val path = SmsBridge.loadMmsPart(context, partId)
+                    replyOnMain(result) { it.success(path) }
+                }
+            }
+
+            "sendMms" -> {
+                val address = call.argument<String>("address")
+                val body = call.argument<String>("body")          // nullable
+                val imagePath = call.argument<String>("imagePath") // nullable
+                if (address.isNullOrEmpty()) {
+                    result.error("BAD_ARGS", "address missing", null)
+                    return
+                }
+                if (body.isNullOrEmpty() && imagePath.isNullOrEmpty()) {
+                    result.error("BAD_ARGS", "need body or imagePath", null)
+                    return
+                }
+                scope.launch {
+                    val mmsId = SmsBridge.sendMms(context, address, body, imagePath)
+                    replyOnMain(result) { it.success(mmsId) }
                 }
             }
 

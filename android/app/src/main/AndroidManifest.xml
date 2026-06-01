@@ -29,6 +29,7 @@
     <uses-permission android:name="android.permission.READ_SMS" />
     <uses-permission android:name="android.permission.RECEIVE_SMS" />
     <uses-permission android:name="android.permission.RECEIVE_MMS" />
+    <uses-permission android:name="android.permission.RECEIVE_WAP_PUSH" />
     <!-- Optionnel : résolution displayName des numéros. Non bloquant si refusé. -->
     <uses-permission android:name="android.permission.READ_CONTACTS" />
 
@@ -201,7 +202,9 @@
             </intent-filter>
         </receiver>
 
-        <!-- MMS entrants — stub Étape 1 (requis pour le rôle, traitement Étape 2) -->
+        <!-- MMS entrants (WAP_PUSH) — Étape 2 : notifie Dart de refresh. Download du corps
+             délégué à la stack système (cf. MmsDeliverReceiver). -->
+
         <receiver
             android:name=".sms.MmsDeliverReceiver"
             android:exported="true"
@@ -234,6 +237,15 @@
             <intent-filter>
                 <action android:name="eu.devlabz.vox.SMS_SENT" />
                 <action android:name="eu.devlabz.vox.SMS_DELIVERED" />
+            </intent-filter>
+        </receiver>
+
+        <!-- Statut d'envoi des MMS sortants (PendingIntent interne sendMultimediaMessage) -->
+        <receiver
+            android:name=".sms.MmsSentReceiver"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="eu.devlabz.vox.MMS_SENT" />
             </intent-filter>
         </receiver>
 

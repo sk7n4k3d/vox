@@ -1,10 +1,12 @@
 import 'dart:async';
+import 'dart:io';
 
 import 'package:fluffychat/config/cyberpunk_theme_extension.dart';
 import 'package:fluffychat/config/design_tokens.dart';
 import 'package:fluffychat/utils/sms/sms_bridge.dart';
 import 'package:fluffychat/widgets/cyber/cyber_widgets.dart';
 import 'package:flutter/material.dart';
+import 'package:image_picker/image_picker.dart';
 
 /// CYBERCORE SMS conversation screen.
 ///
@@ -46,11 +48,24 @@ class _SmsChatPageState extends State<SmsChatPage> {
   final ScrollController _scroll = ScrollController();
   final TextEditingController _composer = TextEditingController();
   final FocusNode _composerFocus = FocusNode();
+  final ImagePicker _picker = ImagePicker();
+
+  /// Cache of resolved MMS image part paths (partId → local path / null when the
+  /// native extraction failed). Shared across bubbles so a rebuild never
+  /// re-triggers [SmsBridge.loadMmsPart].
+  final Map<int, String?> _mmsPartCache = {};
+
+  /// Optimistic (locally-sent) image attachments keyed by their synthetic
+  /// negative partId → on-disk path of the picked image.
+  final Map<int, String> _localOptimisticPaths = {};
 
   StreamSubscription<SmsIncoming>? _incomingSub;
   bool _loading = true;
   bool _sending = false;
   bool _hasText = false;
+
+  /// Path of the image queued in the composer (null = text-only send).
+  String? _pendingImagePath;
 
   @override
   void initState() {
@@ -129,10 +144,15 @@ class _SmsChatPageState extends State<SmsChatPage> {
 
   Future<void> _send() async {
     final body = _composer.text.trim();
-    if (body.isEmpty || _sending) return;
+    final imagePath = _pendingImagePath;
+    final hasImage = imagePath != null && imagePath.isNotEmpty;
+    // Nothing to do when there's neither text nor an image, or a send is busy.
+    if ((body.isEmpty && !hasImage) || _sending) return;
 
+    final optimisticId =
+        '$_optimisticPrefix${DateTime.now().microsecondsSinceEpoch}';
     final optimistic = SmsMessage(
-      id: '$_optimisticPrefix${DateTime.now().microsecondsSinceEpoch}',
+      id: optimisticId,
       address: widget.address,
       body: body,
       date: DateTime.now().millisecondsSinceEpoch,
@@ -140,7 +160,24 @@ class _SmsChatPageState extends State<SmsChatPage> {
       type: _typeQueued,
       status: -1,
       read: true,
+      isMms: hasImage,
+      attachments: hasImage
+          ? [
+              // Synthetic local attachment: negative partId so it never collides
+              // with a real provider part and resolves straight to the local file
+              // via [_localOptimisticPaths].
+              SmsAttachment(
+                partId: -DateTime.now().microsecondsSinceEpoch,
+                mimeType: 'image/*',
+                fileName: 'pending',
+              ),
+            ]
+          : const [],
     );
+
+    if (hasImage) {
+      _localOptimisticPaths[optimistic.images.first.partId] = imagePath;
+    }
 
     setState(() {
       _sending = true;
@@ -148,10 +185,20 @@ class _SmsChatPageState extends State<SmsChatPage> {
       _sortMessages();
       _composer.clear();
       _hasText = false;
+      _pendingImagePath = null;
     });
     _scrollToBottom();
 
-    final rowId = await SmsBridge.instance.sendSms(widget.address, body);
+    final int? rowId;
+    if (hasImage) {
+      rowId = await SmsBridge.instance.sendMms(
+        widget.address,
+        body.isEmpty ? null : body,
+        imagePath,
+      );
+    } else {
+      rowId = await SmsBridge.instance.sendSms(widget.address, body);
+    }
     if (!mounted) return;
 
     setState(() {
@@ -167,8 +214,42 @@ class _SmsChatPageState extends State<SmsChatPage> {
         type: rowId != null ? _typeSent : _typeFailed,
         status: optimistic.status,
         read: true,
+        isMms: optimistic.isMms,
+        attachments: optimistic.attachments,
       );
     });
+  }
+
+  /// Picks an image from the gallery and queues it in the composer. Defensive:
+  /// a cancelled picker (null) leaves the composer untouched.
+  Future<void> _pickImage() async {
+    try {
+      final file = await _picker.pickImage(
+        source: ImageSource.gallery,
+        imageQuality: 85,
+      );
+      if (!mounted || file == null) return;
+      setState(() => _pendingImagePath = file.path);
+    } catch (_) {
+      // Picker can throw on some OEMs (no gallery app, permission denied). Stay
+      // silent — the user simply gets no image queued.
+    }
+  }
+
+  void _clearPendingImage() {
+    if (_pendingImagePath == null) return;
+    setState(() => _pendingImagePath = null);
+  }
+
+  /// Resolves an MMS image part path, memoising the result so a rebuild never
+  /// re-extracts. Local optimistic attachments short-circuit to their file path.
+  Future<String?> _resolveMmsPart(int partId) async {
+    final local = _localOptimisticPaths[partId];
+    if (local != null) return local;
+    if (_mmsPartCache.containsKey(partId)) return _mmsPartCache[partId];
+    final path = await SmsBridge.instance.loadMmsPart(partId);
+    if (mounted) _mmsPartCache[partId] = path;
+    return path;
   }
 
   void _sortMessages() {
@@ -334,13 +415,15 @@ class _SmsChatPageState extends State<SmsChatPage> {
           cyber: cyber,
           theme: theme,
           showTimestamp: showTimestamp,
+          resolveImagePath: _resolveMmsPart,
         );
       },
     );
   }
 
   Widget _buildComposer(ThemeData theme, CyberpunkTheme cyber) {
-    final canSend = _hasText && !_sending;
+    final hasImage = _pendingImagePath != null;
+    final canSend = (_hasText || hasImage) && !_sending;
     return SafeArea(
       top: false,
       child: Padding(
@@ -350,40 +433,58 @@ class _SmsChatPageState extends State<SmsChatPage> {
           FluffySpacing.md,
           FluffySpacing.md,
         ),
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.end,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Expanded(
-              child: CyberField(
-                focused: _composerFocus.hasFocus,
-                child: TextField(
-                  controller: _composer,
-                  focusNode: _composerFocus,
-                  minLines: 1,
-                  maxLines: 5,
-                  keyboardType: TextInputType.multiline,
-                  textInputAction: TextInputAction.newline,
-                  cursorColor: cyber.cyan,
-                  style: FluffyTypography.bodyL.copyWith(
-                    color: theme.colorScheme.onSurface,
-                  ),
-                  decoration: InputDecoration(
-                    isCollapsed: true,
-                    border: InputBorder.none,
-                    hintText: 'Text message',
-                    hintStyle: FluffyTypography.bodyL.copyWith(
-                      color: theme.colorScheme.onSurfaceVariant,
+            if (hasImage)
+              _PendingImagePreview(
+                path: _pendingImagePath!,
+                cyber: cyber,
+                onRemove: _clearPendingImage,
+              ),
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.end,
+              children: [
+                _AttachButton(
+                  cyber: cyber,
+                  enabled: !_sending,
+                  onPressed: _sending ? null : _pickImage,
+                ),
+                const SizedBox(width: FluffySpacing.sm),
+                Expanded(
+                  child: CyberField(
+                    focused: _composerFocus.hasFocus,
+                    child: TextField(
+                      controller: _composer,
+                      focusNode: _composerFocus,
+                      minLines: 1,
+                      maxLines: 5,
+                      keyboardType: TextInputType.multiline,
+                      textInputAction: TextInputAction.newline,
+                      cursorColor: cyber.cyan,
+                      style: FluffyTypography.bodyL.copyWith(
+                        color: theme.colorScheme.onSurface,
+                      ),
+                      decoration: InputDecoration(
+                        isCollapsed: true,
+                        border: InputBorder.none,
+                        hintText: 'Text message',
+                        hintStyle: FluffyTypography.bodyL.copyWith(
+                          color: theme.colorScheme.onSurfaceVariant,
+                        ),
+                      ),
                     ),
                   ),
                 ),
-              ),
-            ),
-            const SizedBox(width: FluffySpacing.sm),
-            _SendButton(
-              cyber: cyber,
-              enabled: canSend,
-              loading: _sending,
-              onPressed: canSend ? _send : null,
+                const SizedBox(width: FluffySpacing.sm),
+                _SendButton(
+                  cyber: cyber,
+                  enabled: canSend,
+                  loading: _sending,
+                  onPressed: canSend ? _send : null,
+                ),
+              ],
             ),
           ],
         ),
@@ -400,12 +501,14 @@ class _SmsBubble extends StatelessWidget {
   final CyberpunkTheme cyber;
   final ThemeData theme;
   final bool showTimestamp;
+  final Future<String?> Function(int partId) resolveImagePath;
 
   const _SmsBubble({
     required this.message,
     required this.cyber,
     required this.theme,
     required this.showTimestamp,
+    required this.resolveImagePath,
   });
 
   bool get _failed => message.type == _SmsChatPageState._typeFailed;
@@ -462,18 +565,10 @@ class _SmsBubble extends StatelessWidget {
       ),
       child: Opacity(
         opacity: _pending ? 0.75 : 1,
-        child: Padding(
-          padding: const EdgeInsets.symmetric(
-            horizontal: FluffySpacing.lg,
-            vertical: FluffySpacing.md,
-          ),
-          child: Text(
-            message.body,
-            style: FluffyTypography.bodyL.copyWith(
-              color: Colors.black,
-              fontWeight: FontWeight.w500,
-            ),
-          ),
+        child: _bubbleContent(
+          context,
+          textColor: Colors.black,
+          textWeight: FontWeight.w500,
         ),
       ),
     );
@@ -491,18 +586,55 @@ class _SmsBubble extends StatelessWidget {
         ),
         border: Border.all(color: cyber.violet.withValues(alpha: 0.35)),
       ),
-      child: Padding(
-        padding: const EdgeInsets.symmetric(
-          horizontal: FluffySpacing.lg,
-          vertical: FluffySpacing.md,
-        ),
-        child: Text(
-          message.body,
-          style: FluffyTypography.bodyL.copyWith(
-            color: theme.colorScheme.onSurface,
-          ),
-        ),
+      child: _bubbleContent(
+        context,
+        textColor: theme.colorScheme.onSurface,
       ),
+    );
+  }
+
+  /// Bubble interior: stacks image attachments (when any) above the text body.
+  /// The text padding is dropped entirely when [message.body] is empty so an
+  /// image-only MMS keeps tight rounded corners.
+  Widget _bubbleContent(
+    BuildContext context, {
+    required Color textColor,
+    FontWeight? textWeight,
+  }) {
+    final images = message.images;
+    final hasText = message.body.isNotEmpty;
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        for (var i = 0; i < images.length; i++)
+          Padding(
+            padding: EdgeInsets.only(
+              bottom:
+                  hasText || i < images.length - 1 ? FluffySpacing.xs : 0,
+            ),
+            child: _MmsImage(
+              partId: images[i].partId,
+              cyber: cyber,
+              theme: theme,
+              resolveImagePath: resolveImagePath,
+            ),
+          ),
+        if (hasText)
+          Padding(
+            padding: const EdgeInsets.symmetric(
+              horizontal: FluffySpacing.lg,
+              vertical: FluffySpacing.md,
+            ),
+            child: Text(
+              message.body,
+              style: FluffyTypography.bodyL.copyWith(
+                color: textColor,
+                fontWeight: textWeight,
+              ),
+            ),
+          ),
+      ],
     );
   }
 
@@ -614,6 +746,270 @@ class _SendButton extends StatelessWidget {
             ),
           ),
         ),
+      ),
+    );
+  }
+}
+
+/// Composer attach button (image picker trigger). Cyan-accented, matches the
+/// send button footprint so the row stays visually balanced.
+class _AttachButton extends StatelessWidget {
+  final CyberpunkTheme cyber;
+  final bool enabled;
+  final VoidCallback? onPressed;
+
+  const _AttachButton({
+    required this.cyber,
+    required this.enabled,
+    required this.onPressed,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Opacity(
+      opacity: enabled ? 1 : 0.4,
+      child: Material(
+        color: Colors.transparent,
+        shape: const CircleBorder(),
+        clipBehavior: Clip.antiAlias,
+        child: InkWell(
+          onTap: onPressed,
+          child: SizedBox(
+            width: 48,
+            height: 48,
+            child: Icon(
+              Icons.add_photo_alternate_outlined,
+              color: cyber.cyan,
+              size: 24,
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Thumbnail preview of the image queued in the composer, with a magenta close
+/// chip to cancel it.
+class _PendingImagePreview extends StatelessWidget {
+  final String path;
+  final CyberpunkTheme cyber;
+  final VoidCallback onRemove;
+
+  const _PendingImagePreview({
+    required this.path,
+    required this.cyber,
+    required this.onRemove,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(
+        left: FluffySpacing.xs,
+        bottom: FluffySpacing.sm,
+      ),
+      child: Stack(
+        clipBehavior: Clip.none,
+        children: [
+          ClipRRect(
+            borderRadius: FluffyRadius.brMd,
+            child: Container(
+              decoration: BoxDecoration(
+                borderRadius: FluffyRadius.brMd,
+                border: Border.all(color: cyber.cyan.withValues(alpha: 0.6)),
+              ),
+              child: ClipRRect(
+                borderRadius: FluffyRadius.brMd,
+                child: Image.file(
+                  File(path),
+                  width: 84,
+                  height: 84,
+                  fit: BoxFit.cover,
+                  errorBuilder: (context, _, _) => Container(
+                    width: 84,
+                    height: 84,
+                    color: cyber.glassFillLight,
+                    alignment: Alignment.center,
+                    child: Icon(
+                      Icons.broken_image_outlined,
+                      color: cyber.magenta,
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+          Positioned(
+            top: -8,
+            right: -8,
+            child: Material(
+              color: cyber.magenta,
+              shape: const CircleBorder(),
+              clipBehavior: Clip.antiAlias,
+              child: InkWell(
+                onTap: onRemove,
+                child: const SizedBox(
+                  width: 24,
+                  height: 24,
+                  child: Icon(Icons.close_rounded, size: 16, color: Colors.black),
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// A single MMS image attachment inside a bubble. Resolves its local path lazily
+/// via [resolveImagePath] (memoised at the State level), shows a cyan loader
+/// while resolving, a fallback icon on null/error, and opens a full-screen
+/// zoomable viewer on tap.
+class _MmsImage extends StatelessWidget {
+  final int partId;
+  final CyberpunkTheme cyber;
+  final ThemeData theme;
+  final Future<String?> Function(int partId) resolveImagePath;
+
+  const _MmsImage({
+    required this.partId,
+    required this.cyber,
+    required this.theme,
+    required this.resolveImagePath,
+  });
+
+  static const double _maxHeight = 240;
+
+  @override
+  Widget build(BuildContext context) {
+    return ClipRRect(
+      borderRadius: FluffyRadius.brMd,
+      child: FutureBuilder<String?>(
+        future: resolveImagePath(partId),
+        builder: (context, snapshot) {
+          if (snapshot.connectionState != ConnectionState.done) {
+            return _placeholder(
+              child: CircularProgressIndicator(
+                color: cyber.cyan,
+                strokeWidth: 2,
+              ),
+            );
+          }
+          final path = snapshot.data;
+          if (snapshot.hasError || path == null || path.isEmpty) {
+            return _placeholder(
+              child: Icon(
+                Icons.image_not_supported_outlined,
+                color: theme.colorScheme.onSurfaceVariant,
+                size: 32,
+              ),
+            );
+          }
+          return GestureDetector(
+            onTap: () => _openViewer(context, path),
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxHeight: _maxHeight),
+              child: Image.file(
+                File(path),
+                fit: BoxFit.cover,
+                width: double.infinity,
+                errorBuilder: (context, _, _) => _placeholder(
+                  child: Icon(
+                    Icons.broken_image_outlined,
+                    color: cyber.magenta,
+                    size: 32,
+                  ),
+                ),
+              ),
+            ),
+          );
+        },
+      ),
+    );
+  }
+
+  Widget _placeholder({required Widget child}) {
+    return Container(
+      height: 160,
+      width: double.infinity,
+      color: cyber.glassFillLight,
+      alignment: Alignment.center,
+      child: child,
+    );
+  }
+
+  void _openViewer(BuildContext context, String path) {
+    final reduce = MediaQuery.maybeOf(context)?.disableAnimations ?? false;
+    Navigator.of(context).push(
+      PageRouteBuilder<void>(
+        opaque: false,
+        barrierColor: Colors.black,
+        transitionDuration:
+            reduce ? Duration.zero : FluffyDurations.medium,
+        reverseTransitionDuration:
+            reduce ? Duration.zero : FluffyDurations.fast,
+        pageBuilder: (_, _, _) => _MmsImageViewer(path: path, cyber: cyber),
+      ),
+    );
+  }
+}
+
+/// Full-screen, pinch-to-zoom viewer for a single MMS image. Black backdrop +
+/// a cyan close button.
+class _MmsImageViewer extends StatelessWidget {
+  final String path;
+  final CyberpunkTheme cyber;
+
+  const _MmsImageViewer({required this.path, required this.cyber});
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: Colors.black,
+      body: Stack(
+        children: [
+          Positioned.fill(
+            child: InteractiveViewer(
+              minScale: 1,
+              maxScale: 5,
+              child: Center(
+                child: Image.file(
+                  File(path),
+                  fit: BoxFit.contain,
+                  errorBuilder: (context, _, _) => Icon(
+                    Icons.broken_image_outlined,
+                    color: cyber.magenta,
+                    size: 64,
+                  ),
+                ),
+              ),
+            ),
+          ),
+          Positioned(
+            top: 0,
+            right: 0,
+            child: SafeArea(
+              child: Padding(
+                padding: const EdgeInsets.all(FluffySpacing.sm),
+                child: Material(
+                  color: Colors.black.withValues(alpha: 0.5),
+                  shape: const CircleBorder(),
+                  clipBehavior: Clip.antiAlias,
+                  child: InkWell(
+                    onTap: () => Navigator.of(context).maybePop(),
+                    child: SizedBox(
+                      width: 44,
+                      height: 44,
+                      child: Icon(Icons.close_rounded, color: cyber.cyan),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }
