@@ -141,6 +141,13 @@ Future<void> _tryPushHelper(
     return;
   }
 
+  // m.notice = bot / automated message. They are rendered muted+italic in the
+  // timeline and, per user preference, must never raise a notification.
+  if (event.messageType == MessageTypes.Notice) {
+    Logs().v('Push message is an m.notice (bot). Do not notify.');
+    return;
+  }
+
   l10n ??= await L10n.delegate.load(PlatformDispatcher.instance.locale);
   final matrixLocals = MatrixLocals(l10n);
 

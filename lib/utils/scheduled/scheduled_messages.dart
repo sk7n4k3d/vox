@@ -118,6 +118,27 @@ class ScheduledMessages {
     _changes.add(null);
   }
 
+  /// Edits a pending scheduled message in place: changes its [body] and/or
+  /// [sendAt] while keeping the same id (so the row never disappears from the
+  /// manage sheet, unlike a cancel+recreate). Re-arms the timer and persists.
+  /// No-op if the id is unknown or the message has already fired.
+  Future<void> reschedule(String id, {String? body, int? sendAt}) async {
+    final i = _queue.indexWhere((m) => m.id == id);
+    if (i < 0) return;
+    final old = _queue[i];
+    final updated = ScheduledMessage(
+      id: old.id,
+      roomId: old.roomId,
+      smsAddress: old.smsAddress,
+      body: body ?? old.body,
+      sendAt: sendAt ?? old.sendAt,
+    );
+    _queue[i] = updated;
+    await _persist();
+    _arm(updated);
+    _changes.add(null);
+  }
+
   void _arm(ScheduledMessage m) {
     _timers.remove(m.id)?.cancel();
     final delay = m.sendAtTime.difference(DateTime.now());
@@ -131,20 +152,35 @@ class ScheduledMessages {
 
   Future<void> _fire(ScheduledMessage m) async {
     _timers.remove(m.id);
+    var sent = false;
     try {
       if (m.isSms) {
-        await SmsBridge.instance.sendSms(m.smsAddress!, m.body);
+        // sendSms returns the inserted rowId, or null on failure (not default
+        // SMS app, no SIM, invalid number). Only treat a non-null id as sent —
+        // otherwise the message would be silently dropped from the queue.
+        final rowId = await SmsBridge.instance.sendSms(m.smsAddress!, m.body);
+        sent = rowId != null;
       } else if (m.roomId != null) {
         final room = _client?.getRoomById(m.roomId!);
         if (room != null) {
           await room.sendTextEvent(m.body);
+          sent = true;
         }
+        // room == null: client not synced yet (cold start). Leave queued and
+        // re-arm shortly rather than dropping the message.
       }
-    } finally {
+    } catch (e) {
+      // Network/SDK failure: keep the message and retry later.
+      sent = false;
+    }
+    if (sent) {
       _queue.removeWhere((e) => e.id == m.id);
       await _persist();
-      _changes.add(null);
+    } else {
+      // Re-arm a short retry so a transient failure doesn't lose the message.
+      _timers[m.id] = Timer(const Duration(minutes: 1), () => _fire(m));
     }
+    _changes.add(null);
   }
 
   Future<void> _persist() async {

@@ -98,6 +98,25 @@ class ScheduledSend {
       builder: (context) => _ScheduledSheet(selector: selector),
     );
   }
+
+  /// Opens the edit sheet for a single pending message: edit its text and/or
+  /// pick a new send time, then save via [ScheduledMessages.reschedule].
+  static void showEditSheet(
+    BuildContext context, {
+    required ScheduledMessage message,
+  }) {
+    showModalBottomSheet<void>(
+      context: context,
+      backgroundColor: Colors.transparent,
+      isScrollControlled: true,
+      builder: (context) => Padding(
+        padding: EdgeInsets.only(
+          bottom: MediaQuery.viewInsetsOf(context).bottom,
+        ),
+        child: _ScheduledEditSheet(message: message),
+      ),
+    );
+  }
 }
 
 /// Glass banner shown above a composer when there are pending scheduled
@@ -153,6 +172,68 @@ class ScheduledBanner extends StatelessWidget {
                   size: 20,
                 ),
               ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+}
+
+/// In-conversation marker shown at the foot of the message list when the
+/// current room/thread has pending scheduled messages. Distinct from
+/// [ScheduledBanner] (which sits above the composer): this is a floating pill
+/// styled like a date separator, surfacing the *next* upcoming send inline in
+/// the timeline. Tapping it opens the manage sheet. Hidden when nothing pends.
+class ScheduledInlineMarker extends StatelessWidget {
+  /// Returns the current pending messages for this room/address.
+  final List<ScheduledMessage> Function() selector;
+
+  const ScheduledInlineMarker({required this.selector, super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return StreamBuilder<void>(
+      stream: ScheduledMessages.instance.changes,
+      builder: (context, _) {
+        final pending = selector();
+        if (pending.isEmpty) return const SizedBox.shrink();
+        final cyber = CyberColors.of(context);
+        // `pending` is already sorted by sendAt (ScheduledMessages.all sorts);
+        // forRoom/forSms preserve queue order, so take the earliest defensively.
+        final next = pending.reduce((a, b) => a.sendAt <= b.sendAt ? a : b);
+        final count = pending.length;
+        final label = count == 1
+            ? 'Programmé · ${ScheduledSend.formatWhen(next.sendAtTime)}'
+            : '$count programmés · prochain ${ScheduledSend.formatWhen(next.sendAtTime)}';
+        return Center(
+          child: Padding(
+            padding: const EdgeInsets.symmetric(vertical: FluffySpacing.sm),
+            child: CyberGlass(
+              borderRadius: FluffyRadius.brXl,
+              padding: const EdgeInsets.symmetric(
+                horizontal: FluffySpacing.md,
+                vertical: FluffySpacing.xs,
+              ),
+              glow: FluffyElevation.glowCyan(cyber.cyan, alpha: 0.14),
+              onTap: () => ScheduledSend.showManageSheet(
+                context,
+                selector: selector,
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(Icons.schedule_send_rounded, color: cyber.cyan, size: 15),
+                  const SizedBox(width: FluffySpacing.xs),
+                  Text(
+                    label,
+                    style: FluffyTypography.labelM.copyWith(
+                      color: cyber.cyan,
+                      letterSpacing: 0.6,
+                    ),
+                  ),
+                ],
+              ),
             ),
           ),
         );
@@ -269,7 +350,14 @@ class _ScheduledRow extends StatelessWidget {
               ],
             ),
           ),
-          const SizedBox(width: FluffySpacing.sm),
+          const SizedBox(width: FluffySpacing.xs),
+          IconButton(
+            tooltip: 'Modifier',
+            visualDensity: VisualDensity.compact,
+            icon: Icon(Icons.edit_rounded, color: cyber.cyan, size: 19),
+            onPressed: () =>
+                ScheduledSend.showEditSheet(context, message: message),
+          ),
           IconButton(
             tooltip: 'Annuler',
             visualDensity: VisualDensity.compact,
@@ -277,6 +365,125 @@ class _ScheduledRow extends StatelessWidget {
             onPressed: () => ScheduledMessages.instance.cancel(message.id),
           ),
         ],
+      ),
+    );
+  }
+}
+
+/// Edit sheet for a single pending scheduled message: a prefilled multiline
+/// field + a "change time" button + save. Saving calls
+/// [ScheduledMessages.reschedule] so the id (and queue position) is preserved.
+class _ScheduledEditSheet extends StatefulWidget {
+  final ScheduledMessage message;
+
+  const _ScheduledEditSheet({required this.message});
+
+  @override
+  State<_ScheduledEditSheet> createState() => _ScheduledEditSheetState();
+}
+
+class _ScheduledEditSheetState extends State<_ScheduledEditSheet> {
+  late final TextEditingController _controller =
+      TextEditingController(text: widget.message.body);
+  late DateTime _when = widget.message.sendAtTime;
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  Future<void> _pickTime() async {
+    final picked = await ScheduledSend.pickDateTime(context);
+    if (picked != null) setState(() => _when = picked);
+  }
+
+  Future<void> _save() async {
+    final body = _controller.text.trim();
+    if (body.isEmpty) return;
+    await ScheduledMessages.instance.reschedule(
+      widget.message.id,
+      body: body,
+      sendAt: _when.millisecondsSinceEpoch,
+    );
+    if (mounted) Navigator.of(context).pop();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final cyber = CyberColors.of(context);
+    final theme = Theme.of(context);
+    return SafeArea(
+      top: false,
+      child: Padding(
+        padding: const EdgeInsets.all(FluffySpacing.md),
+        child: CyberGlass(
+          padding: const EdgeInsets.symmetric(
+            horizontal: FluffySpacing.lg,
+            vertical: FluffySpacing.lg,
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              const CyberSectionHeader('Modifier le message programmé'),
+              const SizedBox(height: FluffySpacing.md),
+              TextField(
+                controller: _controller,
+                autofocus: true,
+                onChanged: (_) => setState(() {}),
+                minLines: 1,
+                maxLines: 5,
+                style: FluffyTypography.bodyM.copyWith(
+                  color: theme.colorScheme.onSurface,
+                ),
+                decoration: InputDecoration(
+                  hintText: 'Texte du message',
+                  filled: true,
+                  fillColor: theme.colorScheme.surfaceContainerHigh,
+                  border: OutlineInputBorder(
+                    borderRadius: FluffyRadius.brMd,
+                    borderSide: BorderSide.none,
+                  ),
+                ),
+              ),
+              const SizedBox(height: FluffySpacing.md),
+              InkWell(
+                borderRadius: FluffyRadius.brMd,
+                onTap: _pickTime,
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: FluffySpacing.sm,
+                    vertical: FluffySpacing.sm,
+                  ),
+                  child: Row(
+                    children: [
+                      Icon(Icons.schedule_rounded, color: cyber.cyan, size: 18),
+                      const SizedBox(width: FluffySpacing.sm),
+                      Expanded(
+                        child: Text(
+                          ScheduledSend.formatWhen(_when),
+                          style: FluffyTypography.labelL
+                              .copyWith(color: cyber.cyan, letterSpacing: 1.1),
+                        ),
+                      ),
+                      Icon(
+                        Icons.edit_calendar_rounded,
+                        color: cyber.cyan,
+                        size: 18,
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              const SizedBox(height: FluffySpacing.lg),
+              CyberPrimaryButton(
+                label: 'Enregistrer',
+                onPressed: _controller.text.trim().isEmpty ? null : _save,
+              ),
+            ],
+          ),
+        ),
       ),
     );
   }

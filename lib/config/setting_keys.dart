@@ -78,7 +78,19 @@ enum AppSettings<T> {
   callRingtone<String>('chat.fluffy.call_ringtone', 'jarvis'),
   // Selected premium theme preset id (see CyberThemes): cybercore | nexus |
   // aurora | ember | monochrome.
-  cyberThemeId<String>('chat.fluffy.cyber_theme_id', 'cybercore');
+  cyberThemeId<String>('chat.fluffy.cyber_theme_id', 'cybercore'),
+  // Use biometric (fingerprint/face) to unlock the app lock when available.
+  appLockBiometric<bool>('chat.fluffy.app_lock_biometric', true),
+  // SMS notifications (read natively by SmsNotifier via FlutterSharedPreferences).
+  smsNotificationsEnabled<bool>(
+    'chat.fluffy.sms_notifications_enabled',
+    true,
+  ),
+  smsNotificationsPreview<bool>(
+    'chat.fluffy.sms_notifications_preview',
+    true,
+  ),
+  smsNotificationsSound<bool>('chat.fluffy.sms_notifications_sound', true);
 
   final String key;
   final T defaultValue;

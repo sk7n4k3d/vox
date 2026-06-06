@@ -125,12 +125,12 @@ class SettingsView extends StatelessWidget {
             onTap: () => context.go('/rooms/settings/notifications'),
           ),
 
-          // SMS (étape 1 — banc de test natif).
+          // SMS — statut app par défaut (+ banc de test en debug).
           SettingsSectionTile(
             icon: Icons.sms_outlined,
             color: notificationsColor,
             title: 'SMS',
-            subtitle: 'App SMS par défaut · banc de test',
+            subtitle: 'App SMS par défaut',
             selected: activeRoute.startsWith('/rooms/settings/sms'),
             onTap: () => context.go('/rooms/settings/sms'),
           ),

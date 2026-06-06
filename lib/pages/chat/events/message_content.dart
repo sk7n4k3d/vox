@@ -262,6 +262,22 @@ class MessageContent extends StatelessWidget {
               html = '* $html';
             }
 
+            // m.notice = bot / automated message. Element renders these muted +
+            // italic to set them apart from human m.text. We grey the text
+            // (blend toward the surface) and wrap the body in <i> so the HTML
+            // renderer (html_message.dart:559) applies italics natively — no
+            // need to thread a fontStyle param through HtmlMessage.
+            final isNotice = event.messageType == MessageTypes.Notice;
+            final effectiveTextColor = isNotice
+                ? Color.alphaBlend(
+                    textColor.withValues(alpha: 0.65),
+                    Theme.of(context).colorScheme.surface,
+                  )
+                : textColor;
+            if (isNotice) {
+              html = '<i>$html</i>';
+            }
+
             final bigEmotes =
                 !event.isRichMessage && bigEmojis.contains(event.body);
 
@@ -269,13 +285,16 @@ class MessageContent extends StatelessWidget {
               padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
               child: HtmlMessage(
                 html: html,
-                textColor: textColor,
+                textColor: effectiveTextColor,
                 room: event.room,
                 fontSize:
                     AppSettings.fontSizeFactor.value *
                     AppConfig.messageFontSize *
                     (bigEmotes ? 5 : 1),
-                limitHeight: !selected,
+                // Never truncate: show the full message inline instead of
+                // capping at 64 lines (upstream FluffyChat behaviour) and
+                // forcing the user to select it to read the rest.
+                limitHeight: false,
                 linkStyle: TextStyle(
                   color: linkColor,
                   fontSize:
