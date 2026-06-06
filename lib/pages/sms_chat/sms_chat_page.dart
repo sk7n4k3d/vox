@@ -14,11 +14,13 @@ import 'package:fluffychat/pages/chat/chat_date_separator.dart';
 import 'package:fluffychat/pages/chat/events/swipe_to_reply.dart';
 import 'package:fluffychat/utils/ephemeral/ephemeral_messages.dart';
 import 'package:fluffychat/utils/scheduled/scheduled_messages.dart';
+import 'package:fluffychat/utils/sms/map_linkifier.dart';
 import 'package:fluffychat/utils/sms/sms_bridge.dart';
 import 'package:fluffychat/widgets/cyber/chat_bubble_skin.dart';
 import 'package:fluffychat/widgets/cyber/cyber_fx.dart';
 import 'package:fluffychat/widgets/cyber/cyber_widgets.dart';
 import 'package:fluffychat/widgets/cyber/ephemeral_picker.dart';
+import 'package:fluffychat/widgets/cyber/link_preview_card.dart';
 import 'package:fluffychat/widgets/cyber/scheduled_send.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -506,6 +508,7 @@ class _SmsChatPageState extends State<SmsChatPage> {
         cyber: cyber,
         canCopy: message.body.isNotEmpty,
         canResend: failed,
+        canForward: message.body.isNotEmpty,
       ),
     );
     if (action == null || !mounted) return;
@@ -516,10 +519,25 @@ class _SmsChatPageState extends State<SmsChatPage> {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('Texte copié')),
         );
+      case _MessageAction.forward:
+        await _forwardMessage(message);
       case _MessageAction.resend:
         await _resendMessage(message);
       case _MessageAction.delete:
         await _deleteMessage(message);
+    }
+  }
+
+  /// Forwards a message's text via the system share sheet — lets the user send
+  /// it to any other contact / app (SMS has no native forward protocol, so this
+  /// is the standard "transférer" behaviour).
+  Future<void> _forwardMessage(SmsMessage message) async {
+    final text = message.body.trim();
+    if (text.isEmpty) return;
+    try {
+      await SharePlus.instance.share(ShareParams(text: text));
+    } catch (_) {
+      // Share sheet unavailable — nothing actionable.
     }
   }
 
@@ -1216,11 +1234,14 @@ class _SmsBubble extends StatelessWidget {
     this.animateIn = false,
   });
 
-  /// URL + email (defaults) + phone number detection inside SMS bodies.
+  /// URL + email + phone + postal-address detection inside SMS bodies. The map
+  /// linkifier turns a French-style address into a geo: link the OS opens in
+  /// the maps/GPS app.
   static const List<Linkifier> _linkifiers = [
     UrlLinkifier(),
     EmailLinkifier(),
     PhoneNumberLinkifier(),
+    MapAddressLinkifier(),
   ];
 
   bool get _failed => message.type == _SmsChatPageState._typeFailed;
@@ -1402,7 +1423,11 @@ class _SmsBubble extends StatelessWidget {
               horizontal: FluffySpacing.lg,
               vertical: FluffySpacing.sm,
             ),
-            child: Linkify(
+            // SelectableLinkify so the message text can be partially selected
+            // and copied (long-press to start a selection), while still keeping
+            // tappable URL / phone / email / address links. The bubble-level
+            // action sheet stays available on the non-text parts of the bubble.
+            child: SelectableLinkify(
               text: message.body,
               linkifiers: _linkifiers,
               options: const LinkifyOptions(humanize: false),
@@ -1428,6 +1453,25 @@ class _SmsBubble extends StatelessWidget {
                 fontWeight: textWeight,
                 decoration: TextDecoration.underline,
                 decorationColor: linkColor,
+              ),
+            ),
+          ),
+        // Inline link preview (og: title/image) under the text, when the body
+        // contains a URL. Loads lazily; renders nothing until/unless metadata
+        // is fetched.
+        if (LinkPreviewCard.firstUrl(message.body) case final url?)
+          Padding(
+            padding: const EdgeInsets.fromLTRB(
+              FluffySpacing.sm,
+              0,
+              FluffySpacing.sm,
+              FluffySpacing.sm,
+            ),
+            child: LinkPreviewCard(
+              key: ValueKey('preview_$url'),
+              url: url,
+              onOpen: () => onOpenLink(
+                LinkableElement(url, url),
               ),
             ),
           ),
@@ -1648,16 +1692,19 @@ class _SmsAvatarWithRing extends StatelessWidget {
   }
 }
 
+
 /// CYBERCORE long-press action sheet for a message (resend / copy / delete).
 class _MessageActionSheet extends StatelessWidget {
   final CyberpunkTheme cyber;
   final bool canCopy;
   final bool canResend;
+  final bool canForward;
 
   const _MessageActionSheet({
     required this.cyber,
     required this.canCopy,
     this.canResend = false,
+    this.canForward = false,
   });
 
   @override
@@ -1688,6 +1735,14 @@ class _MessageActionSheet extends StatelessWidget {
                   color: cyber.cyan,
                   onTap: () =>
                       Navigator.of(context).pop(_MessageAction.copy),
+                ),
+              if (canForward)
+                _SheetTile(
+                  icon: Icons.forward_rounded,
+                  label: 'Transférer',
+                  color: cyber.violet,
+                  onTap: () =>
+                      Navigator.of(context).pop(_MessageAction.forward),
                 ),
               _SheetTile(
                 icon: Icons.delete_outline_rounded,
@@ -1851,7 +1906,7 @@ class _SheetTile extends StatelessWidget {
 }
 
 /// Actions surfaced by the bubble long-press sheet.
-enum _MessageAction { resend, copy, delete }
+enum _MessageAction { resend, copy, forward, delete }
 
 /// Frosted-glass app bar for the SMS conversation, replicating the Matrix
 /// [ChatLiquidGlassAppBar] surface so the two headers are visually identical.

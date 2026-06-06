@@ -92,11 +92,17 @@ class ImageViewerController extends State<ImageViewer> {
 
   bool get canGoBack => _index > 0;
 
-  /// Forward this image to another room.
+  /// Forward this image to another room (ContentShareItem = Matrix→Matrix) or
+  /// to an SMS conversation (EventShareItem lets the dialog download + decrypt
+  /// the attachment and send it as MMS).
   void forwardAction() => showScaffoldDialog(
     context: context,
-    builder: (context) =>
-        ShareScaffoldDialog(items: [ContentShareItem(currentEvent.content)]),
+    builder: (context) => ShareScaffoldDialog(
+      items: [
+        ContentShareItem(currentEvent.content),
+        EventShareItem(currentEvent),
+      ],
+    ),
   );
 
   /// Save this file with a system call.

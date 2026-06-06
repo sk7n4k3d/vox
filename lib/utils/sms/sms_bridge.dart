@@ -104,6 +104,15 @@ class SmsBridge {
     }
   }
 
+  /// Logs [message] through the native layer (Log.i) so it shows up in logcat
+  /// even in release builds — Dart's print/developer.log don't reliably reach
+  /// logcat in release. Diagnostic helper, safe no-op on failure.
+  Future<void> nativeLog(String message) async {
+    try {
+      await _channel.invokeMethod<void>('nativeLog', {'message': message});
+    } catch (_) {}
+  }
+
   /// Launches the system "default SMS app" prompt. Returns true if the intent
   /// was launched (NOT that the user accepted — poll [isDefaultSmsApp] on
   /// resume to confirm).

@@ -109,6 +109,11 @@ class SmsBridgePlugin private constructor(
 
     override fun onMethodCall(call: MethodCall, result: MethodChannel.Result) {
         when (call.method) {
+            "nativeLog" -> {
+                android.util.Log.i(SmsBridge.TAG, "[Dart] ${call.argument<String>("message")}")
+                result.success(null)
+            }
+
             "isDefaultSmsApp" -> result.success(isDefaultSmsApp())
 
             "requestDefaultSmsRole" -> result.success(requestDefaultSmsRole())

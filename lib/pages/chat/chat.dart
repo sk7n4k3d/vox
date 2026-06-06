@@ -1012,8 +1012,16 @@ class ChatController extends State<ChatPageWithRoom>
     await showScaffoldDialog(
       context: context,
       builder: (context) => ShareScaffoldDialog(
+        // Each event yields BOTH a ContentShareItem (Matrix→Matrix forward) and
+        // an EventShareItem (so a forward to SMS can download+decrypt the
+        // attachment). The dialog uses the right one per target type.
         items: forwardEvents
-            .map((event) => ContentShareItem(event.content))
+            .expand<ShareItem>(
+              (event) => [
+                ContentShareItem(event.content),
+                EventShareItem(event),
+              ],
+            )
             .toList(),
       ),
     );
