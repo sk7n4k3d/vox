@@ -138,6 +138,19 @@ class SmsBridge {
     }
   }
 
+  /// Phone contacts (name + number) for the "new SMS" screen. Empty if
+  /// READ_CONTACTS is denied.
+  Future<List<SmsContact>> listContacts() async {
+    try {
+      final raw = await _channel.invokeMethod<List<dynamic>>('listContacts');
+      return (raw ?? [])
+          .map((e) => SmsContact.fromMap(Map<String, dynamic>.from(e)))
+          .toList();
+    } on PlatformException {
+      return const [];
+    }
+  }
+
   Future<List<SmsMessage>> listMessages(String threadId) async {
     try {
       final raw = await _channel.invokeMethod<List<dynamic>>(
@@ -316,6 +329,43 @@ class SmsConversation {
       );
 
   String get title => displayName?.isNotEmpty == true ? displayName! : address;
+}
+
+/// A single phone number of a contact, with a humanised label (Mobile, Travail…).
+class SmsContactNumber {
+  final String number;
+  final String label;
+
+  const SmsContactNumber({required this.number, required this.label});
+
+  factory SmsContactNumber.fromMap(Map<String, dynamic> m) => SmsContactNumber(
+        number: '${m['number'] ?? ''}',
+        label: '${m['label'] ?? ''}',
+      );
+}
+
+/// A phone contact (grouped: one entry even with several pro/perso numbers).
+class SmsContact {
+  final String name;
+  final String? photoPath;
+  final List<SmsContactNumber> numbers;
+
+  const SmsContact({
+    required this.name,
+    required this.numbers,
+    this.photoPath,
+  });
+
+  factory SmsContact.fromMap(Map<String, dynamic> m) => SmsContact(
+        name: '${m['name'] ?? ''}',
+        photoPath: m['photoPath'] as String?,
+        numbers: ((m['numbers'] as List<dynamic>?) ?? [])
+            .map((e) => SmsContactNumber.fromMap(Map<String, dynamic>.from(e)))
+            .toList(),
+      );
+
+  String get display =>
+      name.isNotEmpty ? name : (numbers.isNotEmpty ? numbers.first.number : '');
 }
 
 class SmsMessage {

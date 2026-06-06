@@ -3,6 +3,7 @@ import 'package:fluffychat/config/design_tokens.dart';
 import 'package:fluffychat/config/themes.dart';
 import 'package:fluffychat/l10n/l10n.dart';
 import 'package:fluffychat/pages/new_private_chat/new_private_chat.dart';
+import 'package:fluffychat/pages/sms_chat/new_sms_page.dart';
 import 'package:fluffychat/utils/localized_exception_extension.dart';
 import 'package:fluffychat/utils/platform_infos.dart';
 import 'package:fluffychat/utils/url_launcher.dart';
@@ -43,6 +44,17 @@ class NewPrivateChatView extends StatelessWidget {
         ),
         backgroundColor: Colors.transparent,
         actions: [
+          // Start a native SMS to a phone contact / raw number.
+          TextButton.icon(
+            onPressed: () => Navigator.of(context).push(
+              MaterialPageRoute<void>(builder: (_) => const NewSmsPage()),
+            ),
+            icon: Icon(Icons.sms_outlined, color: cyber.magenta, size: 18),
+            label: Text(
+              'SMS',
+              style: FluffyTypography.labelL.copyWith(color: cyber.magenta),
+            ),
+          ),
           TextButton(
             onPressed: UrlLauncher(
               context,

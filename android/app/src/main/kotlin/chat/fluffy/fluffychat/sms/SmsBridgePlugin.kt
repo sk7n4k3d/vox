@@ -144,6 +144,10 @@ class SmsBridgePlugin private constructor(
                 SmsBridge.listConversations(context)
             }
 
+            "listContacts" -> launchReply(result) {
+                SmsBridge.listContacts(context)
+            }
+
             "listMessages" -> {
                 val threadId = call.longArg("threadId")
                 if (threadId == null) {

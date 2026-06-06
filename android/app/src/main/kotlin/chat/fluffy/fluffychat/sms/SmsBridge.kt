@@ -1427,6 +1427,106 @@ object SmsBridge {
         resolveContact(context, address)
 
     /**
+     * Liste les contacts ayant au moins un numéro, GROUPÉS par contact (un seul
+     * item même si plusieurs numéros pro/perso). Best-effort : liste vide si
+     * READ_CONTACTS refusé. Trié par nom.
+     *
+     * Chaque entrée : { name, photoPath?, numbers: [ { number, label } ] }.
+     * `label` est humanisé (Mobile / Domicile / Travail / …).
+     */
+    suspend fun listContacts(context: Context): List<Map<String, Any?>> =
+        withContext(Dispatchers.IO) {
+            // contactId → (name, photoPath, ordered numbers)
+            data class Acc(
+                val name: String,
+                var photoPath: String?,
+                val numbers: ArrayList<Map<String, Any?>>,
+                val seenNorm: HashSet<String>,
+            )
+            val byContact = LinkedHashMap<Long, Acc>()
+            try {
+                context.contentResolver.query(
+                    ContactsContract.CommonDataKinds.Phone.CONTENT_URI,
+                    arrayOf(
+                        ContactsContract.CommonDataKinds.Phone.DISPLAY_NAME,
+                        ContactsContract.CommonDataKinds.Phone.NUMBER,
+                        ContactsContract.CommonDataKinds.Phone.PHOTO_THUMBNAIL_URI,
+                        ContactsContract.CommonDataKinds.Phone.CONTACT_ID,
+                        ContactsContract.CommonDataKinds.Phone.TYPE,
+                        ContactsContract.CommonDataKinds.Phone.LABEL,
+                    ),
+                    null,
+                    null,
+                    "${ContactsContract.CommonDataKinds.Phone.DISPLAY_NAME} COLLATE NOCASE ASC",
+                )?.use { c ->
+                    val nameIdx = c.getColumnIndexOrThrow(
+                        ContactsContract.CommonDataKinds.Phone.DISPLAY_NAME,
+                    )
+                    val numIdx = c.getColumnIndexOrThrow(
+                        ContactsContract.CommonDataKinds.Phone.NUMBER,
+                    )
+                    val photoIdx = c.getColumnIndexOrThrow(
+                        ContactsContract.CommonDataKinds.Phone.PHOTO_THUMBNAIL_URI,
+                    )
+                    val idIdx = c.getColumnIndexOrThrow(
+                        ContactsContract.CommonDataKinds.Phone.CONTACT_ID,
+                    )
+                    val typeIdx = c.getColumnIndexOrThrow(
+                        ContactsContract.CommonDataKinds.Phone.TYPE,
+                    )
+                    val labelIdx = c.getColumnIndexOrThrow(
+                        ContactsContract.CommonDataKinds.Phone.LABEL,
+                    )
+                    while (c.moveToNext()) {
+                        val number = c.getString(numIdx) ?: continue
+                        val norm = number.filter { it.isDigit() || it == '+' }
+                        if (norm.isBlank()) continue
+                        val contactId = c.getLong(idIdx)
+                        val name = c.getString(nameIdx) ?: ""
+                        val acc = byContact.getOrPut(contactId) {
+                            Acc(name, null, ArrayList(), HashSet())
+                        }
+                        if (!acc.seenNorm.add(norm)) continue // dup number
+                        if (acc.photoPath == null) {
+                            acc.photoPath = cacheContactPhoto(
+                                context, contactId, c.getString(photoIdx),
+                            )
+                        }
+                        val type = c.getInt(typeIdx)
+                        val label = phoneTypeLabel(type, c.getString(labelIdx))
+                        acc.numbers += mapOf("number" to number, "label" to label)
+                    }
+                }
+            } catch (e: SecurityException) {
+                Log.w(TAG, "listContacts: READ_CONTACTS denied")
+            } catch (e: Exception) {
+                Log.w(TAG, "listContacts failed: ${e.message}")
+            }
+            byContact.values.map { acc ->
+                mapOf(
+                    "name" to acc.name,
+                    "photoPath" to acc.photoPath,
+                    "numbers" to acc.numbers,
+                )
+            }
+        }
+
+    /** Humanise le TYPE d'un numéro de téléphone (Mobile, Domicile, …). */
+    private fun phoneTypeLabel(type: Int, custom: String?): String = when (type) {
+        ContactsContract.CommonDataKinds.Phone.TYPE_MOBILE -> "Mobile"
+        ContactsContract.CommonDataKinds.Phone.TYPE_HOME -> "Domicile"
+        ContactsContract.CommonDataKinds.Phone.TYPE_WORK -> "Travail"
+        ContactsContract.CommonDataKinds.Phone.TYPE_MAIN -> "Principal"
+        ContactsContract.CommonDataKinds.Phone.TYPE_WORK_MOBILE -> "Mobile pro"
+        ContactsContract.CommonDataKinds.Phone.TYPE_FAX_HOME -> "Fax domicile"
+        ContactsContract.CommonDataKinds.Phone.TYPE_FAX_WORK -> "Fax pro"
+        ContactsContract.CommonDataKinds.Phone.TYPE_OTHER -> "Autre"
+        ContactsContract.CommonDataKinds.Phone.TYPE_CUSTOM ->
+            custom?.takeIf { it.isNotBlank() } ?: "Autre"
+        else -> "Téléphone"
+    }
+
+    /**
      * Résout le nom ET la photo de contact pour un numéro. Best-effort : si
      * READ_CONTACTS n'est pas accordé (ou indisponible sur GrapheneOS profil
      * sans contacts), renvoie ContactInfo(null, null) sans planter.
