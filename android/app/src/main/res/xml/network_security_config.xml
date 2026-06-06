@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<network-security-config>
+    <!-- Le reste de l'app refuse le cleartext (défaut Android moderne). -->
+    <base-config cleartextTrafficPermitted="false" />
+
+    <!-- Les MMSC opérateurs sont servis en HTTP clair (pas de TLS sur ces
+         gateways carrier) — on autorise le cleartext UNIQUEMENT vers ces hôtes,
+         pour que l'envoi/réception MMS fonctionne sans ouvrir tout le trafic. -->
+    <domain-config cleartextTrafficPermitted="true">
+        <!-- Orange France -->
+        <domain includeSubdomains="true">mms.orange.fr</domain>
+        <!-- SFR -->
+        <domain includeSubdomains="true">mms1</domain>
+        <!-- Bouygues Telecom -->
+        <domain includeSubdomains="true">mms.bouyguestelecom.fr</domain>
+        <!-- Free Mobile -->
+        <domain includeSubdomains="true">mms.free.fr</domain>
+    </domain-config>
+</network-security-config>

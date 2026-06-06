@@ -1,6 +1,7 @@
 package chat.fluffy.fluffychat.sms
 
 import android.content.BroadcastReceiver
+import android.content.ContentUris
 import android.content.Context
 import android.content.Intent
 import android.provider.Telephony
@@ -42,6 +43,17 @@ class SmsDeliverReceiver : BroadcastReceiver() {
 
             val uri = SmsBridge.insertInbox(context, sender, body, timestamp)
             val threadId = if (uri != null) SmsBridge.threadIdForSms(context, uri) else 0L
+            // rowId du message inséré : nécessaire côté Dart pour armer un
+            // éphémère sur un SMS reçu (sinon impossible de cibler la suppression).
+            val messageId = if (uri != null) {
+                try {
+                    ContentUris.parseId(uri)
+                } catch (e: Exception) {
+                    -1L
+                }
+            } else {
+                -1L
+            }
 
             Log.i(
                 SmsBridge.TAG,
@@ -57,8 +69,27 @@ class SmsDeliverReceiver : BroadcastReceiver() {
                     "body" to body,
                     "date" to timestamp,
                     "threadId" to threadId,
+                    "messageId" to messageId,
                 )
             )
+
+            // Notification système riche (MessagingStyle + actions). Résolution
+            // contact best-effort (nom + photo), respecte les réglages et le
+            // verrou de conversation côté SmsNotifier.
+            if (threadId > 0L && sender != "?") {
+                runCatching {
+                    val info = SmsBridge.lookupContact(context, sender)
+                    SmsNotifier.notifyIncoming(
+                        context = context,
+                        threadId = threadId,
+                        address = sender,
+                        senderName = info.name?.takeIf { it.isNotBlank() } ?: sender,
+                        body = body,
+                        photoPath = info.photoPath,
+                        timestamp = timestamp,
+                    )
+                }
+            }
         }
     }
 }

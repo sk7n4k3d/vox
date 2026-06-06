@@ -73,3 +73,6 @@ web/pkg/vodozemac_bindings_dart_bg.wasm
 web/pkg/vodozemac_bindings_dart.js
 web/native_executor.js*
 /.gitignore-local
+
+# Serena LSP tool cache
+.serena/

@@ -32,9 +32,33 @@ class SmsSentReceiver : BroadcastReceiver() {
                 if (!ok) Log.w(SmsBridge.TAG, "SMS send FAILED (row=$rowId, code=$resultCode)")
             }
             SmsBridge.ACTION_SMS_DELIVERED -> {
-                // Statut de remise opérateur. STATUS_COMPLETE = remis.
-                updateStatus(context, uri, Telephony.Sms.STATUS_COMPLETE, rowId)
+                // Lire le vrai SMS-STATUS-REPORT au lieu de supposer "remis" :
+                // un échec/expiration opérateur doit être enregistré comme tel.
+                val status = parseDeliveryStatus(intent)
+                updateStatus(context, uri, status, rowId)
             }
+        }
+    }
+
+    /**
+     * Mappe le PDU de delivery-report vers un statut Telephony. Si le PDU est
+     * illisible, on retombe sur STATUS_COMPLETE (comportement historique) plutôt
+     * que de bloquer.
+     */
+    private fun parseDeliveryStatus(intent: Intent): Int {
+        return try {
+            val msg = Telephony.Sms.Intents.getMessagesFromIntent(intent)?.firstOrNull()
+                ?: return Telephony.Sms.STATUS_COMPLETE
+            // status TP-Status (GSM 03.40) : 0..0x1F = remis, 0x20..0x3F = en
+            // cours/temporaire, ≥0x40 = échec permanent.
+            when {
+                msg.status >= 0x40 -> Telephony.Sms.STATUS_FAILED
+                msg.status in 0x20..0x3F -> Telephony.Sms.STATUS_PENDING
+                else -> Telephony.Sms.STATUS_COMPLETE
+            }
+        } catch (e: Exception) {
+            Log.w(SmsBridge.TAG, "parseDeliveryStatus failed: ${e.message}")
+            Telephony.Sms.STATUS_COMPLETE
         }
     }
 

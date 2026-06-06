@@ -207,7 +207,12 @@ internal object MmsPduComposer {
     /** Format MSISDN attendu par les MMSC : "+33XXXXXXXXX/TYPE=PLMN". */
     private fun encodeAddress(raw: String): String {
         val trimmed = raw.trim()
-        return if (trimmed.endsWith("/TYPE=PLMN", ignoreCase = true)) trimmed
-        else "$trimmed/TYPE=PLMN"
+        if (trimmed.endsWith("/TYPE=PLMN", ignoreCase = true)) return trimmed
+        // Ne garder que les caractères valides d'un numéro : un NUL ou un char
+        // de contrôle terminerait prématurément le text-string `To` du PDU et le
+        // corromprait. On ne valide pas le format réseau (laissé au MMSC) mais
+        // on neutralise les octets dangereux.
+        val sanitized = trimmed.filter { it == '+' || it.isDigit() || it == ' ' || it == '-' || it == '(' || it == ')' }
+        return "$sanitized/TYPE=PLMN"
     }
 }

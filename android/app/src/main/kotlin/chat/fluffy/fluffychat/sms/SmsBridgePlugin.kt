@@ -60,6 +60,10 @@ class SmsBridgePlugin private constructor(
     @Volatile
     private var activity: Activity? = null
 
+    // @Volatile : écrit sur le main thread (onListen/onCancel) mais potentiellement
+    // lu depuis le thread d'un BroadcastReceiver (onSmsReceived) → garantir la
+    // visibilité de la dernière valeur.
+    @Volatile
     private var eventSink: EventChannel.EventSink? = null
 
     init {
@@ -86,6 +90,11 @@ class SmsBridgePlugin private constructor(
         activity = act
     }
 
+    /** Pousse un event "open_conversation" à Flutter via l'EventChannel SMS. */
+    fun pushIntentEvent(payload: Map<String, Any?>) {
+        main.post { eventSink?.success(payload) }
+    }
+
     // ── EventChannel ──────────────────────────────────────────────────────────
 
     override fun onListen(arguments: Any?, events: EventChannel.EventSink?) {
@@ -104,9 +113,30 @@ class SmsBridgePlugin private constructor(
 
             "requestDefaultSmsRole" -> result.success(requestDefaultSmsRole())
 
-            "listConversations" -> scope.launch {
-                val data = SmsBridge.listConversations(context)
-                replyOnMain(result) { it.success(data) }
+            // Retire la notification d'un thread (appelé quand Dart ouvre/lit la conv).
+            "cancelSmsNotification" -> {
+                val threadId = call.longArg("threadId")
+                if (threadId != null) SmsNotifier.cancel(context, threadId)
+                result.success(null)
+            }
+
+            // Mémorise le thread actuellement affiché au premier plan (ou -1) pour
+            // que SmsNotifier ne notifie pas une conversation déjà ouverte.
+            "setActiveSmsThread" -> {
+                val threadId = call.longArg("threadId") ?: -1L
+                SmsNotifier.activeThreadId = threadId
+                result.success(null)
+            }
+
+            // Consomme l'intent SMS en attente (tap notif / Vocal) au démarrage.
+            "getPendingSmsIntent" -> {
+                val pending = pendingSmsIntent
+                pendingSmsIntent = null
+                result.success(pending)
+            }
+
+            "listConversations" -> launchReply(result) {
+                SmsBridge.listConversations(context)
             }
 
             "listMessages" -> {
@@ -115,10 +145,7 @@ class SmsBridgePlugin private constructor(
                     result.error("BAD_ARGS", "threadId missing", null)
                     return
                 }
-                scope.launch {
-                    val data = SmsBridge.listMessages(context, threadId)
-                    replyOnMain(result) { it.success(data) }
-                }
+                launchReply(result) { SmsBridge.listMessages(context, threadId) }
             }
 
             "sendSms" -> {
@@ -128,10 +155,7 @@ class SmsBridgePlugin private constructor(
                     result.error("BAD_ARGS", "address or body missing", null)
                     return
                 }
-                scope.launch {
-                    val rowId = SmsBridge.sendSms(context, address, body)
-                    replyOnMain(result) { it.success(rowId) }
-                }
+                launchReply(result) { SmsBridge.sendSms(context, address, body) }
             }
 
             "markRead" -> {
@@ -140,10 +164,7 @@ class SmsBridgePlugin private constructor(
                     result.error("BAD_ARGS", "threadId missing", null)
                     return
                 }
-                scope.launch {
-                    val updated = SmsBridge.markRead(context, threadId)
-                    replyOnMain(result) { it.success(updated) }
-                }
+                launchReply(result) { SmsBridge.markRead(context, threadId) }
             }
 
             "deleteMessage" -> {
@@ -153,10 +174,7 @@ class SmsBridgePlugin private constructor(
                     result.error("BAD_ARGS", "id missing", null)
                     return
                 }
-                scope.launch {
-                    val n = SmsBridge.deleteMessage(context, id, isMms)
-                    replyOnMain(result) { it.success(n) }
-                }
+                launchReply(result) { SmsBridge.deleteMessage(context, id, isMms) }
             }
 
             "deleteConversation" -> {
@@ -165,10 +183,7 @@ class SmsBridgePlugin private constructor(
                     result.error("BAD_ARGS", "threadId missing", null)
                     return
                 }
-                scope.launch {
-                    val n = SmsBridge.deleteConversation(context, threadId)
-                    replyOnMain(result) { it.success(n) }
-                }
+                launchReply(result) { SmsBridge.deleteConversation(context, threadId) }
             }
 
             "loadMmsPart" -> {
@@ -177,10 +192,7 @@ class SmsBridgePlugin private constructor(
                     result.error("BAD_ARGS", "partId missing", null)
                     return
                 }
-                scope.launch {
-                    val path = SmsBridge.loadMmsPart(context, partId)
-                    replyOnMain(result) { it.success(path) }
-                }
+                launchReply(result) { SmsBridge.loadMmsPart(context, partId) }
             }
 
             "sendMms" -> {
@@ -195,13 +207,31 @@ class SmsBridgePlugin private constructor(
                     result.error("BAD_ARGS", "need body or imagePath", null)
                     return
                 }
-                scope.launch {
-                    val mmsId = SmsBridge.sendMms(context, address, body, imagePath)
-                    replyOnMain(result) { it.success(mmsId) }
-                }
+                launchReply(result) { SmsBridge.sendMms(context, address, body, imagePath) }
             }
 
             else -> result.notImplemented()
+        }
+    }
+
+    /**
+     * Lance [work] sur [scope] et route TOUJOURS une réponse au Result (succès
+     * ou erreur), sur le main thread. Sans le try/catch, une exception dans
+     * `work` (SecurityException/SQLiteException du ContentResolver, etc.)
+     * laissait le Future Dart pending pour toujours → hang silencieux de l'UI.
+     */
+    private inline fun <T> launchReply(
+        result: MethodChannel.Result,
+        crossinline work: suspend () -> T,
+    ) {
+        scope.launch {
+            try {
+                val data = work()
+                replyOnMain(result) { it.success(data) }
+            } catch (e: Throwable) {
+                Log.e(SmsBridge.TAG, "SMS method failed: ${e.message}")
+                replyOnMain(result) { it.error("SMS_ERR", e.message, null) }
+            }
         }
     }
 
@@ -278,18 +308,46 @@ class SmsBridgePlugin private constructor(
         @Volatile
         private var instance: SmsBridgePlugin? = null
 
-        /** Idempotent — peut être appelé à chaque création d'engine. */
+        /**
+         * Intent SMS en attente (tap notif / action Vocal / ouverture sms:) que
+         * Flutter consomme au démarrage via getPendingSmsIntent. Si l'app est
+         * déjà ouverte, on le pousse aussi en direct via l'EventChannel.
+         */
+        @Volatile
+        private var pendingSmsIntent: Map<String, Any?>? = null
+
+        /**
+         * Ré-enregistre les canaux sur l'engine fourni. DOIT re-bind à chaque
+         * `configureFlutterEngine` : sur un Pixel Fold, plier/déplier recrée
+         * l'Activity → un NOUVEL engine, et l'ancien `instance` pointerait vers
+         * un binaryMessenger mort (→ MissingPluginException). On préserve
+         * l'Activity déjà attachée pour ne pas perdre le startActivityForResult.
+         */
         fun register(context: Context, engine: FlutterEngine) {
-            if (instance != null) return
             val messenger = engine.dartExecutor.binaryMessenger
             val channel = MethodChannel(messenger, METHOD_CHANNEL)
             val eventChannel = EventChannel(messenger, EVENT_CHANNEL)
+            val previousActivity = instance?.activity
             instance = SmsBridgePlugin(context.applicationContext, channel, eventChannel)
+            instance?.bindActivity(previousActivity)
         }
 
         /** À appeler depuis MainActivity pour permettre startActivityForResult (ACTION_REQUEST_ROLE). */
         fun attachActivity(activity: Activity?) {
             instance?.bindActivity(activity)
+        }
+
+        /** Stocke l'intent SMS entrant et, si l'app tourne, le pousse à Flutter. */
+        fun setPendingSmsIntent(threadId: Long, address: String?, voiceReply: Boolean) {
+            val payload = mapOf(
+                "kind" to "open_conversation",
+                "threadId" to threadId,
+                "address" to (address ?: ""),
+                "voiceReply" to voiceReply,
+            )
+            pendingSmsIntent = payload
+            // Pousse en direct si un sink est branché (app déjà au premier plan).
+            instance?.pushIntentEvent(payload)
         }
     }
 }

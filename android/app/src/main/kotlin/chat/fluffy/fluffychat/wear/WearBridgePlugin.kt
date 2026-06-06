@@ -94,9 +94,13 @@ class WearBridgePlugin private constructor(
         @Volatile
         private var instance: WearBridgePlugin? = null
 
-        /** Idempotent — peut être appelé à chaque création d'engine. */
+        /**
+         * Ré-enregistre le canal sur l'engine fourni. DOIT re-bind à chaque
+         * `configureFlutterEngine` (recréation d'Activity = nouvel engine =
+         * ancien binaryMessenger mort), sinon les appels Dart lèvent une
+         * MissingPluginException.
+         */
         fun register(context: Context, engine: FlutterEngine) {
-            if (instance != null) return
             val channel = MethodChannel(engine.dartExecutor.binaryMessenger, CHANNEL)
             instance = WearBridgePlugin(context.applicationContext, channel)
         }

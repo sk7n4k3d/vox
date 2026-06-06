@@ -5,6 +5,11 @@ import android.content.Intent
 import android.os.IBinder
 import android.telephony.TelephonyManager
 import android.util.Log
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.launch
 
 /**
  * Service RESPOND_VIA_MESSAGE (réponse rapide depuis l'écran d'appel : « envoyer un SMS »).
@@ -14,24 +19,45 @@ import android.util.Log
  * avec la permission `SEND_RESPOND_VIA_MESSAGE`, sinon l'app n'apparaît PAS dans la liste
  * des apps SMS par défaut.
  *
- * À l'étape 1 c'est un stub qui se contente d'extraire le destinataire et de loguer.
- * L'envoi réel des quick-responses pourra être branché plus tard sur [SmsBridge.sendSms].
+ * Envoie réellement la quick-response : extrait le(s) destinataire(s) de l'URI
+ * (sms:/smsto:/mms:/mmsto:, séparés par ';' ou ',') et le texte via EXTRA_TEXT,
+ * puis route sur [SmsBridge.sendSms].
  */
 class HeadlessSmsSendService : Service() {
+
+    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
     override fun onBind(intent: Intent?): IBinder? = null
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         if (intent?.action == TelephonyManager.ACTION_RESPOND_VIA_MESSAGE) {
-            val recipient = intent.data?.schemeSpecificPart
-            Log.i(
-                SmsBridge.TAG,
-                "RESPOND_VIA_MESSAGE pour ${SmsBridge.redact(recipient)} — stub étape 1, non envoyé",
-            )
-            // TODO : récupérer Intent.EXTRA_TEXT et appeler SmsBridge.sendSms si on veut
-            //        supporter la réponse rapide depuis l'écran d'appel.
+            val recipients = intent.data?.schemeSpecificPart
+                ?.split(';', ',')
+                ?.map { it.trim() }
+                ?.filter { it.isNotEmpty() }
+                .orEmpty()
+            val text = intent.getStringExtra(Intent.EXTRA_TEXT)
+            if (recipients.isEmpty() || text.isNullOrBlank()) {
+                Log.w(SmsBridge.TAG, "RESPOND_VIA_MESSAGE : destinataire ou texte manquant")
+            } else {
+                val appContext = applicationContext
+                scope.launch {
+                    for (recipient in recipients) {
+                        try {
+                            SmsBridge.sendSms(appContext, recipient, text)
+                        } catch (e: Exception) {
+                            Log.e(SmsBridge.TAG, "RESPOND_VIA_MESSAGE send failed: ${e.message}")
+                        }
+                    }
+                }
+            }
         }
         stopSelf(startId)
         return START_NOT_STICKY
+    }
+
+    override fun onDestroy() {
+        scope.cancel()
+        super.onDestroy()
     }
 }

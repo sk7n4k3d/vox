@@ -62,18 +62,35 @@ object SmsBridge {
     @Volatile
     var onMmsReceived: ((Map<String, Any?>) -> Unit)? = null
 
+    /**
+     * Callback poussé à la fin de l'envoi d'un MMS (POST direct MMSC).
+     * Map : { mmsId, ok }. Null si Flutter pas attaché.
+     */
+    @Volatile
+    var onMmsSendResult: ((Map<String, Any?>) -> Unit)? = null
+
     // ── Actions PendingIntent SENT / DELIVERED ────────────────────────────────
     const val ACTION_SMS_SENT = "eu.devlabz.vox.SMS_SENT"
     const val ACTION_SMS_DELIVERED = "eu.devlabz.vox.SMS_DELIVERED"
     const val ACTION_MMS_SENT = "eu.devlabz.vox.MMS_SENT"
+    const val ACTION_MMS_DOWNLOADED = "eu.devlabz.vox.MMS_DOWNLOADED"
     const val EXTRA_ROW_ID = "row_id"
     const val EXTRA_MMS_ID = "mms_id"
     const val EXTRA_TXN_ID = "txn_id"
+    const val EXTRA_CONTENT_LOCATION = "content_location"
+    const val EXTRA_FROM = "from"
 
     // Plafonds compression image MMS sortant (≈ contraintes carrier).
-    private const val MAX_IMAGE_BYTES = 1_000_000
-    private const val MAX_IMAGE_W = 1920
-    private const val MAX_IMAGE_H = 1080
+    // Carrier MMS size cap: Orange (and most FR carriers) reject the m-send-req
+    // with "2511:Message too large" above ~300 KB for the WHOLE PDU. We target
+    // 280 KB for the image to leave room for SMIL + headers, and cap the
+    // dimensions modestly — a MMS doesn't need 1080p.
+    private const val MAX_IMAGE_BYTES = 280_000
+    private const val MAX_IMAGE_W = 1280
+    private const val MAX_IMAGE_H = 960
+    // Au-delà, on ne charge pas le fichier entier en RAM (readBytes) : on décode
+    // directement depuis le disque, sous-échantillonné, pour éviter l'OOM.
+    private const val MAX_IMAGE_SOURCE_BYTES = 8_000_000L
 
     // content://mms/part — URI des parts MMS (text/images). Pas d'API publique typée fiable < API 29.
     private val MMS_PART_URI: Uri = Uri.parse("content://mms/part")
@@ -218,12 +235,20 @@ object SmsBridge {
                 Log.e(TAG, "listConversations(mms) failed: ${e.message}")
             }
 
-            // Patch unreadCount + résolution displayName (best-effort, READ_CONTACTS optionnel)
+            // Patch unreadCount + résolution displayName/photo (best-effort,
+            // READ_CONTACTS optionnel). Mémoïse les lookups contacts sur la durée
+            // de l'appel : deux threads partageant un numéro ne déclenchent qu'une
+            // seule query.
+            val contactCache = HashMap<String, ContactInfo>()
             for ((threadId, conv) in byThread) {
                 conv["unreadCount"] = unreadByThread[threadId] ?: 0
                 val address = conv["address"] as? String
                 if (!address.isNullOrBlank()) {
-                    conv["displayName"] = resolveContactName(context, address)
+                    val info = contactCache.getOrPut(address) {
+                        resolveContact(context, address)
+                    }
+                    conv["displayName"] = info.name
+                    conv["photoPath"] = info.photoPath
                 }
             }
 
@@ -377,6 +402,12 @@ object SmsBridge {
      * Lit toutes les parts d'un MMS.
      * @return Pair(texte concaténé des parts text/plain, liste d'attachments {partId,mimeType,fileName}).
      * Les parts application/smil et text/plain ne sont PAS exposées comme attachments.
+     *
+     * Note perf (assumée) : appelée une fois par MMS (N+1 sur content://mms/part).
+     * Un batch `MSG_ID IN (...)` réduirait les round-trips, mais s'exécute sur
+     * Dispatchers.IO (pas de freeze UI) et le parsing par-MMS est carrier-
+     * dépendant et fragile — on garde la forme unitaire, plus sûre, pour un
+     * thread de taille réaliste (quelques dizaines de MMS).
      */
     private fun mmsParts(context: Context, mmsId: Long): Pair<String, List<Map<String, Any?>>> {
         val text = StringBuilder()
@@ -595,13 +626,18 @@ object SmsBridge {
         action: String,
         rowId: Long,
         partIndex: Int,
-        requestCodeOffset: Int,
+        @Suppress("UNUSED_PARAMETER") requestCodeOffset: Int,
     ): PendingIntent {
         val intent = Intent(action).apply {
             setPackage(context.packageName)
             putExtra(EXTRA_ROW_ID, rowId)
         }
-        val requestCode = (rowId.toInt() shl 4) + partIndex + requestCodeOffset
+        // requestCode unique par (action, rowId, partIndex). L'ancien
+        // `(rowId.toInt() shl 4) + partIndex + offset` débordait l'Int et faisait
+        // collisionner les codes SENT d'une ligne avec les DELIVERED d'une autre
+        // après ~16k messages (FLAG_UPDATE_CURRENT écrasait alors le mauvais
+        // extra). Objects.hash garantit l'unicité sans débordement arithmétique.
+        val requestCode = java.util.Objects.hash(action, rowId, partIndex) and 0x7FFFFFFF
         return PendingIntent.getBroadcast(
             context,
             requestCode,
@@ -642,7 +678,19 @@ object SmsBridge {
         withContext(Dispatchers.IO) {
             if (partId <= 0L) return@withContext null
             try {
-                val ext = mmsPartExtension(context, partId)
+                val mime = mmsPartMime(context, partId)
+                // HEIC/HEIF (typical from iPhones) are not decodable by Flutter's
+                // Skia. Android *can* decode them, so transcode to JPEG here and
+                // hand Flutter a .jpg it can render. Same for any image format
+                // Skia doesn't handle (bmp/tiff): if it's an image type Skia
+                // doesn't natively support, route it through the bitmap path.
+                if (mime != null && needsTranscode(mime)) {
+                    val jpeg = transcodeImageToJpeg(context, partId)
+                    if (jpeg != null) return@withContext jpeg
+                    // Fall through to a raw copy if transcoding failed (better a
+                    // broken tile than nothing, and the viewer can still share it).
+                }
+                val ext = extensionForMime(mime)
                 val dir = File(context.cacheDir, "mms_parts").apply { mkdirs() }
                 val outFile = File(dir, "part_$partId$ext")
                 if (outFile.exists() && outFile.length() > 0) {
@@ -669,26 +717,92 @@ object SmsBridge {
             }
         }
 
-    /** Devine l'extension d'une part depuis son content-type (pour un nom de fichier cache propre). */
-    private fun mmsPartExtension(context: Context, partId: Long): String {
-        val mime = try {
+    /** Image content-types Flutter/Skia can't decode but Android can. */
+    private fun needsTranscode(mime: String): Boolean {
+        val m = mime.lowercase()
+        return m.startsWith("image/heic") ||
+            m.startsWith("image/heif") ||
+            m.startsWith("image/bmp") ||
+            m.startsWith("image/tiff") ||
+            m.startsWith("image/x-")
+    }
+
+    /**
+     * Decodes an MMS image part with Android's native decoder and re-encodes it
+     * as JPEG into the cache, so Flutter can display formats Skia rejects (HEIC
+     * etc.). Returns the cached .jpg path, or null on failure.
+     */
+    private fun transcodeImageToJpeg(context: Context, partId: Long): String? {
+        return try {
+            val dir = File(context.cacheDir, "mms_parts").apply { mkdirs() }
+            val outFile = File(dir, "part_${partId}_t.jpg")
+            if (outFile.exists() && outFile.length() > 0) return outFile.absolutePath
+            val uri = ContentUris.withAppendedId(MMS_PART_URI, partId)
+            val bitmap = context.contentResolver.openInputStream(uri)?.use { input ->
+                BitmapFactory.decodeStream(input)
+            } ?: return null
+            FileOutputStream(outFile).use { fos ->
+                bitmap.compress(Bitmap.CompressFormat.JPEG, 90, fos)
+            }
+            bitmap.recycle()
+            if (outFile.length() > 0) outFile.absolutePath else null
+        } catch (e: Exception) {
+            Log.e(TAG, "transcodeImageToJpeg($partId) failed: ${e.message}")
+            null
+        }
+    }
+
+    /** Returns the partId of the first image part of a MMS, or -1. */
+    private fun firstMmsImagePartId(context: Context, mmsId: Long): Long {
+        return try {
             context.contentResolver.query(
                 MMS_PART_URI,
-                arrayOf(Telephony.Mms.Part.CONTENT_TYPE),
-                "${Telephony.Mms.Part._ID}=?",
-                arrayOf(partId.toString()),
+                arrayOf(Telephony.Mms.Part._ID, Telephony.Mms.Part.CONTENT_TYPE),
+                "${Telephony.Mms.Part.MSG_ID}=?",
+                arrayOf(mmsId.toString()),
                 null,
-            )?.use { c -> if (c.moveToFirst()) c.getString(0) else null }
+            )?.use { c ->
+                val idIdx = c.getColumnIndexOrThrow(Telephony.Mms.Part._ID)
+                val ctIdx = c.getColumnIndexOrThrow(Telephony.Mms.Part.CONTENT_TYPE)
+                while (c.moveToNext()) {
+                    val ct = c.getString(ctIdx) ?: ""
+                    if (ct.startsWith("image/")) return c.getLong(idIdx)
+                }
+                -1L
+            } ?: -1L
         } catch (e: Exception) {
-            null
-        } ?: ""
+            -1L
+        }
+    }
+
+    /** Reads a single part's content-type. */
+    private fun mmsPartMime(context: Context, partId: Long): String? = try {
+        context.contentResolver.query(
+            MMS_PART_URI,
+            arrayOf(Telephony.Mms.Part.CONTENT_TYPE),
+            "${Telephony.Mms.Part._ID}=?",
+            arrayOf(partId.toString()),
+            null,
+        )?.use { c -> if (c.moveToFirst()) c.getString(0) else null }
+    } catch (e: Exception) {
+        null
+    }
+
+    /** Guesses a clean cache-file extension from a content-type. */
+    private fun extensionForMime(mime: String?): String {
+        val m = (mime ?: "").lowercase()
         return when {
-            mime.startsWith("image/jpeg") || mime.startsWith("image/jpg") -> ".jpg"
-            mime.startsWith("image/png") -> ".png"
-            mime.startsWith("image/gif") -> ".gif"
-            mime.startsWith("image/webp") -> ".webp"
-            mime.startsWith("video/mp4") -> ".mp4"
-            mime.startsWith("audio/") -> ".aud"
+            m.startsWith("image/jpeg") || m.startsWith("image/jpg") -> ".jpg"
+            m.startsWith("image/png") -> ".png"
+            m.startsWith("image/gif") -> ".gif"
+            m.startsWith("image/webp") -> ".webp"
+            m.startsWith("video/mp4") -> ".mp4"
+            m.startsWith("video/3gpp") -> ".3gp"
+            m.startsWith("video/") -> ".mp4"
+            m.startsWith("audio/mpeg") -> ".mp3"
+            m.startsWith("audio/amr") -> ".amr"
+            m.startsWith("audio/") -> ".m4a"
+            m.contains("vcard") || m.contains("x-vcard") -> ".vcf"
             else -> ".bin"
         }
     }
@@ -759,9 +873,14 @@ object SmsBridge {
                 mediaParts = allMedia,
             )
 
-            // 4. Écrire le PDU dans le cache.
-            val pduDir = File(context.cacheDir, "mms_out").apply { mkdirs() }
-            val pduFile = File(pduDir, "$txn.pdu")
+            // 4. Écrire le PDU dans le cache, servi via MmsPduProvider (un
+            // ContentProvider que le service MMS système sait relire — cf. AOSP
+            // MmsFileProvider). Un file:// ou un androidx FileProvider échouait
+            // instantanément (code=5) car le service, dans un autre process, ne
+            // pouvait pas lire l'URI.
+            val pduName = "$txn.dat"
+            val pduFile = MmsPduProvider.fileForName(context, pduName)
+                ?: return@withContext null
             FileOutputStream(pduFile).use { it.write(pdu) }
 
             // 5. Insérer Outbox + parts (best-effort, n'empêche pas l'envoi).
@@ -772,18 +891,12 @@ object SmsBridge {
                 -1L
             }
 
-            // 6. PendingIntent SENT.
-            val sentIntent = buildMmsSentIntent(context, mmsId, txn)
-
-            // 7. sendMultimediaMessage.
-            val sms = obtainSmsManagerForMms(context)
-            sms.sendMultimediaMessage(
-                context,
-                Uri.fromFile(pduFile),
-                null, // locationUrl null = MMSC carrier par défaut
-                null, // configOverrides
-                sentIntent,
-            )
+            // 6. Forcer le réseau cellulaire MMS puis POSTer le PDU directement
+            // au MMSC. sendMultimediaMessage du système retourne HTTP_FAILURE
+            // (code=5) sur ce device/carrier (GrapheneOS + Orange + WiFi-calling)
+            // sans jamais atteindre le MMSC → on by-passe avec notre propre client
+            // HTTP, sur le réseau MMS cellulaire (comme QKSMS/Signal).
+            sendPduOnMmsNetwork(context, pdu, mmsId, txn)
             Log.i(TAG, "sendMms → ${redact(address)} (img=${imagePath != null}, mmsId=$mmsId)")
             mmsId.takeIf { it > 0 }
         } catch (e: SecurityException) {
@@ -795,13 +908,203 @@ object SmsBridge {
         }
     }
 
+    /**
+     * Single-thread executor so MMS sends are SERIALIZED — back-to-back sends no
+     * longer fire concurrent requestNetwork()s that raced into connect-timeout /
+     * "Binding socket to network failed: EPERM" (one send tearing the MMS PDN
+     * down while the next bound to it). One send at a time, shared MMS network.
+     */
+    private val mmsSendExecutor: java.util.concurrent.ExecutorService =
+        java.util.concurrent.Executors.newSingleThreadExecutor()
+
+    /**
+     * Queues an MMS send: acquires the shared cellular-MMS network (reference
+     * counted, via [MmsNetworkManager]), POSTs the PDU to the MMSC over it
+     * ([MmsHttpClient]), updates the outbox on success. Serialized through
+     * [mmsSendExecutor] so concurrent sends can't fight over the network.
+     */
+    private fun sendPduOnMmsNetwork(
+        context: Context,
+        pdu: ByteArray,
+        mmsId: Long,
+        txn: String,
+    ) {
+        val app = context.applicationContext
+        mmsSendExecutor.execute {
+            val (mmscUrl, proxyHost, proxyPort) = readMmsApn(app)
+            if (mmscUrl.isNullOrBlank()) {
+                Log.e(TAG, "sendPduOnMmsNetwork: pas de MMSC dans l'APN")
+                onMmsSendResult?.invoke(mapOf("mmsId" to mmsId, "ok" to false))
+                return@execute
+            }
+            val ok = MmsNetworkManager.withNetwork(app) { _ ->
+                Log.i(TAG, "MMS network acquis → POST $mmscUrl (proxy=$proxyHost:$proxyPort)")
+                // The process is already bound to the MMS network by the manager,
+                // so a plain HTTP connection routes over cellular MMS.
+                val resp = MmsHttpClient.postPdu(
+                    mmscUrl = mmscUrl,
+                    proxyHost = proxyHost,
+                    proxyPort = proxyPort,
+                    pdu = pdu,
+                )
+                resp != null
+            } ?: false
+            Log.i(TAG, "MMS POST result ok=$ok (mmsId=$mmsId)")
+            if (ok) markMmsSent(app, mmsId)
+            onMmsSendResult?.invoke(mapOf("mmsId" to mmsId, "ok" to ok))
+        }
+    }
+
+    /**
+     * Resolves MMSC URL + MMS proxy host/port for the active SIM, trying, in
+     * order: (1) CarrierConfigManager — the official API, NO permission needed;
+     * (2) the carriers content provider (often blocked: "No permission to access
+     * APN settings" on GrapheneOS / non-system apps); (3) a per-MCCMNC built-in
+     * table for known carriers (Orange FR…). The provider path was the one that
+     * failed — apps can't read content://telephony/carriers without the
+     * privileged WRITE_APN_SETTINGS, so the CarrierConfig + built-in fallbacks
+     * are what actually make this work.
+     */
+    private fun readMmsApn(context: Context): Triple<String?, String?, Int> {
+        val numeric = runCatching {
+            context.getSystemService(android.telephony.TelephonyManager::class.java)
+                ?.simOperator
+        }.getOrNull()
+
+        // (1) CarrierConfigManager — official, permission-free.
+        readMmsFromCarrierConfig(context)?.let {
+            Log.i(TAG, "MMS APN via CarrierConfig: ${it.first}")
+            return it
+        }
+
+        // (2) Carriers content provider (may throw SecurityException).
+        readMmsFromCarriersProvider(context, numeric)?.let {
+            Log.i(TAG, "MMS APN via provider: ${it.first}")
+            return it
+        }
+
+        // (3) Built-in table for known carriers.
+        builtInMmsApn(numeric)?.let {
+            Log.i(TAG, "MMS APN via built-in (numeric=$numeric): ${it.first}")
+            return it
+        }
+
+        Log.e(TAG, "readMmsApn: aucune source MMSC (numeric=$numeric)")
+        return Triple(null, null, 0)
+    }
+
+    private fun readMmsFromCarrierConfig(context: Context): Triple<String?, String?, Int>? {
+        return try {
+            val ccm = context.getSystemService(
+                android.telephony.CarrierConfigManager::class.java,
+            ) ?: return null
+            val config = ccm.config ?: return null
+            // Keys live in CarrierConfigManager.Mms (string constants, accessed
+            // directly to avoid SDK-version symbol issues).
+            val mmsc = config.getString("mmsMmscUrlString")
+                ?.takeIf { it.isNotBlank() } ?: return null
+            val proxyAddr = config.getString("mmsHttpProxyAddressString")
+                ?.takeIf { it.isNotBlank() }
+            val proxyPort = config.getInt("mmsHttpProxyPortInt").takeIf { it > 0 } ?: 80
+            Triple(mmsc, proxyAddr, proxyPort)
+        } catch (e: Exception) {
+            null
+        }
+    }
+
+    private fun readMmsFromCarriersProvider(
+        context: Context,
+        numeric: String?,
+    ): Triple<String?, String?, Int>? {
+        return try {
+            context.contentResolver.query(
+                Uri.parse("content://telephony/carriers"),
+                arrayOf("mmsc", "mmsproxy", "mmsport", "type", "current", "numeric"),
+                null, null, null,
+            )?.use { c ->
+                val mmscIdx = c.getColumnIndex("mmsc")
+                val proxyIdx = c.getColumnIndex("mmsproxy")
+                val portIdx = c.getColumnIndex("mmsport")
+                val typeIdx = c.getColumnIndex("type")
+                val curIdx = c.getColumnIndex("current")
+                val numIdx = c.getColumnIndex("numeric")
+                var fallback: Triple<String?, String?, Int>? = null
+                while (c.moveToNext()) {
+                    val type = c.getString(typeIdx) ?: ""
+                    val mmsc = c.getString(mmscIdx)
+                    if (!type.contains("mms") || mmsc.isNullOrBlank()) continue
+                    val proxy = c.getString(proxyIdx)?.takeIf { it.isNotBlank() }
+                    val port = c.getString(portIdx)?.toIntOrNull() ?: 80
+                    val triple = Triple(mmsc, proxy, port)
+                    val isCurrent = curIdx >= 0 && c.getString(curIdx) != null
+                    val numMatches = numIdx < 0 || numeric.isNullOrBlank() ||
+                        c.getString(numIdx) == numeric
+                    if (isCurrent && numMatches) return triple
+                    if (fallback == null) fallback = triple
+                }
+                fallback
+            }
+        } catch (e: Exception) {
+            Log.w(TAG, "readMmsFromCarriersProvider: ${e.message}")
+            null
+        }
+    }
+
+    /** Known MMS APNs by MCC+MNC, for when neither CarrierConfig nor the APN
+     *  provider yield anything (e.g. GrapheneOS blocking the provider). */
+    private fun builtInMmsApn(numeric: String?): Triple<String?, String?, Int>? {
+        return when (numeric) {
+            // Orange France (208/01, 208/02).
+            "20801", "20802" ->
+                Triple("http://mms.orange.fr", "192.168.10.200", 8080)
+            // SFR (208/10, 208/13).
+            "20810", "20813" ->
+                Triple("http://mms1", "10.151.0.1", 8080)
+            // Bouygues (208/20, 208/21).
+            "20820", "20821" ->
+                Triple("http://mms.bouyguestelecom.fr/mms/wapenc", null, 80)
+            // Free Mobile (208/15).
+            "20815" ->
+                Triple("http://mms.free.fr", null, 80)
+            else -> null
+        }
+    }
+
+    /** Marks an outbound MMS as sent (moves it from outbox to sent box). */
+    private fun markMmsSent(context: Context, mmsId: Long) {
+        if (mmsId <= 0) return
+        runCatching {
+            val values = ContentValues().apply {
+                put(Telephony.Mms.MESSAGE_BOX, Telephony.Mms.MESSAGE_BOX_SENT)
+            }
+            context.contentResolver.update(
+                ContentUris.withAppendedId(Uri.parse("content://mms"), mmsId),
+                values, null, null,
+            )
+        }
+    }
+
     /** Construit une part image depuis un path local, compressée si > ~1 Mo. Null si illisible. */
     private fun buildImagePart(imagePath: String): MmsPduComposer.Part? {
+        // catch Throwable (pas Exception) : readBytes/decode peuvent jeter
+        // OutOfMemoryError (un Error, pas une Exception) sur une image énorme.
         return try {
             val file = File(imagePath)
             if (!file.exists() || !file.canRead()) {
                 Log.w(TAG, "buildImagePart: file unreadable")
                 return null
+            }
+            // Garde-fou avant de tout charger en RAM : refuse un fichier
+            // déraisonnablement gros plutôt que de risquer un OOM sur readBytes.
+            if (file.length() > MAX_IMAGE_SOURCE_BYTES) {
+                Log.w(TAG, "buildImagePart: source too large (${file.length()} B), downscaling from file")
+                val bytes = decodeAndCompressFromFile(file) ?: return null
+                return MmsPduComposer.Part(
+                    contentType = "image/jpeg",
+                    contentId = "<image_0>",
+                    contentLocation = "image_0.jpg",
+                    data = bytes,
+                )
             }
             val raw = file.readBytes()
             val (bytes, mime, ext) = compressImageIfNeeded(raw)
@@ -811,8 +1114,35 @@ object SmsBridge {
                 contentLocation = "image_0.$ext",
                 data = bytes,
             )
-        } catch (e: Exception) {
+        } catch (e: Throwable) {
             Log.w(TAG, "buildImagePart failed: ${e.message}")
+            null
+        }
+    }
+
+    /**
+     * Décode une image directement depuis le fichier (sans readBytes en RAM),
+     * sous-échantillonnée et ré-encodée en JPEG sous [MAX_IMAGE_BYTES]. Utilisé
+     * pour les sources trop grosses pour être chargées entières.
+     */
+    private fun decodeAndCompressFromFile(file: File): ByteArray? {
+        return try {
+            val probe = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+            BitmapFactory.decodeFile(file.absolutePath, probe)
+            val sample = calcInSampleSize(probe.outWidth, probe.outHeight, MAX_IMAGE_W, MAX_IMAGE_H)
+            val opts = BitmapFactory.Options().apply { inSampleSize = sample }
+            val bm = BitmapFactory.decodeFile(file.absolutePath, opts) ?: return null
+            val out = ByteArrayOutputStream()
+            var q = 80
+            do {
+                out.reset()
+                bm.compress(Bitmap.CompressFormat.JPEG, q, out)
+                q -= 10
+            } while (out.size() > MAX_IMAGE_BYTES && q >= 30)
+            bm.recycle()
+            out.toByteArray()
+        } catch (e: Throwable) {
+            Log.w(TAG, "decodeAndCompressFromFile failed: ${e.message}")
             null
         }
     }
@@ -856,6 +1186,14 @@ object SmsBridge {
         return inSample
     }
 
+    /** Échappe les caractères dangereux dans une valeur d'attribut XML. */
+    private fun xmlAttr(s: String): String = s
+        .replace("&", "&amp;")
+        .replace("<", "&lt;")
+        .replace(">", "&gt;")
+        .replace("\"", "&quot;")
+        .replace("'", "&apos;")
+
     /** SMIL minimal : un slide par part, en série. Apaise les MMSC stricts. */
     private fun buildSmil(parts: List<MmsPduComposer.Part>): MmsPduComposer.Part {
         val sb = StringBuilder()
@@ -873,7 +1211,10 @@ object SmsBridge {
                 p.contentType.startsWith("text/") -> "text"
                 else -> "ref"
             }
-            sb.append("<$tag src=\"${p.contentLocation}\" region=\"$region\"/>\n")
+            // contentLocation est aujourd'hui une constante interne, mais on
+            // échappe l'attribut XML par principe (défense en profondeur contre
+            // une future source dérivée d'un nom de fichier utilisateur).
+            sb.append("<$tag src=\"${xmlAttr(p.contentLocation)}\" region=\"$region\"/>\n")
             sb.append("</par>\n")
         }
         sb.append("</body>\n</smil>\n")
@@ -983,28 +1324,52 @@ object SmsBridge {
     // Marquer un thread comme lu
     // ──────────────────────────────────────────────────────────────────────────
 
-    /** Passe READ=1 et SEEN=1 sur tous les SMS non lus du thread. @return nb de lignes mises à jour. */
+    /**
+     * Passe READ=1 et SEEN=1 sur tous les SMS **et MMS** non lus du thread.
+     * Auparavant seuls les SMS étaient marqués → un thread MMS-only/mixte
+     * gardait un badge non-lu impossible à effacer.
+     * @return nb total de lignes mises à jour (SMS + MMS).
+     */
     suspend fun markRead(context: Context, threadId: Long): Int =
         withContext(Dispatchers.IO) {
             if (threadId <= 0L) return@withContext 0
+            val resolver = context.contentResolver
+            var updated = 0
+            // SMS
             try {
-                val values = ContentValues().apply {
+                val smsValues = ContentValues().apply {
                     put(Telephony.Sms.READ, 1)
                     put(Telephony.Sms.SEEN, 1)
                 }
-                context.contentResolver.update(
+                updated += resolver.update(
                     Telephony.Sms.CONTENT_URI,
-                    values,
+                    smsValues,
                     "${Telephony.Sms.THREAD_ID}=? AND ${Telephony.Sms.READ}=0",
                     arrayOf(threadId.toString()),
                 )
             } catch (e: SecurityException) {
-                Log.e(TAG, "markRead($threadId): write denied (default app?): ${e.message}")
-                0
+                Log.e(TAG, "markRead SMS($threadId): write denied (default app?): ${e.message}")
             } catch (e: Exception) {
-                Log.e(TAG, "markRead($threadId) failed: ${e.message}")
-                0
+                Log.e(TAG, "markRead SMS($threadId) failed: ${e.message}")
             }
+            // MMS (table séparée, sinon le badge non-lu MMS ne s'efface jamais)
+            try {
+                val mmsValues = ContentValues().apply {
+                    put(Telephony.Mms.READ, 1)
+                    put(Telephony.Mms.SEEN, 1)
+                }
+                updated += resolver.update(
+                    Telephony.Mms.CONTENT_URI,
+                    mmsValues,
+                    "${Telephony.Mms.THREAD_ID}=? AND ${Telephony.Mms.READ}=0",
+                    arrayOf(threadId.toString()),
+                )
+            } catch (e: SecurityException) {
+                Log.e(TAG, "markRead MMS($threadId): write denied: ${e.message}")
+            } catch (e: Exception) {
+                Log.e(TAG, "markRead MMS($threadId) failed: ${e.message}")
+            }
+            updated
         }
 
     // ──────────────────────────────────────────────────────────────────────────
@@ -1054,11 +1419,23 @@ object SmsBridge {
         }
     }
 
+    /** Nom + chemin local de la photo (thumbnail) d'un contact. */
+    data class ContactInfo(val name: String?, val photoPath: String?)
+
+    /** Variante publique pour les receivers (notifications). */
+    fun lookupContact(context: Context, address: String): ContactInfo =
+        resolveContact(context, address)
+
     /**
-     * Résout le nom de contact pour un numéro. Best-effort : si READ_CONTACTS n'est pas
-     * accordé (ou indisponible sur GrapheneOS profil sans contacts), renvoie null sans planter.
+     * Résout le nom ET la photo de contact pour un numéro. Best-effort : si
+     * READ_CONTACTS n'est pas accordé (ou indisponible sur GrapheneOS profil
+     * sans contacts), renvoie ContactInfo(null, null) sans planter.
+     *
+     * La photo (PHOTO_THUMBNAIL_URI = content://) n'est pas lisible par Flutter
+     * directement, donc on extrait les bytes vers un fichier cache et on renvoie
+     * son path (réutilisé tant que le fichier existe).
      */
-    private fun resolveContactName(context: Context, address: String): String? {
+    private fun resolveContact(context: Context, address: String): ContactInfo {
         return try {
             val uri = Uri.withAppendedPath(
                 ContactsContract.PhoneLookup.CONTENT_FILTER_URI,
@@ -1066,16 +1443,371 @@ object SmsBridge {
             )
             context.contentResolver.query(
                 uri,
-                arrayOf(ContactsContract.PhoneLookup.DISPLAY_NAME),
+                arrayOf(
+                    ContactsContract.PhoneLookup.DISPLAY_NAME,
+                    ContactsContract.PhoneLookup.PHOTO_THUMBNAIL_URI,
+                    ContactsContract.PhoneLookup._ID,
+                ),
                 null, null, null,
             )?.use { c ->
-                if (c.moveToFirst()) c.getString(0)?.takeIf { it.isNotBlank() } else null
-            }
+                if (c.moveToFirst()) {
+                    val name = c.getString(0)?.takeIf { it.isNotBlank() }
+                    val photoUri = c.getString(1)?.takeIf { it.isNotBlank() }
+                    val contactId = c.getLong(2)
+                    ContactInfo(
+                        name = name,
+                        photoPath = cacheContactPhoto(context, contactId, photoUri),
+                    )
+                } else {
+                    ContactInfo(null, null)
+                }
+            } ?: ContactInfo(null, null)
         } catch (e: SecurityException) {
-            null // READ_CONTACTS non accordé — non bloquant
+            ContactInfo(null, null) // READ_CONTACTS non accordé — non bloquant
         } catch (e: Exception) {
-            Log.w(TAG, "resolveContactName failed: ${e.message}")
+            Log.w(TAG, "resolveContact failed: ${e.message}")
+            ContactInfo(null, null)
+        }
+    }
+
+    /**
+     * Extrait le thumbnail d'un contact vers cacheDir/contact_photos/<id>.jpg et
+     * renvoie le path. Idempotent (réutilise le fichier s'il existe). Null si pas
+     * de photo ou en cas d'erreur.
+     */
+    private fun cacheContactPhoto(context: Context, contactId: Long, photoUri: String?): String? {
+        if (photoUri.isNullOrBlank()) return null
+        return try {
+            val dir = File(context.cacheDir, "contact_photos").apply { mkdirs() }
+            val out = File(dir, "$contactId.jpg")
+            if (out.exists() && out.length() > 0) return out.absolutePath
+            context.contentResolver.openInputStream(Uri.parse(photoUri))?.use { input ->
+                out.outputStream().use { input.copyTo(it) }
+            }
+            if (out.exists() && out.length() > 0) out.absolutePath else null
+        } catch (e: Exception) {
+            Log.w(TAG, "cacheContactPhoto($contactId) failed: ${e.message}")
             null
+        }
+    }
+
+    // ── Réception MMS (download du corps quand VOX est app par défaut) ─────────
+
+    /**
+     * Télécharge le corps d'un MMS entrant depuis le MMSC, à partir de la
+     * content-location extraite du PDU de notification. Le système écrit le
+     * m-retrieve-conf brut dans [downloadFile] ; on le parse au callback
+     * [MmsDownloadedReceiver] pour insérer la ligne + les parts dans
+     * content://mms, puis on notifie Dart.
+     *
+     * [onDone] est invoqué quand la requête a été soumise (pas quand le download
+     * finit) — il sert juste à libérer le goAsync() du receiver.
+     */
+    fun downloadIncomingMms(
+        context: Context,
+        notif: MmsNotificationParser.Notification,
+        onDone: () -> Unit,
+    ) {
+        try {
+            val location = notif.contentLocation
+            if (location.isNullOrBlank()) {
+                Log.e(TAG, "downloadIncomingMms: pas de content-location, abandon")
+                onDone()
+                return
+            }
+            val dir = File(context.cacheDir, "mms_in").apply { mkdirs() }
+            val downloadFile = File(dir, "dl_${System.currentTimeMillis()}.pdu")
+            // FileProvider-backed content URI the framework can write to.
+            val contentUri = androidx.core.content.FileProvider.getUriForFile(
+                context,
+                "${context.packageName}.fileprovider",
+                downloadFile,
+            )
+
+            val sentIntent = Intent(ACTION_MMS_DOWNLOADED).apply {
+                setClass(context, MmsDownloadedReceiver::class.java)
+                putExtra(EXTRA_CONTENT_LOCATION, location)
+                putExtra(EXTRA_FROM, notif.from)
+                putExtra("download_path", downloadFile.absolutePath)
+                putExtra(EXTRA_TXN_ID, notif.transactionId)
+            }
+            val flags = PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_MUTABLE
+            val pi = PendingIntent.getBroadcast(
+                context,
+                location.hashCode(),
+                sentIntent,
+                flags,
+            )
+
+            val sms = smsManager(context)
+            sms.downloadMultimediaMessage(
+                context,
+                location,
+                contentUri,
+                null,
+                pi,
+            )
+            Log.i(TAG, "downloadMultimediaMessage soumis pour loc=$location")
+        } catch (e: Exception) {
+            Log.e(TAG, "downloadIncomingMms failed: ${e.message}")
+        } finally {
+            onDone()
+        }
+    }
+
+    /** SmsManager pour la SIM par défaut (subId si dispo). */
+    private fun smsManager(context: Context): SmsManager {
+        return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            context.getSystemService(SmsManager::class.java)
+        } else {
+            @Suppress("DEPRECATION")
+            SmsManager.getDefault()
+        }
+    }
+
+    /**
+     * Appelé par [MmsDownloadedReceiver] quand le download du m-retrieve-conf est
+     * terminé. Parse le PDU téléchargé et insère la ligne MMS + ses parts dans
+     * content://mms (inbox), puis notifie Dart pour rafraîchir la conversation.
+     */
+    suspend fun ingestDownloadedMms(
+        context: Context,
+        pduPath: String,
+        from: String?,
+    ): Boolean = withContext(Dispatchers.IO) {
+        try {
+            val file = File(pduPath)
+            if (!file.exists() || file.length() == 0L) {
+                Log.e(TAG, "ingestDownloadedMms: PDU vide/absent ($pduPath)")
+                return@withContext false
+            }
+            val pdu = file.readBytes()
+            val retrieved = MmsRetrieveParser.parse(pdu)
+            if (retrieved == null) {
+                Log.e(TAG, "ingestDownloadedMms: m-retrieve-conf illisible")
+                return@withContext false
+            }
+            val sender = retrieved.from ?: from
+            val (mmsId, threadId) = insertRetrievedMms(context, retrieved, sender)
+            file.delete()
+            if (mmsId > 0) {
+                Log.i(TAG, "MMS entrant ingéré mmsId=$mmsId thread=$threadId from=$sender")
+                // Notifie Dart : un MMS est désormais lisible dans le provider.
+                onMmsReceived?.invoke(
+                    mapOf(
+                        "mimeType" to "application/vnd.wap.mms-message",
+                        "date" to System.currentTimeMillis(),
+                        "from" to (sender ?: ""),
+                    )
+                )
+                // Notification système (même chemin que les SMS). Snippet = texte
+                // du MMS s'il y en a, sinon un libellé média.
+                val cleanSender = sender?.substringBefore('/')?.trim()
+                if (threadId > 0L && !cleanSender.isNullOrBlank()) {
+                    runCatching {
+                        val textPart = retrieved.parts
+                            .firstOrNull { it.contentType.startsWith("text/") }
+                            ?.let { String(it.data, Charsets.UTF_8).trim() }
+                        val hasImage = retrieved.parts.any { it.contentType.startsWith("image/") }
+                        val hasVideo = retrieved.parts.any { it.contentType.startsWith("video/") }
+                        val snippet = when {
+                            !textPart.isNullOrBlank() -> textPart
+                            hasVideo -> "🎥 Vidéo"
+                            hasImage -> "📷 Photo"
+                            else -> "📎 Pièce jointe"
+                        }
+                        // Résout la 1re image du MMS vers un fichier cache pour la
+                        // preview inline dans la notification.
+                        var imagePath: String? = null
+                        var imageMime: String? = null
+                        val imgPartId = firstMmsImagePartId(context, mmsId)
+                        if (imgPartId > 0) {
+                            imagePath = loadMmsPart(context, imgPartId)
+                            imageMime = mmsPartMime(context, imgPartId)
+                        }
+                        val info = lookupContact(context, cleanSender)
+                        SmsNotifier.notifyIncoming(
+                            context = context,
+                            threadId = threadId,
+                            address = cleanSender,
+                            senderName = info.name?.takeIf { it.isNotBlank() } ?: cleanSender,
+                            body = snippet,
+                            photoPath = info.photoPath,
+                            timestamp = System.currentTimeMillis(),
+                            imagePath = imagePath,
+                            imageMime = imageMime,
+                        )
+                    }
+                }
+                true
+            } else {
+                false
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "ingestDownloadedMms failed: ${e.message}")
+            false
+        }
+    }
+
+    /**
+     * Insère un MMS reçu (m-retrieve-conf parsé) dans content://mms inbox + ses
+     * parts dans content://mms/part. Retourne Pair(mmsId, threadId), ou (-1, 0).
+     */
+    private fun insertRetrievedMms(
+        context: Context,
+        msg: MmsRetrieveParser.Retrieved,
+        sender: String?,
+    ): Pair<Long, Long> {
+        val resolver = context.contentResolver
+
+        // 0. THREAD_ID : sans lui, le MMS appartient à aucune conversation et
+        // n'apparaît nulle part (VOX charge par thread_id). On le dérive de
+        // l'adresse de l'expéditeur — getOrCreateThreadId crée/retrouve le thread
+        // exact de ce numéro, le même que celui affiché pour ses SMS.
+        val cleanSender = sender?.substringBefore('/')?.trim() // strip "/TYPE=PLMN"
+        val threadId = if (!cleanSender.isNullOrBlank()) {
+            try {
+                Telephony.Threads.getOrCreateThreadId(context, cleanSender)
+            } catch (e: Exception) {
+                Log.w(TAG, "insertRetrievedMms: getOrCreateThreadId échoué: ${e.message}")
+                0L
+            }
+        } else {
+            0L
+        }
+
+        // 1. Ligne MMS dans l'inbox.
+        val values = ContentValues().apply {
+            put(Telephony.Mms.MESSAGE_TYPE, 132) // m-retrieve-conf
+            put(Telephony.Mms.MESSAGE_BOX, Telephony.Mms.MESSAGE_BOX_INBOX)
+            put(Telephony.Mms.DATE, System.currentTimeMillis() / 1000)
+            put(Telephony.Mms.READ, 0)
+            put(Telephony.Mms.SEEN, 0)
+            put(Telephony.Mms.SUBSCRIPTION_ID, defaultSubId(context))
+            if (threadId > 0L) put(Telephony.Mms.THREAD_ID, threadId)
+            msg.transactionId?.let { put(Telephony.Mms.TRANSACTION_ID, it) }
+            msg.messageId?.let { put(Telephony.Mms.MESSAGE_ID, it) }
+            put(Telephony.Mms.MMS_VERSION, 0x12)
+        }
+        val mmsUri = resolver.insert(Uri.parse("content://mms/inbox"), values)
+            ?: return -1L to 0L
+        val mmsId = ContentUris.parseId(mmsUri)
+
+        // 2. Parts — follows AOSP PduPersister.persistPart exactly (the way
+        // QKSMS/Signal do it). The crucial bit: DO NOT put MSG_ID in the insert
+        // values (the .../part URI already carries the message id) and DO NOT
+        // put TEXT for text parts at insert time. Putting MSG_ID in the values
+        // is what made the provider skip allocating the blob `_data` file, so
+        // openOutputStream then failed with "Column _data not found". For text
+        // we set TEXT via a follow-up update; for media we stream the bytes via
+        // openOutputStream on the returned part URI.
+        val partsUri = mmsUri.buildUpon().appendPath("part").build()
+        for ((index, part) in msg.parts.withIndex()) {
+            val contentType = part.contentType.substringBefore(';').trim()
+            // text parts AND application/smil are stored in the TEXT column,
+            // never as a binary blob (SMIL is the presentation layout, not a
+            // displayable attachment — trying to openOutputStream it just logged
+            // a spurious "_data not found").
+            val isText = contentType.startsWith("text/") ||
+                contentType == "application/smil"
+            val partValues = ContentValues().apply {
+                put(Telephony.Mms.Part.CHARSET, 106) // UTF-8
+                put(Telephony.Mms.Part.CONTENT_TYPE, contentType)
+                put(Telephony.Mms.Part.NAME, part.name)
+                put(Telephony.Mms.Part.FILENAME, part.name)
+                put(Telephony.Mms.Part.CONTENT_ID, "<${part.name}>")
+                put(Telephony.Mms.Part.CONTENT_LOCATION, part.name)
+                if (contentType == "application/smil") {
+                    put(Telephony.Mms.Part.SEQ, -1)
+                } else {
+                    put(Telephony.Mms.Part.SEQ, index)
+                }
+            }
+            val partUri = resolver.insert(partsUri, partValues)
+            if (partUri == null) {
+                Log.w(TAG, "insertRetrievedMms: insert part #$index échoué")
+                continue
+            }
+            if (isText) {
+                // Text body goes in the TEXT column via update (PduPersister does
+                // the same — never at insert time).
+                try {
+                    resolver.update(
+                        partUri,
+                        ContentValues().apply {
+                            put(
+                                Telephony.Mms.Part.TEXT,
+                                String(part.data, Charsets.UTF_8),
+                            )
+                        },
+                        null,
+                        null,
+                    )
+                } catch (e: Exception) {
+                    Log.w(TAG, "insertRetrievedMms: update TEXT part #$index échoué: ${e.message}")
+                }
+            } else {
+                // Media bytes. On stock AOSP openOutputStream(partUri) writes the
+                // provider blob (this is what PduPersister/QKSMS do). GrapheneOS
+                // hardens MmsProvider and can reject it with "Column _data not
+                // found"; in that case we write the bytes to a file we own and
+                // point the part's `_data` column at it.
+                val partId = ContentUris.parseId(partUri)
+                var wrote = false
+                try {
+                    resolver.openOutputStream(partUri)?.use { it.write(part.data) }
+                    wrote = true
+                    Log.i(TAG, "insertRetrievedMms: part #$index écrite via stream")
+                } catch (e: Exception) {
+                    Log.w(
+                        TAG,
+                        "insertRetrievedMms: stream part #$index échoué (${e.message}) → fallback _data",
+                    )
+                }
+                if (!wrote) {
+                    try {
+                        val dir = File(context.filesDir, "mms_parts_in").apply { mkdirs() }
+                        val blob = File(dir, "part_$partId${extensionForMime(contentType)}")
+                        FileOutputStream(blob).use { it.write(part.data) }
+                        val updated = resolver.update(
+                            partUri,
+                            ContentValues().apply { put("_data", blob.absolutePath) },
+                            null,
+                            null,
+                        )
+                        Log.i(
+                            TAG,
+                            "insertRetrievedMms: part #$index _data=${blob.absolutePath} (update=$updated)",
+                        )
+                    } catch (e: Exception) {
+                        Log.w(TAG, "insertRetrievedMms: fallback _data #$index échoué: ${e.message}")
+                    }
+                }
+            }
+        }
+
+        // 3. Adresse expéditeur (content://mms/<id>/addr).
+        if (!sender.isNullOrBlank()) {
+            val addrValues = ContentValues().apply {
+                put("address", sender)
+                put("type", 137) // FROM
+                put("charset", 106) // UTF-8
+                put("msg_id", mmsId)
+            }
+            try {
+                resolver.insert(Uri.parse("content://mms/$mmsId/addr"), addrValues)
+            } catch (e: Exception) {
+                Log.w(TAG, "insertRetrievedMms: insert addr échoué: ${e.message}")
+            }
+        }
+        return mmsId to threadId
+    }
+
+    private fun defaultSubId(context: Context): Int {
+        return try {
+            SubscriptionManager.getDefaultSmsSubscriptionId()
+        } catch (e: Exception) {
+            -1
         }
     }
 }

@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<paths>
+    <!-- cacheDir/mms_in : où le framework écrit le m-retrieve-conf téléchargé.
+         Exposé via FileProvider pour que SmsManager.downloadMultimediaMessage
+         puisse y écrire. -->
+    <cache-path name="mms_in" path="mms_in/" />
+    <cache-path name="mms_out" path="mms_out/" />
+    <!-- Parts MMS extraites (images) exposées pour la preview inline des notifs. -->
+    <cache-path name="mms_parts" path="mms_parts/" />
+</paths>
