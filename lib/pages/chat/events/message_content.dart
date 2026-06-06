@@ -9,6 +9,7 @@ import 'package:fluffychat/utils/adaptive_bottom_sheet.dart';
 import 'package:fluffychat/utils/date_time_extension.dart';
 import 'package:fluffychat/utils/matrix_sdk_extensions/matrix_locals.dart';
 import 'package:fluffychat/widgets/avatar.dart';
+import 'package:fluffychat/widgets/cyber/link_preview_card.dart';
 import 'package:fluffychat/widgets/matrix.dart';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
@@ -281,35 +282,58 @@ class MessageContent extends StatelessWidget {
             final bigEmotes =
                 !event.isRichMessage && bigEmojis.contains(event.body);
 
-            return Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-              child: HtmlMessage(
-                html: html,
-                textColor: effectiveTextColor,
-                room: event.room,
+            final previewUrl =
+                isNotice ? null : LinkPreviewCard.firstUrl(event.body);
+            final htmlWidget = HtmlMessage(
+              html: html,
+              textColor: effectiveTextColor,
+              room: event.room,
+              fontSize:
+                  AppSettings.fontSizeFactor.value *
+                  AppConfig.messageFontSize *
+                  (bigEmotes ? 5 : 1),
+              // Never truncate: show the full message inline instead of
+              // capping at 64 lines (upstream FluffyChat behaviour) and
+              // forcing the user to select it to read the rest.
+              limitHeight: false,
+              linkStyle: TextStyle(
+                color: linkColor,
                 fontSize:
                     AppSettings.fontSizeFactor.value *
-                    AppConfig.messageFontSize *
-                    (bigEmotes ? 5 : 1),
-                // Never truncate: show the full message inline instead of
-                // capping at 64 lines (upstream FluffyChat behaviour) and
-                // forcing the user to select it to read the rest.
-                limitHeight: false,
-                linkStyle: TextStyle(
-                  color: linkColor,
-                  fontSize:
-                      AppSettings.fontSizeFactor.value *
-                      AppConfig.messageFontSize,
-                  decoration: TextDecoration.underline,
-                  decorationColor: linkColor,
-                ),
-                onOpen: (url) => UrlLauncher(context, url.url).launchUrl(),
-                eventId: event.eventId,
-                checkboxCheckedEvents: event.aggregatedEvents(
-                  timeline,
-                  EventCheckboxRoomExtension.relationshipType,
-                ),
+                    AppConfig.messageFontSize,
+                decoration: TextDecoration.underline,
+                decorationColor: linkColor,
               ),
+              onOpen: (url) => UrlLauncher(context, url.url).launchUrl(),
+              eventId: event.eventId,
+              checkboxCheckedEvents: event.aggregatedEvents(
+                timeline,
+                EventCheckboxRoomExtension.relationshipType,
+              ),
+            );
+            return Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+              // No preview → return the HtmlMessage alone (wrapping it in a
+              // Column changes the Text.rich intrinsic width and produced layout
+              // artefacts). Only wrap when there's actually a preview to stack.
+              child: previewUrl == null
+                  ? htmlWidget
+                  : Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        htmlWidget,
+                        Padding(
+                          padding: const EdgeInsets.only(top: 6),
+                          child: LinkPreviewCard(
+                            key: ValueKey('preview_$previewUrl'),
+                            url: previewUrl,
+                            onOpen: () =>
+                                UrlLauncher(context, previewUrl).launchUrl(),
+                          ),
+                        ),
+                      ],
+                    ),
             );
         }
       case PollEventContent.startType:
