@@ -1,7 +1,9 @@
 import 'dart:async';
 
+import 'package:fluffychat/config/setting_keys.dart';
 import 'package:fluffychat/config/themes.dart';
 import 'package:fluffychat/l10n/l10n.dart';
+import 'package:fluffychat/utils/biometric_auth.dart';
 import 'package:fluffychat/widgets/app_lock.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -17,7 +19,29 @@ class _LockScreenState extends State<LockScreen> {
   String? _errorText;
   int _coolDownSeconds = 5;
   bool _inputBlocked = false;
+  bool _biometricAvailable = false;
   final TextEditingController _textEditingController = TextEditingController();
+
+  @override
+  void initState() {
+    super.initState();
+    _maybeBiometric();
+  }
+
+  Future<void> _maybeBiometric() async {
+    if (!AppSettings.appLockBiometric.value) return;
+    final available = await BiometricAuth.instance.isAvailable;
+    if (!mounted) return;
+    setState(() => _biometricAvailable = available);
+    if (available) _promptBiometric();
+  }
+
+  Future<void> _promptBiometric() async {
+    final ok = await BiometricAuth.instance
+        .authenticate(L10n.of(context).appLock);
+    if (!mounted) return;
+    if (ok) AppLock.of(context).unlockDirectly();
+  }
 
   Future<void> tryUnlock(String text) async {
     text = text.trim();
@@ -105,6 +129,18 @@ class _LockScreenState extends State<LockScreen> {
                     const Padding(
                       padding: EdgeInsets.all(8.0),
                       child: LinearProgressIndicator(),
+                    ),
+                  if (_biometricAvailable)
+                    Padding(
+                      padding: const EdgeInsets.only(top: 24),
+                      child: Center(
+                        child: IconButton.filledTonal(
+                          iconSize: 32,
+                          onPressed: _inputBlocked ? null : _promptBiometric,
+                          tooltip: L10n.of(context).appLock,
+                          icon: const Icon(Icons.fingerprint),
+                        ),
+                      ),
                     ),
                 ],
               ),

@@ -6,10 +6,12 @@ import 'package:fluffychat/pages/chat/recording_view_model.dart';
 import 'package:fluffychat/pages/chat/voice_record_button.dart';
 import 'package:fluffychat/pages/chat/voice_record_gesture_state.dart';
 import 'package:fluffychat/pages/chat/voice_recording_overlay.dart';
+import 'package:fluffychat/utils/ephemeral/ephemeral_messages.dart';
 import 'package:fluffychat/utils/other_party_can_receive.dart';
 import 'package:fluffychat/utils/platform_infos.dart';
 import 'package:fluffychat/utils/scheduled/scheduled_messages.dart';
 import 'package:fluffychat/widgets/avatar.dart';
+import 'package:fluffychat/widgets/cyber/ephemeral_picker.dart';
 import 'package:fluffychat/widgets/cyber/scheduled_send.dart';
 import 'package:fluffychat/widgets/matrix.dart';
 import 'package:flutter/material.dart';
@@ -294,6 +296,20 @@ class _ChatInputRowState extends State<ChatInputRow> {
                             contentPadding: const EdgeInsets.all(0),
                           ),
                         ),
+                        PopupMenuItem(
+                          value: AddPopupMenuActions.ephemeral,
+                          child: ListTile(
+                            leading: CircleAvatar(
+                              backgroundColor:
+                                  theme.colorScheme.onPrimaryContainer,
+                              foregroundColor:
+                                  theme.colorScheme.primaryContainer,
+                              child: const Icon(Icons.timer_outlined),
+                            ),
+                            title: Text(L10n.of(context).ephemeralMessages),
+                            contentPadding: const EdgeInsets.all(0),
+                          ),
+                        ),
                       ],
                     ),
                   ),
@@ -368,6 +384,7 @@ class _ChatInputRowState extends State<ChatInputRow> {
                       alignment: Alignment.center,
                       child: _ChatAccountPicker(controller),
                     ),
+                  _EphemeralIndicator(controller: controller),
                   Expanded(
                     child: Padding(
                       padding: const EdgeInsets.symmetric(vertical: 2.0),
@@ -447,6 +464,93 @@ class _ChatInputRowState extends State<ChatInputRow> {
                   ),
                 ],
         );
+  }
+}
+
+/// Compact timer chip shown in the composer when disappearing messages are
+/// active for the room (or a per-message override is armed). Tapping it sets a
+/// one-shot override for the next message; long-pressing edits the room policy.
+class _EphemeralIndicator extends StatelessWidget {
+  final ChatController controller;
+  const _EphemeralIndicator({required this.controller});
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedBuilder(
+      animation: EphemeralMessages.instance,
+      builder: (context, _) {
+        final policy =
+            EphemeralMessages.instance.policyFor(controller.room.id);
+        final override = controller.pendingEphemeralOverride;
+        final effective = override ?? policy;
+        if (!effective.isActive) return const SizedBox.shrink();
+        final theme = Theme.of(context);
+        return Padding(
+          padding: const EdgeInsets.only(bottom: 8.0),
+          child: Tooltip(
+            message: EphemeralPicker.label(context, effective),
+            child: InkResponse(
+              onTap: controller.editEphemeralOverride,
+              onLongPress: controller.editEphemeralPolicy,
+              radius: 22,
+              child: Container(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 8,
+                  vertical: 4,
+                ),
+                decoration: BoxDecoration(
+                  color: theme.bubbleColor.withValues(
+                    alpha: override != null ? 0.30 : 0.18,
+                  ),
+                  borderRadius: BorderRadius.circular(999),
+                  border: Border.all(
+                    color: theme.bubbleColor.withValues(alpha: 0.5),
+                  ),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(
+                      Icons.timer,
+                      size: 14,
+                      color: theme.bubbleColor,
+                    ),
+                    const SizedBox(width: 3),
+                    Text(
+                      _shortLabel(context, effective),
+                      style: TextStyle(
+                        fontSize: 11,
+                        fontWeight: FontWeight.w600,
+                        color: theme.bubbleColor,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  String _shortLabel(BuildContext context, EphemeralDuration d) {
+    switch (d) {
+      case EphemeralDuration.off:
+        return '';
+      case EphemeralDuration.afterRead:
+        return '👁';
+      case EphemeralDuration.seconds30:
+        return '30s';
+      case EphemeralDuration.minutes5:
+        return '5m';
+      case EphemeralDuration.hour1:
+        return '1h';
+      case EphemeralDuration.day1:
+        return '1j';
+      case EphemeralDuration.week1:
+        return '1sem';
+    }
   }
 }
 

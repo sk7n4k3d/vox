@@ -1,3 +1,4 @@
+import 'package:fluffychat/utils/conversation_lock.dart';
 import 'package:fluffychat/widgets/lock_screen.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
@@ -50,11 +51,14 @@ class AppLock extends State<AppLockWidget> with WidgetsBindingObserver {
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
-    if (isActive &&
-        state == AppLifecycleState.hidden &&
-        !_isLocked &&
-        isActive) {
-      showLockScreen();
+    if (state == AppLifecycleState.hidden) {
+      // Re-lock per-conversation locks on backgrounding regardless of whether
+      // the app-wide PIN is configured — otherwise an unlocked sensitive chat
+      // would stay readable after the app is backgrounded.
+      ConversationLock.instance.relock();
+      if (isActive && !_isLocked) {
+        showLockScreen();
+      }
     }
   }
 
@@ -79,9 +83,22 @@ class AppLock extends State<AppLockWidget> with WidgetsBindingObserver {
     return isCorrect;
   }
 
-  void showLockScreen() => setState(() {
-    _isLocked = true;
-  });
+  /// Unlocks the app without a PIN (used after a successful biometric auth).
+  void unlockDirectly() {
+    if (!mounted) return;
+    setState(() {
+      _isLocked = false;
+    });
+  }
+
+  void showLockScreen() {
+    // Engaging the app lock also re-locks every per-conversation lock so an
+    // unlocked sensitive chat can't be peeked at after the app re-locks.
+    ConversationLock.instance.relock();
+    setState(() {
+      _isLocked = true;
+    });
+  }
 
   Future<T> pauseWhile<T>(Future<T> future) async {
     _paused = true;

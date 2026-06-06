@@ -14,6 +14,7 @@ import 'package:fluffychat/pages/chat/event_info_dialog.dart';
 import 'package:fluffychat/pages/chat/start_poll_bottom_sheet.dart';
 import 'package:fluffychat/pages/chat_details/chat_details.dart';
 import 'package:fluffychat/utils/adaptive_bottom_sheet.dart';
+import 'package:fluffychat/utils/ephemeral/ephemeral_messages.dart';
 import 'package:fluffychat/utils/error_reporter.dart';
 import 'package:fluffychat/utils/file_selector.dart';
 import 'package:fluffychat/utils/matrix_sdk_extensions/event_extension.dart';
@@ -25,6 +26,7 @@ import 'package:fluffychat/utils/show_scaffold_dialog.dart';
 import 'package:fluffychat/widgets/adaptive_dialogs/show_modal_action_popup.dart';
 import 'package:fluffychat/widgets/adaptive_dialogs/show_ok_cancel_alert_dialog.dart';
 import 'package:fluffychat/widgets/adaptive_dialogs/show_text_input_dialog.dart';
+import 'package:fluffychat/widgets/cyber/ephemeral_picker.dart';
 import 'package:fluffychat/widgets/future_loading_dialog.dart';
 import 'package:fluffychat/widgets/matrix.dart';
 import 'package:fluffychat/widgets/share_scaffold_dialog.dart';
@@ -159,6 +161,16 @@ class ChatController extends State<ChatPageWithRoom>
   Event? replyEvent;
 
   Event? editEvent;
+
+  /// Per-message disappearing override, consumed on the next send. When null,
+  /// the conversation-level ephemeral policy (if any) applies instead.
+  EphemeralDuration? _pendingEphemeralOverride;
+
+  EphemeralDuration? get pendingEphemeralOverride => _pendingEphemeralOverride;
+
+  void setEphemeralOverride(EphemeralDuration? duration) {
+    setState(() => _pendingEphemeralOverride = duration);
+  }
 
   bool _scrolledUp = false;
 
@@ -616,14 +628,32 @@ class ChatController extends State<ChatPageWithRoom>
       parseCommands = false;
     }
 
-    // ignore: unawaited_futures
-    room.sendTextEvent(
+    final ephemeralActive =
+        EphemeralMessages.instance.isActiveFor(roomId) ||
+        _pendingEphemeralOverride != null;
+    final sendFuture = room.sendTextEvent(
       sendController.text,
       inReplyTo: replyEvent,
       editEventId: editEvent?.eventId,
       parseCommands: parseCommands,
       threadRootEventId: activeThreadId,
     );
+    if (ephemeralActive) {
+      final override = _pendingEphemeralOverride;
+      // Capture the event id once the send resolves, then arm its expiry.
+      // ignore: unawaited_futures
+      sendFuture.then((eventId) {
+        if (eventId != null) {
+          EphemeralMessages.instance.trackMatrixMessage(
+            roomId,
+            eventId,
+            explicit: override,
+          );
+        }
+      });
+      // One-shot per-message override consumed on send.
+      _pendingEphemeralOverride = null;
+    }
     sendController.value = TextEditingValue(
       text: pendingText,
       selection: const TextSelection.collapsed(offset: 0),
@@ -1237,7 +1267,34 @@ class ChatController extends State<ChatPageWithRoom>
       case AddPopupMenuActions.location:
         sendLocationAction();
         return;
+      case AddPopupMenuActions.ephemeral:
+        editEphemeralPolicy();
+        return;
     }
+  }
+
+  /// Opens the disappearing-message picker for this conversation and stores the
+  /// chosen default duration.
+  Future<void> editEphemeralPolicy() async {
+    final current = EphemeralMessages.instance.policyFor(roomId);
+    final chosen = await EphemeralPicker.show(context, current: current);
+    if (chosen == null || !mounted) return;
+    await EphemeralMessages.instance.setPolicy(roomId, chosen);
+    setState(() {});
+  }
+
+  /// Opens the picker as a one-shot override for the next message only.
+  Future<void> editEphemeralOverride() async {
+    final current =
+        _pendingEphemeralOverride ?? EphemeralMessages.instance.policyFor(roomId);
+    final chosen = await EphemeralPicker.show(
+      context,
+      current: current,
+      perMessage: true,
+    );
+    if (chosen == null || !mounted) return;
+    setState(() => _pendingEphemeralOverride =
+        chosen == EphemeralDuration.off ? null : chosen);
   }
 
   Future<void> unpinEvent(String eventId) async {
@@ -1440,4 +1497,5 @@ enum AddPopupMenuActions {
   photoCamera,
   videoCamera,
   location,
+  ephemeral,
 }

@@ -94,7 +94,7 @@ class SettingsSecurityView extends StatelessWidget {
                         context.go('/rooms/settings/security/ignorelist'),
                   ),
                   if (Matrix.of(context).client.encryption != null) ...{
-                    if (PlatformInfos.isMobile)
+                    if (PlatformInfos.isMobile) ...[
                       CyberSettingsTile(
                         icon: Icons.lock_clock_outlined,
                         accent: cyber.success,
@@ -102,6 +102,13 @@ class SettingsSecurityView extends StatelessWidget {
                         subtitle: L10n.of(context).appLockDescription,
                         onTap: controller.setAppLockAction,
                       ),
+                      SettingsSwitchListTile.adaptive(
+                        title: L10n.of(context).appLockBiometric,
+                        subtitle:
+                            L10n.of(context).appLockBiometricDescription,
+                        setting: AppSettings.appLockBiometric,
+                      ),
+                    ],
                   },
                   Divider(color: cyber.glassBorder),
                   reduceMotion

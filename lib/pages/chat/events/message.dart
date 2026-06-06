@@ -13,6 +13,7 @@ import 'package:fluffychat/utils/date_time_extension.dart';
 import 'package:fluffychat/utils/file_description.dart';
 import 'package:fluffychat/utils/matrix_sdk_extensions/matrix_locals.dart';
 import 'package:fluffychat/widgets/avatar.dart';
+import 'package:fluffychat/widgets/cyber/chat_bubble_skin.dart';
 import 'package:fluffychat/widgets/matrix.dart';
 import 'package:fluffychat/widgets/member_actions_popup_menu_button.dart';
 import 'package:flutter/material.dart';
@@ -109,7 +110,6 @@ class Message extends StatelessWidget {
     final ownMessage = event.senderId == client.userID;
     final alignment = ownMessage ? Alignment.topRight : Alignment.topLeft;
 
-    var color = theme.colorScheme.surfaceContainerHigh;
     final displayTime =
         event.type == EventTypes.RoomCreate ||
         nextEvent == null ||
@@ -169,12 +169,6 @@ class Message extends StatelessWidget {
         }.contains(event.messageType) &&
         event.fileDescription == null &&
         !event.redacted);
-
-    if (ownMessage) {
-      color = displayEvent.status.isError
-          ? Colors.redAccent
-          : theme.bubbleColor;
-    }
 
     final sentReactions = <String>{};
     if (singleSelected) {
@@ -236,59 +230,24 @@ class Message extends StatelessWidget {
     /// gradient with a soft cyan glow ; inbound bubbles get a subtle violet
     /// 0.5px border. Media bubbles ([noBubble]) keep their original empty
     /// container — only the wrapper changes.
+    // Gradient + glow only when there's an actual surface to color. Kept here
+    // (in addition to inside ChatBubbleSkin) because BubbleBackground's `ignore`
+    // flag below depends on the same condition.
+    final useOwnGradient =
+        ownMessage && !noBubble && !displayEvent.status.isError &&
+            cyber != null && !MediaQuery.highContrastOf(context);
+
     Widget buildBubbleVisual({Key? key}) {
-      // Gradient + glow only when there's an actual surface to color.
-      final useOwnGradient =
-          ownMessage && !noBubble && !displayEvent.status.isError &&
-              cyber != null && !MediaQuery.highContrastOf(context);
-
-      final BoxDecoration decoration;
-      if (noBubble) {
-        decoration = BoxDecoration(
-          color: Colors.transparent,
-          borderRadius: borderRadius,
-        );
-      } else if (useOwnGradient) {
-        final c = cyber;
-        decoration = BoxDecoration(
-          gradient: LinearGradient(
-            begin: Alignment.topLeft,
-            end: Alignment.bottomRight,
-            colors: [
-              c.cyan.withValues(alpha: 0.35),
-              c.magenta.withValues(alpha: 0.30),
-            ],
-          ),
-          borderRadius: borderRadius,
-          border: Border.all(
-            color: c.cyan.withValues(alpha: 0.45),
-            width: 0.75,
-          ),
-          boxShadow: [
-            BoxShadow(
-              color: c.cyan.withValues(alpha: 0.18),
-              blurRadius: 14,
-              spreadRadius: -2,
-            ),
-          ],
-        );
-      } else {
-        decoration = BoxDecoration(
-          color: color,
-          borderRadius: borderRadius,
-          border: !ownMessage && cyber != null
-              ? Border.all(
-                  color: cyber.violet.withValues(alpha: 0.45),
-                  width: 0.5,
-                )
-              : null,
-        );
-      }
-
-      return Container(
+      // The bubble surface is now the shared [ChatBubbleSkin] so Matrix and SMS
+      // bubbles are identical by construction.
+      return ChatBubbleSkin(
         key: key,
-        decoration: decoration,
-        clipBehavior: Clip.antiAlias,
+        ownMessage: ownMessage,
+        isError: displayEvent.status.isError,
+        noBubble: noBubble,
+        // tail geometry: same-sender grouping squares the joined corners.
+        sameSenderBefore: previousEventSameSender,
+        sameSenderAfter: nextEventSameSender,
         child: BubbleBackground(
           colors: colors,
           // Skip the legacy parallax gradient when our V3 gradient already
