@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -55,12 +56,45 @@ class SmsBridge {
     _archiveChanges.add(null);
   }
 
-  /// Broadcast stream of incoming SMS (only fires while VOX is the default
-  /// SMS app — that's an Android constraint, not a bug).
-  Stream<SmsIncoming> get incoming => _incoming ??= _events
+  /// Raw broadcast of every native event (incoming SMS/MMS + open-conversation
+  /// requests from notification taps). Parsed into typed streams below.
+  Stream<Map<String, dynamic>> get _rawEvents => _rawEventsStream ??= _events
       .receiveBroadcastStream()
-      .map((e) => SmsIncoming.fromMap(Map<String, dynamic>.from(e as Map)))
+      .map((e) => Map<String, dynamic>.from(e as Map))
+      .handleError((Object e, StackTrace s) {
+        debugPrint('SMS event parse error: $e');
+      })
       .asBroadcastStream();
+  Stream<Map<String, dynamic>>? _rawEventsStream;
+
+  /// Broadcast stream of incoming SMS/MMS (only fires while VOX is the default
+  /// SMS app — that's an Android constraint, not a bug). Excludes
+  /// open-conversation events.
+  Stream<SmsIncoming> get incoming => _incoming ??= _rawEvents
+      .where((m) => m['kind'] != 'open_conversation')
+      .map(SmsIncoming.fromMap)
+      .asBroadcastStream();
+
+  /// Fires when the user taps an SMS notification (or its Voice action). Carries
+  /// the thread/address to open and whether to start voice dictation.
+  Stream<SmsOpenRequest> get openRequests => _openRequests ??= _rawEvents
+      .where((m) => m['kind'] == 'open_conversation')
+      .map(SmsOpenRequest.fromMap)
+      .asBroadcastStream();
+  Stream<SmsOpenRequest>? _openRequests;
+
+  /// Consumes a pending open-conversation intent captured before Flutter was
+  /// listening (cold start from a notification tap). Returns null if none.
+  Future<SmsOpenRequest?> takePendingOpenRequest() async {
+    try {
+      final m = await _channel
+          .invokeMethod<Map<dynamic, dynamic>>('getPendingSmsIntent');
+      if (m == null) return null;
+      return SmsOpenRequest.fromMap(Map<String, dynamic>.from(m));
+    } on PlatformException {
+      return null;
+    }
+  }
 
   Future<bool> isDefaultSmsApp() async {
     try {
@@ -132,6 +166,30 @@ class SmsBridge {
     }
   }
 
+  /// Removes the rich notification for [threadId] (called when the user opens
+  /// or reads the conversation).
+  Future<void> cancelNotification(String threadId) async {
+    try {
+      await _channel.invokeMethod<void>('cancelSmsNotification', {
+        'threadId': threadId,
+      });
+    } on PlatformException {
+      // best-effort
+    }
+  }
+
+  /// Tells the native notifier which thread is currently on screen (or null to
+  /// clear) so it won't notify a conversation the user is already looking at.
+  Future<void> setActiveThread(String? threadId) async {
+    try {
+      await _channel.invokeMethod<void>('setActiveSmsThread', {
+        'threadId': threadId,
+      });
+    } on PlatformException {
+      // best-effort
+    }
+  }
+
   /// Deletes a single SMS or MMS message by its provider id.
   Future<int> deleteMessage(int id, {required bool isMms}) async {
     try {
@@ -147,9 +205,13 @@ class SmsBridge {
 
   /// Deletes a whole conversation (all SMS + MMS) by thread id.
   Future<int> deleteConversation(String threadId) async {
+    // Guard against a non-numeric threadId producing a `0` fallback, which on
+    // the native side could match unrelated rows. Send the raw String and let
+    // the native longArg() validate it.
+    if (int.tryParse(threadId) == null) return 0;
     try {
       return await _channel.invokeMethod<int>('deleteConversation', {
-            'threadId': int.tryParse(threadId) ?? 0,
+            'threadId': threadId,
           }) ??
           0;
     } on PlatformException {
@@ -201,6 +263,13 @@ class SmsAttachment {
       );
 
   bool get isImage => mimeType.startsWith('image/');
+  bool get isVideo => mimeType.startsWith('video/');
+  bool get isAudio => mimeType.startsWith('audio/');
+  bool get isVcard =>
+      mimeType.contains('vcard') || mimeType.contains('x-vcard');
+
+  /// True for media we render visually inline (image or video thumbnail).
+  bool get isVisualMedia => isImage || isVideo;
 }
 
 class SmsConversation {
@@ -211,6 +280,12 @@ class SmsConversation {
   final int date;
   final int unreadCount;
 
+  /// Local file path of the contact's photo thumbnail (written to cache by the
+  /// native layer), or null (no contact / no photo / READ_CONTACTS denied).
+  /// A raw content:// URI isn't directly loadable by Flutter, so the native
+  /// side extracts the bytes to a file we can show with Image.file.
+  final String? photoPath;
+
   const SmsConversation({
     required this.threadId,
     required this.address,
@@ -218,6 +293,7 @@ class SmsConversation {
     required this.snippet,
     required this.date,
     required this.unreadCount,
+    this.photoPath,
   });
 
   factory SmsConversation.fromMap(Map<String, dynamic> m) => SmsConversation(
@@ -227,6 +303,7 @@ class SmsConversation {
         snippet: '${m['snippet'] ?? ''}',
         date: (m['date'] as num?)?.toInt() ?? 0,
         unreadCount: (m['unreadCount'] as num?)?.toInt() ?? 0,
+        photoPath: m['photoPath'] as String?,
       );
 
   String get title => displayName?.isNotEmpty == true ? displayName! : address;
@@ -274,6 +351,17 @@ class SmsMessage {
 
   List<SmsAttachment> get images =>
       attachments.where((a) => a.isImage).toList();
+
+  List<SmsAttachment> get videos =>
+      attachments.where((a) => a.isVideo).toList();
+
+  /// Images + videos, in attachment order — what the bubble renders visually.
+  List<SmsAttachment> get visualMedia =>
+      attachments.where((a) => a.isVisualMedia).toList();
+
+  /// Non-visual attachments (audio, vCard, anything else) shown as file chips.
+  List<SmsAttachment> get otherFiles =>
+      attachments.where((a) => !a.isVisualMedia).toList();
 }
 
 class SmsIncoming {
@@ -284,12 +372,19 @@ class SmsIncoming {
   final int date;
   final String threadId;
 
+  /// Provider rowId of the just-inserted message, or -1 when unknown (MMS:
+  /// the body is downloaded asynchronously by the system, so no id is available
+  /// at WAP-push time). Used to arm a disappearing-message expiry on a *received*
+  /// SMS.
+  final int messageId;
+
   const SmsIncoming({
     required this.kind,
     required this.address,
     required this.body,
     required this.date,
     required this.threadId,
+    this.messageId = -1,
   });
 
   factory SmsIncoming.fromMap(Map<String, dynamic> m) => SmsIncoming(
@@ -298,7 +393,34 @@ class SmsIncoming {
         body: '${m['body'] ?? ''}',
         date: (m['date'] as num?)?.toInt() ?? 0,
         threadId: '${m['threadId'] ?? ''}',
+        messageId: (m['messageId'] as num?)?.toInt() ?? -1,
       );
 
   bool get isMms => kind == 'mms';
+
+  /// True when [messageId] is a real provider rowId we can target for deletion.
+  bool get hasMessageId => messageId > 0;
+}
+
+/// A request to open a conversation, emitted when the user taps an SMS
+/// notification (or its Voice action).
+class SmsOpenRequest {
+  final String threadId;
+  final String address;
+  final bool voiceReply;
+
+  const SmsOpenRequest({
+    required this.threadId,
+    required this.address,
+    required this.voiceReply,
+  });
+
+  factory SmsOpenRequest.fromMap(Map<String, dynamic> m) => SmsOpenRequest(
+        threadId: '${(m['threadId'] as num?)?.toInt() ?? -1}',
+        address: '${m['address'] ?? ''}',
+        voiceReply: m['voiceReply'] == true,
+      );
+
+  bool get isValid =>
+      (int.tryParse(threadId) ?? -1) > 0 || address.isNotEmpty;
 }

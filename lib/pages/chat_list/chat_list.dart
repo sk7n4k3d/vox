@@ -6,6 +6,8 @@ import 'package:fluffychat/config/app_config.dart';
 import 'package:fluffychat/l10n/l10n.dart';
 import 'package:fluffychat/pages/chat_list/chat_list_view.dart';
 import 'package:fluffychat/pages/sms_chat/sms_chat_page.dart';
+import 'package:fluffychat/utils/conversation_lock.dart';
+import 'package:fluffychat/utils/ephemeral/ephemeral_messages.dart';
 import 'package:fluffychat/utils/localized_exception_extension.dart';
 import 'package:fluffychat/utils/matrix_sdk_extensions/matrix_locals.dart';
 import 'package:fluffychat/utils/platform_infos.dart';
@@ -17,6 +19,7 @@ import 'package:fluffychat/widgets/adaptive_dialogs/show_modal_action_popup.dart
 import 'package:fluffychat/widgets/adaptive_dialogs/show_ok_cancel_alert_dialog.dart';
 import 'package:fluffychat/widgets/adaptive_dialogs/show_text_input_dialog.dart';
 import 'package:fluffychat/widgets/avatar.dart';
+import 'package:fluffychat/widgets/cyber/ephemeral_picker.dart';
 import 'package:fluffychat/widgets/future_loading_dialog.dart';
 import 'package:fluffychat/widgets/share_scaffold_dialog.dart';
 import 'package:flutter/material.dart';
@@ -126,7 +129,38 @@ class ChatListController extends State<ChatList>
       return;
     }
 
+    // Per-conversation lock gate: a hidden (locked + not yet unlocked this
+    // session) room must pass biometric/PIN auth before it opens.
+    if (!await _gateConversation(room.id)) return;
+
     context.go('/rooms/${room.id}');
+  }
+
+  /// Prompts for biometric/PIN if [id] is a hidden locked conversation.
+  /// Returns true when the conversation may be opened (not locked, already
+  /// unlocked this session, or the user just authenticated).
+  Future<bool> _gateConversation(String id) async {
+    if (!ConversationLock.instance.isHidden(id)) return true;
+    return ConversationLock.instance.authenticate(
+      id,
+      L10n.of(context).appLock,
+    );
+  }
+
+  /// Toggles the per-conversation lock for [id]. Locking is immediate;
+  /// unlocking permanently requires passing biometric/PIN first.
+  Future<void> _toggleConversationLock(String id) async {
+    final lock = ConversationLock.instance;
+    if (lock.isLocked(id)) {
+      // Must authenticate before removing the lock so a found-unlocked phone
+      // can't silently strip protection.
+      final ok = await lock.authenticate(id, L10n.of(context).appLock);
+      if (!ok) return;
+      await lock.unlockPermanently(id);
+    } else {
+      await lock.lock(id);
+    }
+    if (mounted) setState(() {});
   }
 
   bool Function(Room) getRoomFilterByActiveFilter(ActiveFilter activeFilter) {
@@ -152,20 +186,53 @@ class ChatListController extends State<ChatList>
   /// SMS app). Loaded natively via [SmsBridge]; refreshed on each incoming SMS.
   List<SmsConversation> smsConversations = const [];
   StreamSubscription<SmsIncoming>? _smsSub;
+  StreamSubscription<SmsOpenRequest>? _smsOpenSub;
+  Timer? _smsReloadDebounce;
 
   Future<void> _loadSmsConversations() async {
-    if (!await SmsBridge.instance.isDefaultSmsApp()) return;
+    if (!await SmsBridge.instance.isDefaultSmsApp()) {
+      // Lost (or never had) the default-SMS role: clear any stale SMS rows so
+      // the list doesn't keep showing dead conversations.
+      if (mounted && smsConversations.isNotEmpty) {
+        setState(() => smsConversations = const []);
+      }
+      return;
+    }
     final convs = await SmsBridge.instance.listConversations();
     final archived = await SmsBridge.instance.archivedThreadIds();
     if (!mounted) return;
-    // Hide archived threads from the main list.
-    setState(() => smsConversations =
-        convs.where((c) => !archived.contains(c.threadId)).toList());
+    // Hide archived threads, and scrub the snippet/name of locked conversations
+    // *in the model* so sensitive content never reaches the widget tree (a blur
+    // alone is reversible and leaks via screenshots/inspector).
+    final visible = <SmsConversation>[];
+    for (final c in convs) {
+      if (archived.contains(c.threadId)) continue;
+      if (ConversationLock.instance.isHidden(ConversationLock.smsId(
+        c.threadId,
+      ))) {
+        visible.add(
+          SmsConversation(
+            threadId: c.threadId,
+            address: c.address,
+            displayName: null,
+            snippet: '',
+            date: c.date,
+            unreadCount: c.unreadCount,
+          ),
+        );
+      } else {
+        visible.add(c);
+      }
+    }
+    setState(() => smsConversations = visible);
   }
 
   /// Opens an SMS conversation in the dedicated [SmsChatPage], then refreshes
   /// the list on return (a deleted conversation must disappear).
   Future<void> onSmsTap(SmsConversation conv) async {
+    if (!await _gateConversation(ConversationLock.smsId(conv.threadId))) {
+      return;
+    }
     SmsBridge.instance.markRead(conv.threadId);
     await Navigator.of(context).push(
       MaterialPageRoute<void>(
@@ -173,6 +240,44 @@ class ChatListController extends State<ChatList>
           threadId: conv.threadId,
           address: conv.address,
           displayName: conv.displayName,
+          photoPath: conv.photoPath,
+        ),
+      ),
+    );
+    await _loadSmsConversations();
+  }
+
+  /// Opens an SMS conversation from a notification tap / Voice action. Resolves
+  /// the thread for the address when the threadId is unknown, passes the lock
+  /// gate, then pushes [SmsChatPage] (optionally starting voice dictation).
+  Future<void> openSmsFromIntent(SmsOpenRequest req) async {
+    if (!req.isValid || !mounted) return;
+    // Resolve a display name + canonical thread from the conversation list when
+    // possible (so the header shows the contact, not the raw number).
+    SmsConversation? match;
+    final reqThread = int.tryParse(req.threadId) ?? -1;
+    for (final c in smsConversations) {
+      if ((reqThread > 0 && c.threadId == req.threadId) ||
+          (req.address.isNotEmpty && c.address == req.address)) {
+        match = c;
+        break;
+      }
+    }
+    final threadId = match?.threadId ?? req.threadId;
+    final address = match?.address ?? req.address;
+    if ((int.tryParse(threadId) ?? -1) <= 0 && address.isEmpty) return;
+    if (!await _gateConversation(ConversationLock.smsId(threadId))) return;
+    SmsBridge.instance.markRead(threadId);
+    SmsBridge.instance.cancelNotification(threadId);
+    if (!mounted) return;
+    await Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => SmsChatPage(
+          threadId: threadId,
+          address: address,
+          displayName: match?.displayName,
+          photoPath: match?.photoPath,
+          startVoiceReply: req.voiceReply,
         ),
       ),
     );
@@ -189,6 +294,70 @@ class ChatListController extends State<ChatList>
   Future<void> deleteSms(SmsConversation conv) async {
     await SmsBridge.instance.deleteConversation(conv.threadId);
     await _loadSmsConversations();
+  }
+
+  /// Long-press menu for an SMS conversation: lock / archive / delete.
+  Future<void> smsContextAction(SmsConversation conv) async {
+    final id = ConversationLock.smsId(conv.threadId);
+    final locked = ConversationLock.instance.isLocked(id);
+    final action = await showModalActionPopup<String>(
+      context: context,
+      title: conv.title,
+      actions: [
+        AdaptiveModalAction(
+          value: 'lock',
+          label: locked
+              ? L10n.of(context).unlockConversation
+              : L10n.of(context).lockConversation,
+          icon: Icon(
+            locked ? Icons.lock_open_outlined : Icons.lock_outline,
+          ),
+        ),
+        AdaptiveModalAction(
+          value: 'ephemeral',
+          label: L10n.of(context).ephemeralMessages,
+          icon: const Icon(Icons.timer_outlined),
+        ),
+        AdaptiveModalAction(
+          value: 'archive',
+          label: L10n.of(context).archive,
+          icon: const Icon(Icons.archive_outlined),
+        ),
+        AdaptiveModalAction(
+          value: 'delete',
+          label: L10n.of(context).delete,
+          isDestructive: true,
+          icon: const Icon(Icons.delete_outlined),
+        ),
+      ],
+    );
+    if (action == null || !mounted) return;
+    switch (action) {
+      case 'lock':
+        await _toggleConversationLock(id);
+        return;
+      case 'ephemeral':
+        final convId = EphemeralMessages.smsConvId(conv.threadId);
+        final current = EphemeralMessages.instance.policyFor(convId);
+        final chosen = await EphemeralPicker.show(context, current: current);
+        if (chosen == null || !mounted) return;
+        await EphemeralMessages.instance.setPolicy(convId, chosen);
+        return;
+      case 'archive':
+        await archiveSms(conv);
+        return;
+      case 'delete':
+        final ok = await showOkCancelAlertDialog(
+          context: context,
+          title: L10n.of(context).delete,
+          message: L10n.of(context).areYouSure,
+          okLabel: L10n.of(context).delete,
+          cancelLabel: L10n.of(context).cancel,
+          isDestructive: true,
+        );
+        if (ok == OkCancelResult.ok) await deleteSms(conv);
+        return;
+    }
   }
 
   bool isSearchMode = false;
@@ -408,16 +577,43 @@ class ChatListController extends State<ChatList>
     scrollController.addListener(_onScroll);
     _waitForFirstSync();
     _loadSmsConversations();
+    // Coalesce incoming-SMS bursts (a multipart SMS arrives as N events) into a
+    // single reload so we don't re-query the whole provider N times in a row.
     _smsSub = SmsBridge.instance.incoming.listen((_) {
-      _loadSmsConversations();
+      _smsReloadDebounce?.cancel();
+      _smsReloadDebounce = Timer(
+        const Duration(milliseconds: 800),
+        _loadSmsConversations,
+      );
+    });
+    // Open-conversation requests from notification taps (app already running).
+    _smsOpenSub = SmsBridge.instance.openRequests.listen(openSmsFromIntent);
+    // And consume a request captured before we were listening (cold start from
+    // a notification tap), once the list has loaded.
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      final pending = await SmsBridge.instance.takePendingOpenRequest();
+      if (pending != null && mounted) {
+        // Let the SMS list load first so we can resolve the contact name.
+        await _loadSmsConversations();
+        if (mounted) await openSmsFromIntent(pending);
+      }
     });
     // Arm the local scheduled-message queue (schedule send) once we have a
     // logged-in client. Idempotent.
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) {
-        ScheduledMessages.instance.start(Matrix.of(context).client);
+        final client = Matrix.of(context).client;
+        ScheduledMessages.instance.start(client);
+        // Arm the disappearing-message expiry queue (redact Matrix / delete SMS
+        // at expiry). Idempotent.
+        EphemeralMessages.instance.start(client);
       }
     });
+    // Load the persisted set of per-conversation locks so the list can mask
+    // sensitive previews from the first paint, and rebuild whenever a lock
+    // toggles or the session re-locks so the mask updates instantly.
+    ConversationLock.instance.load();
+    ConversationLock.instance.addListener(_onConversationLockChanged);
     _hackyWebRTCFixForWeb();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) {
@@ -438,11 +634,18 @@ class ChatListController extends State<ChatList>
     super.initState();
   }
 
+  void _onConversationLockChanged() {
+    if (mounted) setState(() {});
+  }
+
   @override
   void dispose() {
     _intentDataStreamSubscription?.cancel();
     _intentFileStreamSubscription?.cancel();
     _smsSub?.cancel();
+    _smsOpenSub?.cancel();
+    _smsReloadDebounce?.cancel();
+    ConversationLock.instance.removeListener(_onConversationLockChanged);
     scrollController.removeListener(_onScroll);
     super.dispose();
   }
@@ -633,6 +836,25 @@ class ChatListController extends State<ChatList>
               ],
             ),
           ),
+          PopupMenuItem(
+            value: ChatContextAction.lock,
+            child: Row(
+              mainAxisSize: .min,
+              children: [
+                Icon(
+                  ConversationLock.instance.isLocked(room.id)
+                      ? Icons.lock_open_outlined
+                      : Icons.lock_outline,
+                ),
+                const SizedBox(width: 12),
+                Text(
+                  ConversationLock.instance.isLocked(room.id)
+                      ? L10n.of(context).unlockConversation
+                      : L10n.of(context).lockConversation,
+                ),
+              ],
+            ),
+          ),
           if (!room.isLowPriority)
             PopupMenuItem(
               value: ChatContextAction.favorite,
@@ -759,6 +981,9 @@ class ChatListController extends State<ChatList>
                 : PushRuleState.notify,
           ),
         );
+        return;
+      case ChatContextAction.lock:
+        await _toggleConversationLock(room.id);
         return;
       case ChatContextAction.block:
         final inviteEvent = room.getState(
@@ -1022,6 +1247,7 @@ enum ChatContextAction {
   lowPriority,
   markUnread,
   mute,
+  lock,
   leave,
   addToSpace,
   block,

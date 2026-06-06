@@ -225,9 +225,21 @@ class ChatListViewBody extends StatelessWidget {
                   builder: (context) {
                     // Merge Matrix rooms + native SMS conversations into one
                     // date-sorted layout (SMS only present when VOX is the
-                    // default SMS app, and not while searching).
+                    // default SMS app). While searching we keep the SMS that
+                    // match the query (by contact name, number or last-message
+                    // snippet) instead of hiding them all — so search spans
+                    // Matrix rooms AND SMS/MMS threads.
                     final sms = controller.isSearchMode
-                        ? const <SmsConversation>[]
+                        ? (filter.isEmpty
+                            ? const <SmsConversation>[]
+                            : controller.smsConversations.where((c) {
+                                final hay = [
+                                  c.displayName ?? '',
+                                  c.address,
+                                  c.snippet,
+                                ].join(' ').toLowerCase();
+                                return hay.contains(filter);
+                              }).toList())
                         : controller.smsConversations;
                     final entries = _ChatListSections.layout(rooms, sms);
                     return SliverList.builder(
@@ -295,6 +307,8 @@ class ChatListViewBody extends StatelessWidget {
                                 key: Key('sms_item_${sms.threadId}'),
                                 conversation: sms,
                                 onTap: () => controller.onSmsTap(sms),
+                                onLongPress: () =>
+                                    controller.smsContextAction(sms),
                               ),
                             ),
                           );
@@ -437,7 +451,11 @@ class _ChatListSections {
     final items = <({DateTime ts, Room? room, SmsConversation? sms})>[];
     for (final r in rooms) {
       items.add((
-        ts: r.lastEvent?.originServerTs ?? DateTime.now(),
+        // Stable fallback: a room with no lastEvent must keep a fixed sort key,
+        // not DateTime.now() (which advances every rebuild and makes the row
+        // jump to the top and reshuffle on each frame).
+        ts: r.lastEvent?.originServerTs ??
+            DateTime.fromMillisecondsSinceEpoch(0),
         room: r,
         sms: null,
       ));

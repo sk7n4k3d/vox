@@ -1,6 +1,9 @@
+import 'dart:ui';
+
 import 'package:fluffychat/config/app_config.dart';
 import 'package:fluffychat/config/cyberpunk_theme_extension.dart';
 import 'package:fluffychat/l10n/l10n.dart';
+import 'package:fluffychat/utils/conversation_lock.dart';
 import 'package:fluffychat/utils/matrix_sdk_extensions/matrix_locals.dart';
 import 'package:fluffychat/utils/room_status_extension.dart';
 import 'package:fluffychat/widgets/adaptive_dialogs/show_ok_cancel_alert_dialog.dart';
@@ -61,6 +64,9 @@ class ChatListItem extends StatelessWidget {
         lastEvent != null &&
         room.getState(EventTypes.RoomMember, lastEvent.senderId) == null;
     final space = this.space;
+    // Per-conversation lock: when hidden, mask name + preview so a sensitive
+    // chat reveals nothing in the list until it's unlocked this session.
+    final isHidden = ConversationLock.instance.isHidden(room.id);
 
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 1),
@@ -226,13 +232,35 @@ class ChatListItem extends StatelessWidget {
               ),
               title: Row(
                 children: <Widget>[
-                  Expanded(
-                    child: Text(
-                      displayname,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      softWrap: false,
+                  if (isHidden)
+                    Padding(
+                      padding: const EdgeInsets.only(right: 6.0),
+                      child: Icon(
+                        Icons.lock_outline,
+                        size: 15,
+                        color: theme.colorScheme.primary,
+                      ),
                     ),
+                  Expanded(
+                    child: isHidden
+                        ? ImageFiltered(
+                            imageFilter: ImageFilter.blur(
+                              sigmaX: 5,
+                              sigmaY: 5,
+                            ),
+                            child: Text(
+                              displayname,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              softWrap: false,
+                            ),
+                          )
+                        : Text(
+                            displayname,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            softWrap: false,
+                          ),
                   ),
                   if (isMuted)
                     const Padding(
@@ -334,7 +362,18 @@ class ChatListItem extends StatelessWidget {
                         : const SizedBox.shrink(),
                   ),
                   Expanded(
-                    child: room.isSpace && room.membership == Membership.join
+                    child: isHidden
+                        ? Text(
+                            '••• ${L10n.of(context).locked}',
+                            maxLines: 1,
+                            softWrap: false,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                              fontStyle: FontStyle.italic,
+                              color: theme.colorScheme.onSurfaceVariant,
+                            ),
+                          )
+                        : room.isSpace && room.membership == Membership.join
                         ? Text(
                             L10n.of(
                               context,

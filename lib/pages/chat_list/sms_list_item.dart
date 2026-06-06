@@ -1,5 +1,9 @@
+import 'dart:io';
+
 import 'package:fluffychat/config/cyberpunk_theme_extension.dart';
 import 'package:fluffychat/config/design_tokens.dart';
+import 'package:fluffychat/l10n/l10n.dart';
+import 'package:fluffychat/utils/conversation_lock.dart';
 import 'package:fluffychat/utils/sms/sms_bridge.dart';
 import 'package:flutter/material.dart';
 
@@ -10,10 +14,12 @@ import 'package:flutter/material.dart';
 class SmsListItem extends StatelessWidget {
   final SmsConversation conversation;
   final VoidCallback onTap;
+  final VoidCallback? onLongPress;
 
   const SmsListItem({
     required this.conversation,
     required this.onTap,
+    this.onLongPress,
     super.key,
   });
 
@@ -33,15 +39,23 @@ class SmsListItem extends StatelessWidget {
     final theme = Theme.of(context);
     final cyber =
         theme.extension<CyberpunkTheme>() ?? CyberpunkTheme.dark();
-    final title = conversation.title;
-    final initial =
-        title.trim().isEmpty ? '#' : title.trim()[0].toUpperCase();
+    final isHidden = ConversationLock.instance
+        .isHidden(ConversationLock.smsId(conversation.threadId));
+    // When locked, show a neutral placeholder instead of the real title — a
+    // blurred-but-real title is recoverable, and the address would still leak.
+    final title = isHidden
+        ? L10n.of(context).locked
+        : conversation.title;
+    final initial = isHidden
+        ? '#'
+        : (title.trim().isEmpty ? '#' : title.trim()[0].toUpperCase());
     final unread = conversation.unreadCount > 0;
 
     return Material(
       color: Colors.transparent,
       child: InkWell(
         onTap: onTap,
+        onLongPress: onLongPress,
         child: Padding(
           padding: const EdgeInsets.symmetric(
             horizontal: FluffySpacing.lg,
@@ -49,7 +63,9 @@ class SmsListItem extends StatelessWidget {
           ),
           child: Row(
             children: [
-              // Avatar disc with a violet ring to mark the SMS channel.
+              // Avatar disc with a violet ring to mark the SMS channel. Shows
+              // the real contact photo when available (and not locked), else a
+              // gradient initial.
               Container(
                 width: 54,
                 height: 54,
@@ -67,12 +83,31 @@ class SmsListItem extends StatelessWidget {
                     width: 1.5,
                   ),
                 ),
-                child: Text(
-                  initial,
-                  style: FluffyTypography.headlineM.copyWith(
-                    color: theme.colorScheme.onSurface,
-                  ),
-                ),
+                clipBehavior: Clip.antiAlias,
+                child: (!isHidden &&
+                        conversation.photoPath != null &&
+                        conversation.photoPath!.isNotEmpty)
+                    ? Image.file(
+                        File(conversation.photoPath!),
+                        width: 54,
+                        height: 54,
+                        fit: BoxFit.cover,
+                        cacheWidth:
+                            (MediaQuery.devicePixelRatioOf(context) * 54)
+                                .round(),
+                        errorBuilder: (context, error, stack) => Text(
+                          initial,
+                          style: FluffyTypography.headlineM.copyWith(
+                            color: theme.colorScheme.onSurface,
+                          ),
+                        ),
+                      )
+                    : Text(
+                        initial,
+                        style: FluffyTypography.headlineM.copyWith(
+                          color: theme.colorScheme.onSurface,
+                        ),
+                      ),
               ),
               const SizedBox(width: FluffySpacing.md),
               Expanded(
@@ -82,15 +117,30 @@ class SmsListItem extends StatelessWidget {
                   children: [
                     Row(
                       children: [
+                        if (isHidden)
+                          Padding(
+                            padding: const EdgeInsets.only(right: 6.0),
+                            child: Icon(
+                              Icons.lock_outline,
+                              size: 15,
+                              color: cyber.cyan,
+                            ),
+                          ),
                         Flexible(
                           child: Text(
                             title,
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
                             style: FluffyTypography.title.copyWith(
-                              color: theme.colorScheme.onSurface,
-                              fontWeight:
-                                  unread ? FontWeight.w700 : FontWeight.w600,
+                              color: isHidden
+                                  ? theme.colorScheme.onSurfaceVariant
+                                  : theme.colorScheme.onSurface,
+                              fontStyle: isHidden
+                                  ? FontStyle.italic
+                                  : FontStyle.normal,
+                              fontWeight: unread && !isHidden
+                                  ? FontWeight.w700
+                                  : FontWeight.w600,
                             ),
                           ),
                         ),
@@ -120,11 +170,18 @@ class SmsListItem extends StatelessWidget {
                     ),
                     const SizedBox(height: FluffySpacing.xxs),
                     Text(
-                      conversation.snippet,
+                      isHidden
+                          ? '••• ${L10n.of(context).locked}'
+                          : conversation.snippet,
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
-                      style: FluffyTypography.bodyS.copyWith(
-                        color: unread
+                      // bodyM (Inter 14 / h1.45) to match the Matrix chat-list
+                      // preview, which inherits bodyMedium — was bodyS (12px),
+                      // making SMS rows visibly smaller than Matrix rows.
+                      style: FluffyTypography.bodyM.copyWith(
+                        fontStyle:
+                            isHidden ? FontStyle.italic : FontStyle.normal,
+                        color: unread && !isHidden
                             ? theme.colorScheme.onSurface
                             : theme.colorScheme.onSurfaceVariant,
                       ),
