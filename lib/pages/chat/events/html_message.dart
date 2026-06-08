@@ -563,6 +563,16 @@ class HtmlMessage extends StatelessWidget {
               color: textColor,
               fontFamily: fontFamily,
             ),
+            // Le markdown (markdownToHtml) enveloppe le texte dans <p>. Sans
+            // style explicite, <p> n'héritait pas du fontSize/height nominal et
+            // le texte riche paraissait plus grand que le texte simple. On le
+            // cale exactement sur 'body'.
+            'p' => TextStyle(
+              fontSize: fontSize,
+              height: 1.25,
+              color: textColor,
+              fontFamily: fontFamily,
+            ),
             'a' => linkStyle,
             'strong' => const TextStyle(fontWeight: FontWeight.bold),
             'em' || 'i' => const TextStyle(fontStyle: FontStyle.italic),
