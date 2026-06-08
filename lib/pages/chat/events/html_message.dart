@@ -607,7 +607,10 @@ class HtmlMessage extends StatelessWidget {
       // by the caller (fontSizeFactor * messageFontSize) and only fix the
       // family + line height to the value used elsewhere in this renderer.
       style: TextStyle(
-        fontFamily: FluffyTypography.inter,
+        // La police vient du réglage (param fontFamily), pas codée en dur :
+        // sinon Matrix restait en Inter alors que SMS suivait le choix, et les
+        // métriques différentes faisaient paraître les tailles différentes.
+        fontFamily: fontFamily ?? FluffyTypography.inter,
         height: 1.25,
         fontSize: fontSize,
         color: textColor,
