@@ -1,6 +1,8 @@
 import 'package:emoji_picker_flutter/locales/default_emoji_set_locale.dart';
 import 'package:fluffychat/config/setting_keys.dart';
 import 'package:fluffychat/l10n/l10n.dart';
+import 'package:fluffychat/pages/chat/composer/attach_menu_sheet.dart';
+import 'package:fluffychat/pages/chat/composer/morphing_send_button.dart';
 import 'package:fluffychat/pages/chat/recording_input_row.dart';
 import 'package:fluffychat/pages/chat/recording_view_model.dart';
 import 'package:fluffychat/pages/chat/voice_record_button.dart';
@@ -12,6 +14,7 @@ import 'package:fluffychat/utils/platform_infos.dart';
 import 'package:fluffychat/utils/scheduled/scheduled_messages.dart';
 import 'package:fluffychat/widgets/avatar.dart';
 import 'package:fluffychat/widgets/cyber/ephemeral_picker.dart';
+import 'package:fluffychat/widgets/cyber/frosted_composer_surface.dart';
 import 'package:fluffychat/widgets/cyber/scheduled_send.dart';
 import 'package:fluffychat/widgets/matrix.dart';
 import 'package:flutter/material.dart';
@@ -36,10 +39,23 @@ class _ChatInputRowState extends State<ChatInputRow> {
   final ValueNotifier<VoiceRecordGestureState> _gestureNotifier =
       ValueNotifier(VoiceRecordGestureState.zero);
 
+  /// Pilote le glow cyan de la pilule frosted glass selon le focus du champ.
+  final ValueNotifier<bool> _focused = ValueNotifier(false);
+
   ChatController get controller => widget.controller;
 
   @override
+  void initState() {
+    super.initState();
+    controller.inputFocus.addListener(_onFocusChange);
+  }
+
+  void _onFocusChange() => _focused.value = controller.inputFocus.hasFocus;
+
+  @override
   void dispose() {
+    controller.inputFocus.removeListener(_onFocusChange);
+    _focused.dispose();
     _gestureNotifier.dispose();
     super.dispose();
   }
@@ -209,259 +225,135 @@ class _ChatInputRowState extends State<ChatInputRow> {
                 ]
               : <Widget>[
                   const SizedBox(width: 8),
-                  AnimatedContainer(
-                    duration: FluffyThemes.animationDuration,
-                    curve: FluffyThemes.animationCurve,
-                    width: textMessageOnly ? 0 : 48,
-                    height: ChatInputRow.height,
-                    alignment: Alignment.center,
-                    decoration: const BoxDecoration(),
-                    clipBehavior: Clip.hardEdge,
-                    child: PopupMenuButton<AddPopupMenuActions>(
-                      useRootNavigator: true,
-                      icon: const Icon(Icons.add_circle_outline),
-                      iconColor: theme.colorScheme.onPrimaryContainer,
-                      onSelected: controller.onAddPopupMenuButtonSelected,
-                      itemBuilder: (BuildContext context) => [
-                        if (PlatformInfos.isMobile)
-                          PopupMenuItem(
-                            value: AddPopupMenuActions.location,
-                            child: ListTile(
-                              leading: CircleAvatar(
-                                backgroundColor:
-                                    theme.colorScheme.onPrimaryContainer,
-                                foregroundColor:
-                                    theme.colorScheme.primaryContainer,
-                                child: const Icon(Icons.gps_fixed_outlined),
-                              ),
-                              title: Text(L10n.of(context).shareLocation),
-                              contentPadding: const EdgeInsets.all(0),
-                            ),
-                          ),
-                        PopupMenuItem(
-                          value: AddPopupMenuActions.poll,
-                          child: ListTile(
-                            leading: CircleAvatar(
-                              backgroundColor:
-                                  theme.colorScheme.onPrimaryContainer,
-                              foregroundColor:
-                                  theme.colorScheme.primaryContainer,
-                              child: const Icon(Icons.poll_outlined),
-                            ),
-                            title: Text(L10n.of(context).startPoll),
-                            contentPadding: const EdgeInsets.all(0),
-                          ),
-                        ),
-                        PopupMenuItem(
-                          value: AddPopupMenuActions.image,
-                          child: ListTile(
-                            leading: CircleAvatar(
-                              backgroundColor:
-                                  theme.colorScheme.onPrimaryContainer,
-                              foregroundColor:
-                                  theme.colorScheme.primaryContainer,
-                              child: const Icon(Icons.photo_outlined),
-                            ),
-                            title: Text(L10n.of(context).sendImage),
-                            contentPadding: const EdgeInsets.all(0),
-                          ),
-                        ),
-                        PopupMenuItem(
-                          value: AddPopupMenuActions.video,
-                          child: ListTile(
-                            leading: CircleAvatar(
-                              backgroundColor:
-                                  theme.colorScheme.onPrimaryContainer,
-                              foregroundColor:
-                                  theme.colorScheme.primaryContainer,
-                              child: const Icon(
-                                Icons.video_camera_back_outlined,
-                              ),
-                            ),
-                            title: Text(L10n.of(context).sendVideo),
-                            contentPadding: const EdgeInsets.all(0),
-                          ),
-                        ),
-                        PopupMenuItem(
-                          value: AddPopupMenuActions.file,
-                          child: ListTile(
-                            leading: CircleAvatar(
-                              backgroundColor:
-                                  theme.colorScheme.onPrimaryContainer,
-                              foregroundColor:
-                                  theme.colorScheme.primaryContainer,
-                              child: const Icon(Icons.attachment_outlined),
-                            ),
-                            title: Text(L10n.of(context).sendFile),
-                            contentPadding: const EdgeInsets.all(0),
-                          ),
-                        ),
-                        PopupMenuItem(
-                          value: AddPopupMenuActions.ephemeral,
-                          child: ListTile(
-                            leading: CircleAvatar(
-                              backgroundColor:
-                                  theme.colorScheme.onPrimaryContainer,
-                              foregroundColor:
-                                  theme.colorScheme.primaryContainer,
-                              child: const Icon(Icons.timer_outlined),
-                            ),
-                            title: Text(L10n.of(context).ephemeralMessages),
-                            contentPadding: const EdgeInsets.all(0),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                  if (PlatformInfos.isMobile)
-                    AnimatedContainer(
-                      duration: FluffyThemes.animationDuration,
-                      curve: FluffyThemes.animationCurve,
-                      width: textMessageOnly ? 0 : 48,
-                      height: ChatInputRow.height,
-                      alignment: Alignment.center,
-                      decoration: const BoxDecoration(),
-                      clipBehavior: Clip.hardEdge,
-                      child: PopupMenuButton(
-                        useRootNavigator: true,
-                        icon: const Icon(Icons.camera_alt_outlined),
-                        onSelected: controller.onAddPopupMenuButtonSelected,
-                        iconColor: theme.colorScheme.onPrimaryContainer,
-                        itemBuilder: (context) => [
-                          PopupMenuItem(
-                            value: AddPopupMenuActions.videoCamera,
-                            child: ListTile(
-                              leading: CircleAvatar(
-                                backgroundColor:
-                                    theme.colorScheme.onPrimaryContainer,
-                                foregroundColor:
-                                    theme.colorScheme.primaryContainer,
-                                child: const Icon(Icons.videocam_outlined),
-                              ),
-                              title: Text(L10n.of(context).recordAVideo),
-                              contentPadding: const EdgeInsets.all(0),
-                            ),
-                          ),
-                          PopupMenuItem(
-                            value: AddPopupMenuActions.photoCamera,
-                            child: ListTile(
-                              leading: CircleAvatar(
-                                backgroundColor:
-                                    theme.colorScheme.onPrimaryContainer,
-                                foregroundColor:
-                                    theme.colorScheme.primaryContainer,
-                                child: const Icon(Icons.camera_alt_outlined),
-                              ),
-                              title: Text(L10n.of(context).takeAPhoto),
-                              contentPadding: const EdgeInsets.all(0),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  Container(
-                    height: ChatInputRow.height,
-                    width: 48,
-                    alignment: Alignment.center,
-                    child: IconButton(
-                      tooltip: L10n.of(context).emojis,
-                      color: theme.colorScheme.onPrimaryContainer,
-                      icon: Icon(
-                        controller.showEmojiPicker
-                            ? Icons.keyboard
-                            : Icons.add_reaction_outlined,
-                        key: ValueKey(controller.showEmojiPicker),
-                      ),
-                      onPressed: controller.emojiPickerAction,
-                    ),
-                  ),
-                  if (Matrix.of(context).isMultiAccount &&
-                      Matrix.of(context).hasComplexBundles &&
-                      Matrix.of(context).currentBundle!.length > 1)
-                    Container(
-                      height: ChatInputRow.height,
-                      width: 48,
-                      alignment: Alignment.center,
-                      child: _ChatAccountPicker(controller),
-                    ),
-                  _EphemeralIndicator(controller: controller),
                   Expanded(
-                    child: Padding(
-                      padding: const EdgeInsets.symmetric(vertical: 2.0),
-                      child: InputBar(
-                        room: controller.room,
-                        minLines: 1,
-                        maxLines: 8,
-                        autofocus: !PlatformInfos.isMobile,
-                        keyboardType: TextInputType.multiline,
-                        textInputAction:
-                            AppSettings.sendOnEnter.value == true &&
-                                PlatformInfos.isMobile
-                            ? TextInputAction.send
-                            : null,
-                        onSubmitted: controller.onInputBarSubmitted,
-                        onSubmitImage: controller.sendImageFromClipBoard,
-                        focusNode: controller.inputFocus,
-                        controller: controller.sendController,
-                        decoration: InputDecoration(
-                          contentPadding: const EdgeInsets.only(
-                            left: 6.0,
-                            right: 6.0,
-                            bottom: 6.0,
-                            top: 3.0,
-                          ),
-                          counter: const SizedBox.shrink(),
-                          hintText: L10n.of(context).writeAMessage,
-                          hintMaxLines: 1,
-                          border: InputBorder.none,
-                          enabledBorder: InputBorder.none,
-                          filled: false,
-                        ),
-                        onChanged: controller.onInputBarChanged,
-                        suggestionEmojis:
-                            getDefaultEmojiLocale(
-                              AppSettings.emojiSuggestionLocale.value.isNotEmpty
-                                  ? Locale(
-                                      AppSettings.emojiSuggestionLocale.value,
-                                    )
-                                  : Localizations.localeOf(context),
-                            ).fold(
-                              [],
-                              (emojis, category) =>
-                                  emojis..addAll(category.emoji),
+                    child: ValueListenableBuilder<bool>(
+                      valueListenable: _focused,
+                      builder: (context, focused, _) => FrostedComposerSurface(
+                        focused: focused,
+                        child: Row(
+                          crossAxisAlignment: CrossAxisAlignment.end,
+                          children: [
+                            IconButton(
+                              tooltip: L10n.of(context).more,
+                              color: theme.colorScheme.onPrimaryContainer,
+                              icon: const Icon(Icons.add_circle_outline),
+                              onPressed: () async {
+                                final action = await showAttachMenu(
+                                  context,
+                                  isMobile: PlatformInfos.isMobile,
+                                );
+                                if (action != null) {
+                                  controller.onAddPopupMenuButtonSelected(
+                                    action,
+                                  );
+                                }
+                              },
                             ),
+                            if (Matrix.of(context).isMultiAccount &&
+                                Matrix.of(context).hasComplexBundles &&
+                                Matrix.of(context).currentBundle!.length > 1)
+                              SizedBox(
+                                width: 40,
+                                child: _ChatAccountPicker(controller),
+                              ),
+                            _EphemeralIndicator(controller: controller),
+                            Expanded(
+                              child: Padding(
+                                padding:
+                                    const EdgeInsets.symmetric(vertical: 2.0),
+                                child: InputBar(
+                                  room: controller.room,
+                                  minLines: 1,
+                                  maxLines: 8,
+                                  autofocus: !PlatformInfos.isMobile,
+                                  keyboardType: TextInputType.multiline,
+                                  textInputAction:
+                                      AppSettings.sendOnEnter.value == true &&
+                                              PlatformInfos.isMobile
+                                          ? TextInputAction.send
+                                          : null,
+                                  onSubmitted: controller.onInputBarSubmitted,
+                                  onSubmitImage:
+                                      controller.sendImageFromClipBoard,
+                                  focusNode: controller.inputFocus,
+                                  controller: controller.sendController,
+                                  decoration: InputDecoration(
+                                    contentPadding: const EdgeInsets.only(
+                                      left: 6.0,
+                                      right: 6.0,
+                                      bottom: 6.0,
+                                      top: 3.0,
+                                    ),
+                                    counter: const SizedBox.shrink(),
+                                    hintText: L10n.of(context).writeAMessage,
+                                    hintMaxLines: 1,
+                                    border: InputBorder.none,
+                                    enabledBorder: InputBorder.none,
+                                    filled: false,
+                                  ),
+                                  onChanged: controller.onInputBarChanged,
+                                  suggestionEmojis: getDefaultEmojiLocale(
+                                    AppSettings.emojiSuggestionLocale.value
+                                            .isNotEmpty
+                                        ? Locale(
+                                            AppSettings
+                                                .emojiSuggestionLocale.value,
+                                          )
+                                        : Localizations.localeOf(context),
+                                  ).fold(
+                                    [],
+                                    (emojis, category) =>
+                                        emojis..addAll(category.emoji),
+                                  ),
+                                ),
+                              ),
+                            ),
+                            IconButton(
+                              tooltip: L10n.of(context).emojis,
+                              color: theme.colorScheme.onPrimaryContainer,
+                              icon: Icon(
+                                controller.showEmojiPicker
+                                    ? Icons.keyboard
+                                    : Icons.add_reaction_outlined,
+                                key: ValueKey(controller.showEmojiPicker),
+                              ),
+                              onPressed: controller.emojiPickerAction,
+                            ),
+                          ],
+                        ),
                       ),
                     ),
                   ),
-                  Container(
-                    height: ChatInputRow.height,
-                    width: ChatInputRow.height,
-                    alignment: Alignment.center,
-                    child:
+                  const SizedBox(width: 6),
+                  MorphingSendButton(
+                    hasText: textMessageOnly,
+                    backgroundColor: theme.bubbleColor,
+                    foregroundColor: theme.onBubbleColor,
+                    onSend: controller.send,
+                    onScheduleSend: _scheduleSend,
+                    micBuilder: (context) =>
                         PlatformInfos.platformCanRecord &&
-                            !controller.sendController.text.isNotEmpty &&
-                            controller.editEvent == null
-                        ? VoiceRecordButton(
-                            controller: controller,
-                            recordingState: recordingViewModel,
-                            gestureNotifier: _gestureNotifier,
-                            backgroundColor: theme.bubbleColor,
-                            foregroundColor: theme.onBubbleColor,
-                          )
-                        : GestureDetector(
-                            onLongPress: _scheduleSend,
-                            child: IconButton(
-                              key: const Key('send_button'),
-                              tooltip: L10n.of(context).send,
-                              onPressed: controller.send,
-                              style: IconButton.styleFrom(
+                                !controller.sendController.text.isNotEmpty &&
+                                controller.editEvent == null
+                            ? VoiceRecordButton(
+                                controller: controller,
+                                recordingState: recordingViewModel,
+                                gestureNotifier: _gestureNotifier,
                                 backgroundColor: theme.bubbleColor,
                                 foregroundColor: theme.onBubbleColor,
+                              )
+                            : IconButton(
+                                key: const Key('send_button'),
+                                tooltip: L10n.of(context).send,
+                                onPressed: controller.send,
+                                style: IconButton.styleFrom(
+                                  backgroundColor: theme.bubbleColor,
+                                  foregroundColor: theme.onBubbleColor,
+                                ),
+                                icon: const Icon(Icons.send_outlined),
                               ),
-                              icon: const Icon(Icons.send_outlined),
-                            ),
-                          ),
                   ),
+                  const SizedBox(width: 6),
                 ],
         );
   }
