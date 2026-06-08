@@ -31,7 +31,13 @@ class RecordingViewModelState extends State<RecordingViewModel> {
 
   bool isSending = false;
 
-  bool get isRecording => _audioRecorder != null;
+  // True only once recorder.start() has actually begun capturing — NOT merely
+  // when the AudioRecorder object exists. The object is created before the
+  // permission check, so keying isRecording on its existence made the overlay
+  // think recording had started during the permission prompt, wedging the UI
+  // (1st press did nothing visible, 2nd press recorded without overlay).
+  bool _recording = false;
+  bool get isRecording => _recording;
 
   AudioRecorder? _audioRecorder;
   final List<double> amplitudeTimeline = [];
@@ -133,6 +139,7 @@ class RecordingViewModelState extends State<RecordingViewModel> {
       setState(() {
         duration = Duration.zero;
         isStarting = false;
+        _recording = true;
       });
       _subscribe();
     } catch (e, s) {
@@ -178,6 +185,7 @@ class RecordingViewModelState extends State<RecordingViewModel> {
     _recorderSubscription?.cancel();
     final recorder = _audioRecorder;
     _audioRecorder = null;
+    _recording = false;
     unawaited(recorder?.stop());
     isSending = false;
     fileName = null;

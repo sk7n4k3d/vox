@@ -479,6 +479,38 @@ class _SmsChatPageState extends State<SmsChatPage> {
     }
   }
 
+  /// Opens the system dialer with this conversation's number pre-filled
+  /// (`tel:` intent — no CALL_PHONE permission, the user taps "call"). The raw
+  /// SMS address may carry spaces/punctuation, so we strip them for the URI.
+  /// Alphanumeric sender IDs (e.g. "Orange", "Free Mobile") and group threads
+  /// with comma-separated addresses are not dialable → snackbar instead.
+  Future<void> _callContact() async {
+    final raw = widget.address.trim();
+    // Group MMS thread (multiple recipients) or alpha sender → not a number.
+    final hasComma = raw.contains(',') || raw.contains(';');
+    final dialable = raw.replaceAll(RegExp(r'[\s\-().]'), '');
+    final isPhoneNumber =
+        !hasComma && RegExp(r'^\+?\d{3,}$').hasMatch(dialable);
+    if (!isPhoneNumber) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Ce numéro n’est pas appelable')),
+      );
+      return;
+    }
+    try {
+      await launchUrlString(
+        'tel:$dialable',
+        mode: LaunchMode.externalApplication,
+      );
+    } catch (_) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Impossible de lancer l’appel')),
+      );
+    }
+  }
+
   /// Long-press on a bubble → CYBERCORE action sheet (copy / delete).
   /// Swipe-to-reply for SMS: there is no native reply protocol, so we quote the
   /// message text into the composer (`> quoted line`) and focus it, the way SMS
@@ -753,6 +785,7 @@ class _SmsChatPageState extends State<SmsChatPage> {
       },
       onDelete: _deleteConversation,
       onGallery: _openSmsMediaGallery,
+      onCall: _callContact,
     );
   }
 
@@ -1921,6 +1954,7 @@ class _SmsLiquidGlassAppBar extends StatelessWidget
   final VoidCallback onBack;
   final VoidCallback onDelete;
   final VoidCallback onGallery;
+  final VoidCallback onCall;
 
   const _SmsLiquidGlassAppBar({
     required this.height,
@@ -1932,6 +1966,7 @@ class _SmsLiquidGlassAppBar extends StatelessWidget
     required this.onBack,
     required this.onDelete,
     required this.onGallery,
+    required this.onCall,
   });
 
   @override
@@ -2006,6 +2041,14 @@ class _SmsLiquidGlassAppBar extends StatelessWidget
                             ),
                           ],
                         ),
+                      ),
+                      IconButton(
+                        icon: Icon(
+                          Icons.call_outlined,
+                          color: cyber.cyan,
+                        ),
+                        onPressed: onCall,
+                        tooltip: 'Appeler',
                       ),
                       PopupMenuButton<String>(
                         icon: Icon(
