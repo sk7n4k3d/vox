@@ -110,10 +110,17 @@ class Message extends StatelessWidget {
     final ownMessage = event.senderId == client.userID;
     final alignment = ownMessage ? Alignment.topRight : Alignment.topLeft;
 
-    final displayTime =
+    // Regroupement temporel d'origine (un nouveau "bloc" commence à un changement
+    // d'environnement temporel — jour/heure selon localizedTime). Sert UNIQUEMENT
+    // à piloter le collage des bulles via [nextEventSameSender], pas l'affichage
+    // de l'heure.
+    final timeBlockBreak =
         event.type == EventTypes.RoomCreate ||
         nextEvent == null ||
         !event.originServerTs.sameEnvironment(nextEvent!.originServerTs);
+    // Heure affichée au-dessus de CHAQUE message (demande Bastien) — découplée du
+    // regroupement pour ne pas désempiler les bulles d'un même expéditeur.
+    const displayTime = true;
     final nextEventSameSender =
         nextEvent != null &&
         {
@@ -122,7 +129,7 @@ class Message extends StatelessWidget {
           EventTypes.Encrypted,
         }.contains(nextEvent!.type) &&
         nextEvent!.senderId == event.senderId &&
-        !displayTime;
+        !timeBlockBreak;
 
     final previousEventSameSender =
         previousEvent != null &&
@@ -381,11 +388,17 @@ class Message extends StatelessWidget {
               mainAxisSize: .min,
               crossAxisAlignment: ownMessage ? .end : .start,
               children: <Widget>[
-                if (displayTime || selected)
+                // displayTime est désormais toujours vrai (heure sur chaque
+                // message) — l'ancien `|| selected` est donc redondant.
+                if (displayTime)
                   Padding(
-                    padding: displayTime
+                    // L'heure est désormais sur chaque message : on resserre l'air
+                    // vertical à l'intérieur d'un groupe (même expéditeur, bloc
+                    // temporel continu) pour ne pas étirer la timeline, et on garde
+                    // la respiration de 8px à une vraie rupture de bloc temporel.
+                    padding: timeBlockBreak
                         ? const EdgeInsets.symmetric(vertical: 8.0)
-                        : EdgeInsets.zero,
+                        : const EdgeInsets.only(top: 2.0),
                     child: Center(
                       child: Padding(
                         padding: const EdgeInsets.only(top: 4.0),

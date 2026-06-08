@@ -867,11 +867,11 @@ class _SmsChatPageState extends State<SmsChatPage> {
         // New calendar day → inline date separator above the bubble.
         final showDateSeparator =
             previous == null || !_sameDay(previous.date, message.date);
-        // Google-Messages grouping: show the timestamp only on a sender change,
-        // a >5 min gap, or right after a date separator.
-        final showTimestamp = showDateSeparator ||
-            (message.date - previous.date).abs() > 5 * 60 * 1000 ||
-            previous.isFromMe != message.isFromMe;
+        // Heure affichée sur CHAQUE message (demande Bastien) — pas seulement au
+        // changement d'expéditeur / gap / jour comme Google Messages. Le collage
+        // visuel des bulles reste piloté par previous/nextSameSender ci-dessous,
+        // donc montrer l'heure partout n'éclate pas les groupes.
+        const showTimestamp = true;
         // Matrix-style grouping. The list is chronological (oldest at top), so
         // "previous" is the older neighbour and "next" the newer one. A group
         // breaks on a sender change, a >5 min gap, or a day change — the same

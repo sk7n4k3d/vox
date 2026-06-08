@@ -257,12 +257,36 @@ object SmsBridge {
                 .toList()
         }
 
-    /** Snippet d'un MMS pour la liste : sujet si présent, sinon 1re part text/plain, sinon "[MMS]". */
+    /**
+     * Snippet d'un MMS pour la liste : sujet si présent, sinon 1re part text/plain,
+     * sinon un libellé média (emoji + nom de fichier lisible, ou libellé générique
+     * "Photo/Audio/Vidéo/Fichier" si le nom est absent ou moche), sinon "[MMS]".
+     */
     private fun mmsSnippet(context: Context, mmsId: Long, subject: String?): String {
         val subj = subject?.takeUnless { it.isBlank() || it == "NoSubject" }
         if (subj != null) return subj
-        val text = mmsFirstText(context, mmsId)
-        return text?.takeIf { it.isNotBlank() } ?: "[MMS]"
+        val (text, attachments) = mmsParts(context, mmsId)
+        if (text.isNotBlank()) return text
+        // MMS purement média : 1re pièce jointe → emoji + nom propre / libellé générique.
+        val first = attachments.firstOrNull()
+        if (first != null) return mediaSnippet(first)
+        return "[MMS]"
+    }
+
+    /** Emoji selon le type MIME, suivi du nom de fichier lisible ou du libellé générique. */
+    private fun mediaSnippet(part: Map<String, Any?>): String {
+        val mime = (part["mimeType"] as? String).orEmpty()
+        val raw = (part["fileName"] as? String).orEmpty()
+        val (emoji, label) = when {
+            mime.startsWith("image/") -> "📷" to "Photo"
+            mime.startsWith("video/") -> "🎬" to "Vidéo"
+            mime.startsWith("audio/") -> "🎵" to "Audio"
+            mime.contains("vcard") || mime.contains("x-vcard") -> "👤" to "Contact"
+            else -> "📎" to "Fichier"
+        }
+        // Un nom auto-généré (part_123) ou vide n'apporte rien → libellé générique.
+        val name = raw.takeUnless { it.isBlank() || it.startsWith("part_") } ?: label
+        return "$emoji $name"
     }
 
     // ──────────────────────────────────────────────────────────────────────────
