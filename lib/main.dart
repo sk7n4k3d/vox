@@ -46,6 +46,17 @@ void main() async {
   // widget bindings are initialized already.
   WidgetsFlutterBinding.ensureInitialized();
 
+  // Attribution obligatoire des emojis animés Noto (CC BY 4.0) — affichée dans
+  // l'écran Licences de l'app. Les animations sont chargées depuis gstatic.
+  LicenseRegistry.addLicense(() async* {
+    yield const LicenseEntryWithLineBreaks(
+      ['Noto Animated Emoji'],
+      'Animated emoji artwork by Google (Noto Emoji), '
+          'licensed under CC BY 4.0 (https://creativecommons.org/licenses/by/4.0/). '
+          'Loaded via fonts.gstatic.com.',
+    );
+  });
+
   final store = await AppSettings.init();
   Logs().i('Welcome to ${AppSettings.applicationName.value} <3');
 

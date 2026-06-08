@@ -9,6 +9,7 @@ import 'package:fluffychat/utils/adaptive_bottom_sheet.dart';
 import 'package:fluffychat/utils/date_time_extension.dart';
 import 'package:fluffychat/utils/matrix_sdk_extensions/matrix_locals.dart';
 import 'package:fluffychat/widgets/avatar.dart';
+import 'package:fluffychat/widgets/cyber/animated_emoji_text.dart';
 import 'package:fluffychat/widgets/cyber/link_preview_card.dart';
 import 'package:fluffychat/widgets/matrix.dart';
 import 'package:flutter/material.dart';
@@ -311,6 +312,23 @@ class MessageContent extends StatelessWidget {
                 EventCheckboxRoomExtension.relationshipType,
               ),
             );
+            // Message « jumbo » (1-3 emojis seuls) → version ANIMÉE Noto quand
+            // au moins un emoji est couvert. Repli texte par emoji non couvert
+            // (géré dans AnimatedEmojiText). Pas de link preview possible ici
+            // (un body 100% emoji n'a pas d'URL).
+            if (bigEmotes &&
+                AnimatedEmojiText.hasAnimatable(event.body)) {
+              return Padding(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                child: AnimatedEmojiText(
+                  text: event.body,
+                  size: AppSettings.fontSizeFactor.value *
+                      AppConfig.messageFontSize *
+                      5,
+                ),
+              );
+            }
             return Padding(
               padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
               // No preview → return the HtmlMessage alone (wrapping it in a

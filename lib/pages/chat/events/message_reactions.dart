@@ -2,6 +2,7 @@ import 'dart:ui';
 
 import 'package:collection/collection.dart' show IterableExtension;
 import 'package:fluffychat/widgets/avatar.dart';
+import 'package:fluffychat/widgets/cyber/animated_emoji_text.dart';
 import 'package:fluffychat/widgets/future_loading_dialog.dart';
 import 'package:fluffychat/widgets/matrix.dart';
 import 'package:fluffychat/widgets/mxc_image.dart';
@@ -265,13 +266,19 @@ class _ReactionState extends State<_Reaction>
       if (renderKey.length > 10) {
         renderKey = renderKey.getRange(0, 9) + Characters('…');
       }
+      // Réaction = un seul emoji animable → version animée Noto (taille 16,
+      // repli texte intégré). Sinon rendu texte habituel (séquences, multi-char).
+      final reactionText = renderKey.toString();
+      final animated = AnimatedEmojiText.hasAnimatable(reactionText, maxEmojis: 1)
+          ? AnimatedEmojiText(text: reactionText, size: 18)
+          : Text(
+              reactionText,
+              style: const TextStyle(fontSize: 16),
+            );
       content = Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Text(
-            renderKey.toString(),
-            style: const TextStyle(fontSize: 16),
-          ),
+          animated,
           if (widget.count > 1) ...[
             const SizedBox(width: 4),
             Text(
