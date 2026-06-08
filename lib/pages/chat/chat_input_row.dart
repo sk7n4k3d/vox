@@ -330,7 +330,7 @@ class _ChatInputRowState extends State<ChatInputRow> {
                   // bouton détaché 48px aligné en bas (.end) tombe un poil plus
                   // bas que le centre visuel de la pilule.
                   Padding(
-                    padding: const EdgeInsets.only(bottom: 4),
+                    padding: const EdgeInsets.only(bottom: 7),
                     child: MorphingSendButton(
                       hasText: textMessageOnly,
                       backgroundColor: theme.bubbleColor,
