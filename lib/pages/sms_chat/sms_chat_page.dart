@@ -1465,6 +1465,12 @@ class _SmsBubble extends StatelessWidget {
               linkifiers: _linkifiers,
               options: const LinkifyOptions(humanize: false),
               onOpen: onOpenLink,
+              // SelectableLinkify défaut textScaleFactor:1.0 → ignore le zoom de
+              // police système (Réglages Android > Taille de police). Les bulles
+              // Matrix (Text.rich) le respectent, elles. Sans ça, à font_scale
+              // 1.2 le SMS paraissait plus petit que Matrix. On répercute le
+              // même facteur système pour aligner les deux.
+              textScaleFactor: MediaQuery.textScalerOf(context).scale(1.0),
               // Match the Matrix bubble exactly: same base font size honoring
               // the user's text-size setting (fontSizeFactor), AND the same
               // explicit line-height 1.25 that HtmlMessage forces (html_message
