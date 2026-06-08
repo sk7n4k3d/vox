@@ -90,6 +90,7 @@ dependencies:
   local_auth: ^3.0.1
   animated_emoji: ^3.2.1
   flutter_confetti: ^0.5.1
+  lottie: ^3.3.3
 
 dev_dependencies:
   dart_code_linter: ^3.2.1

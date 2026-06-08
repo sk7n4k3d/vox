@@ -55,7 +55,7 @@ class ScreenEffectController {
                 ..duration = composition.duration
                 ..forward().whenComplete(_clearActive);
             },
-            errorBuilder: (_, __, ___) {
+            errorBuilder: (errorContext, error, stack) {
               // Asset manquant/corrompu : on annule proprement après ce frame.
               WidgetsBinding.instance
                   .addPostFrameCallback((_) => _clearActive());
