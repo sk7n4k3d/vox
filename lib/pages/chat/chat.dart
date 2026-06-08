@@ -22,11 +22,13 @@ import 'package:fluffychat/utils/matrix_sdk_extensions/filtered_timeline_extensi
 import 'package:fluffychat/utils/matrix_sdk_extensions/matrix_locals.dart';
 import 'package:fluffychat/utils/other_party_can_receive.dart';
 import 'package:fluffychat/utils/platform_infos.dart';
+import 'package:fluffychat/utils/screen_effects/screen_effect_detector.dart';
 import 'package:fluffychat/utils/show_scaffold_dialog.dart';
 import 'package:fluffychat/widgets/adaptive_dialogs/show_modal_action_popup.dart';
 import 'package:fluffychat/widgets/adaptive_dialogs/show_ok_cancel_alert_dialog.dart';
 import 'package:fluffychat/widgets/adaptive_dialogs/show_text_input_dialog.dart';
 import 'package:fluffychat/widgets/cyber/ephemeral_picker.dart';
+import 'package:fluffychat/widgets/cyber/screen_effect_overlay.dart';
 import 'package:fluffychat/widgets/future_loading_dialog.dart';
 import 'package:fluffychat/widgets/matrix.dart';
 import 'package:fluffychat/widgets/share_scaffold_dialog.dart';
@@ -103,6 +105,9 @@ class ChatController extends State<ChatPageWithRoom>
   late Client sendingClient;
 
   Timeline? timeline;
+
+  /// Joue les effets plein écran (confetti/Lottie) sur les messages déclencheurs.
+  final ScreenEffectController screenEffectController = ScreenEffectController();
 
   String? activeThreadId;
 
@@ -497,12 +502,16 @@ class ChatController extends State<ChatPageWithRoom>
       timeline?.cancelSubscriptions();
       timeline = await room.getTimeline(
         onUpdate: updateView,
+        onInsert: _maybePlayScreenEffect,
         eventContextId: eventContextId,
       );
     } catch (e, s) {
       Logs().w('Unable to load timeline on event ID $eventContextId', e, s);
       if (!mounted) return;
-      timeline = await room.getTimeline(onUpdate: updateView);
+      timeline = await room.getTimeline(
+        onUpdate: updateView,
+        onInsert: _maybePlayScreenEffect,
+      );
       if (!mounted) return;
       if (e is TimeoutException || e is IOException) {
         _showScrollUpMaterialBanner(eventContextId!);
@@ -512,6 +521,23 @@ class ChatController extends State<ChatPageWithRoom>
     if (room.markedUnread) room.markUnread(false);
 
     return;
+  }
+
+  /// Joue un effet plein écran si l'event inséré est un message RÉCENT dont le
+  /// corps est un déclencheur (emoji/mot-clé festif seul). Le garde « récent »
+  /// évite le déluge d'effets au premier sync / scroll-back de l'historique.
+  void _maybePlayScreenEffect(int insertID) {
+    if (!mounted) return;
+    if (!AppSettings.screenEffectsEnabled.value) return;
+    final tl = timeline;
+    if (tl == null || insertID < 0 || insertID >= tl.events.length) return;
+    final event = tl.events[insertID];
+    if (event.type != EventTypes.Message) return;
+    final age = DateTime.now().difference(event.originServerTs);
+    if (age > const Duration(seconds: 10)) return;
+    final effect = ScreenEffectDetector.detect(event.body);
+    if (effect == null) return;
+    screenEffectController.play(context, effect);
   }
 
   String? scrollToEventIdMarker;
@@ -562,6 +588,7 @@ class ChatController extends State<ChatPageWithRoom>
 
   @override
   void dispose() {
+    screenEffectController.dispose();
     timeline?.cancelSubscriptions();
     timeline = null;
     inputFocus.removeListener(_inputFocusListener);
