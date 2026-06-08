@@ -325,12 +325,18 @@ class _ChatInputRowState extends State<ChatInputRow> {
                     ),
                   ),
                   const SizedBox(width: 6),
-                  MorphingSendButton(
-                    hasText: textMessageOnly,
-                    backgroundColor: theme.bubbleColor,
-                    foregroundColor: theme.onBubbleColor,
-                    onSend: controller.send,
-                    onScheduleSend: _scheduleSend,
+                  // Léger retrait bas : la pilule frosted glass a un padding
+                  // interne (vertical:4) qui remonte son contenu ; sans ça le
+                  // bouton détaché 48px aligné en bas (.end) tombe un poil plus
+                  // bas que le centre visuel de la pilule.
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: 4),
+                    child: MorphingSendButton(
+                      hasText: textMessageOnly,
+                      backgroundColor: theme.bubbleColor,
+                      foregroundColor: theme.onBubbleColor,
+                      onSend: controller.send,
+                      onScheduleSend: _scheduleSend,
                     micBuilder: (context) =>
                         PlatformInfos.platformCanRecord &&
                                 !controller.sendController.text.isNotEmpty &&
@@ -352,6 +358,7 @@ class _ChatInputRowState extends State<ChatInputRow> {
                                 ),
                                 icon: const Icon(Icons.send_outlined),
                               ),
+                    ),
                   ),
                   const SizedBox(width: 6),
                 ],
