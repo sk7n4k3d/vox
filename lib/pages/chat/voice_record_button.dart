@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:fluffychat/config/cyberpunk_theme_extension.dart';
 import 'package:fluffychat/config/design_tokens.dart';
 import 'package:fluffychat/l10n/l10n.dart';
 import 'package:fluffychat/pages/chat/chat.dart';
@@ -141,37 +142,22 @@ class _VoiceRecordButtonState extends State<VoiceRecordButton> {
     widget.gestureNotifier.value = VoiceRecordGestureState.zero;
   }
 
-  Future<void> _handleTapAccessible() async {
-    final state = widget.recordingState;
-    if (state.isRecording) {
-      await state.stopAndSend(widget.controller.onVoiceMessageSend);
-    } else {
-      HapticFeedback.lightImpact();
-      await state.startRecording(widget.controller.room);
-      if (state.isRecording) state.lock();
-    }
-  }
-
   @override
   Widget build(BuildContext context) {
-    final accessibleNavigation = MediaQuery.of(context).accessibleNavigation;
     final isRecording = widget.recordingState.isRecording;
     final isLocked = widget.recordingState.isLocked;
     final shouldEnlarge = isRecording && !isLocked;
     final cyber = CyberColors.of(context);
 
-    if (accessibleNavigation) {
-      return IconButton(
-        tooltip: L10n.of(context).voiceMessage,
-        onPressed: _handleTapAccessible,
-        style: IconButton.styleFrom(
-          backgroundColor: widget.backgroundColor,
-          foregroundColor: widget.foregroundColor,
-        ),
-        icon: Icon(isRecording ? Icons.stop : Icons.mic_none_outlined),
-      );
-    }
-
+    // Geste vocal universel : long-press pour enregistrer, slide pour annuler,
+    // slide-up pour verrouiller (comme WhatsApp/Telegram). Un long-press reste
+    // faisable sous lecteur d'écran, donc PAS de mode tap-toggle séparé.
+    //
+    // ⚠️ On n'utilise PLUS `accessibleNavigation` pour basculer en mode tap : ce
+    // flag passe à true dès qu'UN service d'accessibilité tourne (Bitwarden
+    // autofill, KDE Connect, bridge Cortana…), pas seulement un vrai lecteur
+    // d'écran. Ça volait le long-press et imposait un IconButton sans le style
+    // néon (1 tap = record direct, 2e tap = envoi). Le tap simple reste informatif.
     return GestureDetector(
       behavior: HitTestBehavior.opaque,
       onTap: _showTooltipSnackBar,
@@ -187,32 +173,33 @@ class _VoiceRecordButtonState extends State<VoiceRecordButton> {
         child: Semantics(
           button: true,
           label: L10n.of(context).voiceMessage,
-          // Même habillage néon que le bouton send (cercle gradient cyan→magenta
-          // + glow), pour que micro et send soient cohérents visuellement et de
-          // même taille. Le geste (long-press/slide/lock) reste inchangé.
-          child: Container(
-            width: 48,
-            height: 48,
-            alignment: Alignment.center,
-            decoration: BoxDecoration(
-              shape: BoxShape.circle,
-              gradient: LinearGradient(
-                colors: [cyber.cyan, cyber.magenta],
-              ),
-              boxShadow: [
-                BoxShadow(
-                  color: cyber.cyan.withValues(alpha: 0.45),
-                  blurRadius: 16,
-                ),
-              ],
-            ),
-            child: Icon(
-              isRecording ? Icons.mic : Icons.mic_none_outlined,
-              color: widget.foregroundColor,
-              size: 24,
-            ),
-          ),
+          child: _neonCircle(cyber, isRecording),
         ),
+      ),
+    );
+  }
+
+  /// Cercle néon 48px (gradient cyan→magenta + glow), identique au bouton send,
+  /// pour que micro et send soient cohérents visuellement et de même taille.
+  Widget _neonCircle(CyberpunkTheme cyber, bool isRecording) {
+    return Container(
+      width: 48,
+      height: 48,
+      alignment: Alignment.center,
+      decoration: BoxDecoration(
+        shape: BoxShape.circle,
+        gradient: LinearGradient(colors: [cyber.cyan, cyber.magenta]),
+        boxShadow: [
+          BoxShadow(
+            color: cyber.cyan.withValues(alpha: 0.45),
+            blurRadius: 16,
+          ),
+        ],
+      ),
+      child: Icon(
+        isRecording ? Icons.mic : Icons.mic_none_outlined,
+        color: widget.foregroundColor,
+        size: 24,
       ),
     );
   }
