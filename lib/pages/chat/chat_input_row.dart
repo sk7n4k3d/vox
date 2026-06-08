@@ -12,10 +12,12 @@ import 'package:fluffychat/utils/ephemeral/ephemeral_messages.dart';
 import 'package:fluffychat/utils/other_party_can_receive.dart';
 import 'package:fluffychat/utils/platform_infos.dart';
 import 'package:fluffychat/utils/scheduled/scheduled_messages.dart';
+import 'package:fluffychat/utils/screen_effects/screen_effect.dart';
 import 'package:fluffychat/widgets/avatar.dart';
 import 'package:fluffychat/widgets/cyber/ephemeral_picker.dart';
 import 'package:fluffychat/widgets/cyber/frosted_composer_surface.dart';
 import 'package:fluffychat/widgets/cyber/scheduled_send.dart';
+import 'package:fluffychat/widgets/cyber/screen_effect_overlay.dart';
 import 'package:fluffychat/widgets/matrix.dart';
 import 'package:flutter/material.dart';
 import 'package:matrix/matrix.dart';
@@ -51,6 +53,19 @@ class _ChatInputRowState extends State<ChatInputRow> {
   }
 
   void _onFocusChange() => _focused.value = controller.inputFocus.hasFocus;
+
+  /// Long-press sur le bouton emoji : choisir un effet plein écran → insère son
+  /// emoji déclencheur dans le composer (la détection locale jouera l'effet à
+  /// l'envoi, chez l'expéditeur ET le destinataire).
+  Future<void> _pickScreenEffect() async {
+    final effect = await showScreenEffectPicker(context);
+    if (effect == null || !mounted) return;
+    final c = controller.sendController;
+    final sep = c.text.isEmpty ? '' : ' ';
+    c.text = '${c.text}$sep${effect.emoji}';
+    c.selection = TextSelection.collapsed(offset: c.text.length);
+    controller.inputFocus.requestFocus();
+  }
 
   @override
   void dispose() {
@@ -308,16 +323,19 @@ class _ChatInputRowState extends State<ChatInputRow> {
                                 ),
                               ),
                             ),
-                            IconButton(
-                              tooltip: L10n.of(context).emojis,
-                              color: theme.colorScheme.onPrimaryContainer,
-                              icon: Icon(
-                                controller.showEmojiPicker
-                                    ? Icons.keyboard
-                                    : Icons.add_reaction_outlined,
-                                key: ValueKey(controller.showEmojiPicker),
+                            GestureDetector(
+                              onLongPress: _pickScreenEffect,
+                              child: IconButton(
+                                tooltip: L10n.of(context).emojis,
+                                color: theme.colorScheme.onPrimaryContainer,
+                                icon: Icon(
+                                  controller.showEmojiPicker
+                                      ? Icons.keyboard
+                                      : Icons.add_reaction_outlined,
+                                  key: ValueKey(controller.showEmojiPicker),
+                                ),
+                                onPressed: controller.emojiPickerAction,
                               ),
-                              onPressed: controller.emojiPickerAction,
                             ),
                           ],
                         ),
