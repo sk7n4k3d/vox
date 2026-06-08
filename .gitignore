@@ -76,3 +76,4 @@ web/native_executor.js*
 
 # Serena LSP tool cache
 .serena/
+.superpowers/
