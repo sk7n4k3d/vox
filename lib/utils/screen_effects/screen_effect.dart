@@ -1,5 +1,9 @@
 /// Mode de rendu d'un effet plein écran.
-enum ScreenEffectRender { particles, lottie }
+/// - particles : confettis via flutter_confetti
+/// - snowfall  : flocons qui tombent (particules, plein écran)
+/// - burning   : « l'app prend feu » (flammes montantes custom)
+/// - lottie    : animation Lottie bundlée
+enum ScreenEffectRender { particles, snowfall, burning, lottie }
 
 /// Les effets plein écran disponibles (style iMessage/Telegram).
 enum ScreenEffect {
@@ -15,6 +19,8 @@ enum ScreenEffect {
 extension ScreenEffectMeta on ScreenEffect {
   ScreenEffectRender get render => switch (this) {
         ScreenEffect.confetti => ScreenEffectRender.particles,
+        ScreenEffect.snow => ScreenEffectRender.snowfall,
+        ScreenEffect.fire => ScreenEffectRender.burning,
         _ => ScreenEffectRender.lottie,
       };
 

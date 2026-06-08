@@ -1,4 +1,5 @@
 import 'package:fluffychat/utils/screen_effects/screen_effect.dart';
+import 'package:fluffychat/widgets/cyber/burning_overlay.dart';
 import 'package:fluffychat/widgets/cyber/cyber_widgets.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -36,6 +37,42 @@ class ScreenEffectController {
           colors: [cyber.cyan, cyber.magenta, Colors.white],
         ),
       );
+      return true;
+    }
+
+    if (effect.render == ScreenEffectRender.snowfall) {
+      // Vraie neige plein écran : des flocons lâchés depuis le haut, sur toute
+      // la largeur, qui tombent doucement (gravité faible + drift latéral).
+      Confetti.launch(
+        context,
+        options: const ConfettiOptions(
+          particleCount: 140,
+          angle: 270, // vers le bas
+          spread: 120,
+          startVelocity: 16,
+          gravity: 0.25,
+          drift: 1.2,
+          decay: 1.0,
+          ticks: 600, // dure longtemps (chute lente jusqu'en bas)
+          x: 0.5,
+          y: 0, // depuis le haut de l'écran
+          flat: true,
+          colors: [Colors.white, Color(0xFFB3ECFF), Color(0xFFE0F7FF)],
+        ),
+      );
+      return true;
+    }
+
+    if (effect.render == ScreenEffectRender.burning) {
+      // « L'app prend feu » : flammes montantes + lueur, overlay custom.
+      final overlay = Overlay.of(context, rootOverlay: true);
+      final entry = OverlayEntry(
+        builder: (_) => IgnorePointer(
+          child: BurningOverlay(onDone: _clearActive),
+        ),
+      );
+      _activeEntry = entry;
+      overlay.insert(entry);
       return true;
     }
 
