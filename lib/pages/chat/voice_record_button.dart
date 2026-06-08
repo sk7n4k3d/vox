@@ -6,6 +6,7 @@ import 'package:fluffychat/pages/chat/chat.dart';
 import 'package:fluffychat/pages/chat/chat_input_row.dart';
 import 'package:fluffychat/pages/chat/recording_view_model.dart';
 import 'package:fluffychat/pages/chat/voice_record_gesture_state.dart';
+import 'package:fluffychat/widgets/cyber/cyber_widgets.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -157,6 +158,7 @@ class _VoiceRecordButtonState extends State<VoiceRecordButton> {
     final isRecording = widget.recordingState.isRecording;
     final isLocked = widget.recordingState.isLocked;
     final shouldEnlarge = isRecording && !isLocked;
+    final cyber = CyberColors.of(context);
 
     if (accessibleNavigation) {
       return IconButton(
@@ -185,13 +187,24 @@ class _VoiceRecordButtonState extends State<VoiceRecordButton> {
         child: Semantics(
           button: true,
           label: L10n.of(context).voiceMessage,
+          // Même habillage néon que le bouton send (cercle gradient cyan→magenta
+          // + glow), pour que micro et send soient cohérents visuellement et de
+          // même taille. Le geste (long-press/slide/lock) reste inchangé.
           child: Container(
             width: 48,
             height: 48,
             alignment: Alignment.center,
             decoration: BoxDecoration(
-              color: widget.backgroundColor,
               shape: BoxShape.circle,
+              gradient: LinearGradient(
+                colors: [cyber.cyan, cyber.magenta],
+              ),
+              boxShadow: [
+                BoxShadow(
+                  color: cyber.cyan.withValues(alpha: 0.45),
+                  blurRadius: 16,
+                ),
+              ],
             ),
             child: Icon(
               isRecording ? Icons.mic : Icons.mic_none_outlined,

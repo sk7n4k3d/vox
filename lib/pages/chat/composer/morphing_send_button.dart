@@ -50,6 +50,9 @@ class MorphingSendButton extends StatelessWidget {
                     },
                     radius: 26,
                     child: Container(
+                      width: 48,
+                      height: 48,
+                      alignment: Alignment.center,
                       decoration: BoxDecoration(
                         shape: BoxShape.circle,
                         gradient: LinearGradient(
