@@ -10,6 +10,7 @@ void main() {
     expect(ScreenEffectDetector.detect('❤️'), ScreenEffect.hearts);
     expect(ScreenEffectDetector.detect('❄️'), ScreenEffect.snow);
     expect(ScreenEffectDetector.detect('🥳'), ScreenEffect.celebration);
+    expect(ScreenEffectDetector.detect('🔥'), ScreenEffect.fire);
   });
 
   test('emoji entouré d\'espaces toléré', () {

@@ -1,18 +1,20 @@
 # Crédits des animations Lottie (effets plein écran)
 
-| Effet | Fichier | Source | Licence |
-|-------|---------|--------|---------|
-| Feux d'artifice | `fireworks.json` | [Samsung/rlottie](https://github.com/Samsung/rlottie) `example/resource/4479-fireworks.json` | MIT |
-| Ballons | `balloons.json` | [Samsung/rlottie](https://github.com/Samsung/rlottie) `example/resource/balloons_with_string.json` | MIT |
-| Fête / confettis | `celebration.json` | [Samsung/rlottie](https://github.com/Samsung/rlottie) `example/resource/confetti.json` | MIT |
-| Cœurs | `hearts.json` | [hliejun/healthier-u-app](https://github.com/hliejun/healthier-u-app) (dépôt MIT) | MIT (asset exporté LottieFiles AE — provenance par-fichier à confirmer) |
-| Neige | `snow.json` | [kagisearch/kite-public](https://github.com/kagisearch/kite-public) (dépôt MIT) | MIT (asset exporté LottieFiles AE — provenance par-fichier à confirmer) |
+Projet personnel — assets de qualité récupérés via le CDN LottieFiles
+(`assets-v2.lottiefiles.com`), dimensions calibrées pour du plein écran mobile.
 
-Les trois assets Samsung/rlottie sont sous licence MIT explicite (fichier `COPYING`
-du dépôt couvrant `example/resource/`). Les assets `hearts` et `snow` proviennent
-de dépôts MIT mais sont des exports LottieFiles AE — leur provenance par-fichier
-n'est pas garantie à 100 % ; à remplacer par des assets maison ou CC0 si besoin
-d'une licence parfaitement nette pour distribution large.
+| Effet | Fichier | Dimensions | Source |
+|-------|---------|-----------|--------|
+| Feux d'artifice | `fireworks.json` | 512×512, 90 frames | LottieFiles CDN |
+| Cœurs | `hearts.json` | 375×800 portrait, 339 frames | LottieFiles CDN (Stream of Hearts) |
+| Ballons | `balloons.json` | 1440×2560 portrait, 600 frames | LottieFiles CDN |
+| Fête / confettis | `celebration.json` | 414×896 portrait, 89 frames | LottieFiles CDN |
+| Feu | `fire.json` | 800×800, 53 frames | LottieFiles CDN |
+| Neige | `snow.json` | 300×300 | kagisearch/kite-public (dépôt MIT, export LottieFiles AE) |
+
+Usage **personnel/privé** — les licences par-asset LottieFiles ne sont pas
+toutes auditées (choix assumé : projet perso). Pour une distribution publique,
+remplacer par des assets à licence nette (MIT/CC0) ou maison.
 
 L'effet « confetti » (déclencheur 🎉) n'utilise PAS de Lottie : il est rendu en
 particules via le package `flutter_confetti` (MIT), sans asset externe.
