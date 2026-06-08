@@ -49,7 +49,12 @@ class ScreenEffectController {
           child: Lottie.asset(
             effect.assetPath,
             controller: anim,
-            fit: BoxFit.cover,
+            // contain + centré : l'animation entière reste visible et centrée,
+            // quel que soit son ratio (carré, portrait, paysage). cover zoomait
+            // les anims carrées (feu, feux d'artifice) jusqu'à les faire sortir
+            // de l'écran sur un format portrait.
+            fit: BoxFit.contain,
+            alignment: Alignment.center,
             onLoaded: (composition) {
               anim
                 ..duration = composition.duration
