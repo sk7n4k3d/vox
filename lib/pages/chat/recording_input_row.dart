@@ -3,7 +3,7 @@ import 'package:fluffychat/config/themes.dart';
 import 'package:fluffychat/l10n/l10n.dart';
 import 'package:fluffychat/pages/chat/chat_input_row.dart';
 import 'package:fluffychat/pages/chat/recording_view_model.dart';
-import 'package:fluffychat/widgets/cyber/cyber_widgets.dart';
+import 'package:fluffychat/widgets/cyber/neon_waveform.dart';
 import 'package:flutter/material.dart';
 
 class RecordingInputRow extends StatelessWidget {
@@ -25,7 +25,6 @@ class RecordingInputRow extends StatelessWidget {
 
   Widget _buildLockedRow(BuildContext context) {
     final theme = Theme.of(context);
-    const maxDecibalWidth = 36.0;
     final time =
         '${state.duration.inMinutes.toString().padLeft(2, '0')}:${(state.duration.inSeconds % 60).toString().padLeft(2, '0')}';
     return Row(
@@ -67,26 +66,20 @@ class RecordingInputRow extends StatelessWidget {
         Expanded(
           child: LayoutBuilder(
             builder: (context, constraints) {
-              const width = 4;
-              return Row(
-                mainAxisSize: MainAxisSize.min,
-                mainAxisAlignment: MainAxisAlignment.end,
-                children: state.amplitudeTimeline.reversed
-                    .take((constraints.maxWidth / (width + 2)).floor())
-                    .toList()
-                    .reversed
-                    .map(
-                      (amplitude) => Container(
-                        margin: const EdgeInsets.only(left: 2),
-                        width: width.toDouble(),
-                        decoration: BoxDecoration(
-                          color: CyberColors.of(context).cyan,
-                          borderRadius: BorderRadius.circular(2),
-                        ),
-                        height: maxDecibalWidth * (amplitude / 100),
-                      ),
-                    )
-                    .toList(),
+              const barWidth = 4.0;
+              final maxBars = (constraints.maxWidth / (barWidth + 2)).floor();
+              final amps = state.amplitudeTimeline.reversed
+                  .take(maxBars)
+                  .toList()
+                  .reversed
+                  .toList();
+              return Align(
+                alignment: Alignment.centerRight,
+                child: NeonWaveform(
+                  amplitudes: amps,
+                  maxBarHeight: 36,
+                  barWidth: barWidth,
+                ),
               );
             },
           ),
@@ -113,7 +106,6 @@ class RecordingInputRow extends StatelessWidget {
 
   Widget _buildLiveHoldRow(BuildContext context) {
     final theme = Theme.of(context);
-    const maxDecibalWidth = 36.0;
     final time =
         '${state.duration.inMinutes.toString().padLeft(2, '0')}:${(state.duration.inSeconds % 60).toString().padLeft(2, '0')}';
     final opacity = state.isCancelling ? 0.4 : 1.0;
@@ -141,26 +133,20 @@ class RecordingInputRow extends StatelessWidget {
           Expanded(
             child: LayoutBuilder(
               builder: (context, constraints) {
-                const width = 4;
-                return Row(
-                  mainAxisSize: MainAxisSize.min,
-                  mainAxisAlignment: MainAxisAlignment.end,
-                  children: state.amplitudeTimeline.reversed
-                      .take((constraints.maxWidth / (width + 2)).floor())
-                      .toList()
-                      .reversed
-                      .map(
-                        (amplitude) => Container(
-                          margin: const EdgeInsets.only(left: 2),
-                          width: width.toDouble(),
-                          decoration: BoxDecoration(
-                            color: CyberColors.of(context).cyan,
-                            borderRadius: BorderRadius.circular(2),
-                          ),
-                          height: maxDecibalWidth * (amplitude / 100),
-                        ),
-                      )
-                      .toList(),
+                const barWidth = 4.0;
+                final maxBars = (constraints.maxWidth / (barWidth + 2)).floor();
+                final amps = state.amplitudeTimeline.reversed
+                    .take(maxBars)
+                    .toList()
+                    .reversed
+                    .toList();
+                return Align(
+                  alignment: Alignment.centerRight,
+                  child: NeonWaveform(
+                    amplitudes: amps,
+                    maxBarHeight: 36,
+                    barWidth: barWidth,
+                  ),
                 );
               },
             ),
