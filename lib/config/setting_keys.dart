@@ -34,6 +34,7 @@ enum AppSettings<T> {
   sendTypingNotifications<bool>('chat.fluffy.send_typing_notifications', true),
   sendPublicReadReceipts<bool>('chat.fluffy.send_public_read_receipts', true),
   swipeRightToLeftToReply<bool>('chat.fluffy.swipeRightToLeftToReply', true),
+  screenEffectsEnabled<bool>('chat.fluffy.screen_effects_enabled', true),
   sendOnEnter<bool>('chat.fluffy.send_on_enter', false),
   showPresences<bool>('chat.fluffy.show_presences', true),
   displayNavigationRail<bool>('chat.fluffy.display_navigation_rail', false),
