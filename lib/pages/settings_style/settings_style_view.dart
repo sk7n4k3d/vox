@@ -371,6 +371,45 @@ class SettingsStyleView extends StatelessWidget {
               semanticFormatterCallback: (d) => d.toString(),
               onChanged: controller.changeFontSizeFactor,
             ),
+            ListTile(
+              leading: Icon(Icons.font_download_outlined, color: cyber.magenta),
+              title: Text(
+                'Police des messages',
+                style: FluffyTypography.title.copyWith(
+                  color: theme.colorScheme.onSurface,
+                ),
+              ),
+              subtitle: Text(
+                'SMS et Matrix, même style',
+                style: FluffyTypography.bodyM.copyWith(
+                  color: theme.colorScheme.onSurfaceVariant,
+                ),
+              ),
+              trailing: DropdownButton<String>(
+                value: AppSettings.messageFontFamily.value,
+                underline: const SizedBox.shrink(),
+                dropdownColor: theme.colorScheme.surfaceContainerHigh,
+                onChanged: (v) {
+                  if (v != null) controller.changeMessageFont(v);
+                },
+                items: [
+                  for (final c in FluffyTypography.messageFontChoices)
+                    DropdownMenuItem(
+                      value: c.value,
+                      child: Text(
+                        c.label,
+                        // Chaque choix rendu dans SA police = aperçu direct.
+                        style: TextStyle(
+                          fontFamily: c.value.isEmpty
+                              ? FluffyTypography.inter
+                              : c.value,
+                          color: theme.colorScheme.onSurface,
+                        ),
+                      ),
+                    ),
+                ],
+              ),
+            ),
             Divider(color: cyber.glassBorder),
             CyberSectionHeader(
               L10n.of(context).overview,

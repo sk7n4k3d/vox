@@ -1471,7 +1471,9 @@ class _SmsBubble extends StatelessWidget {
               // .dart:600) so it doesn't inherit bodyMedium's 1.45 — without it
               // SMS lines sat looser than Matrix ones.
               style: TextStyle(
-                fontFamily: FluffyTypography.inter,
+                fontFamily: FluffyTypography.resolveMessageFont(
+                  AppSettings.messageFontFamily.value,
+                ),
                 height: 1.25,
                 fontSize: AppConfig.messageFontSize *
                     AppSettings.fontSizeFactor.value,
@@ -1479,7 +1481,9 @@ class _SmsBubble extends StatelessWidget {
                 fontWeight: textWeight,
               ),
               linkStyle: TextStyle(
-                fontFamily: FluffyTypography.inter,
+                fontFamily: FluffyTypography.resolveMessageFont(
+                  AppSettings.messageFontFamily.value,
+                ),
                 fontSize: AppConfig.messageFontSize *
                     AppSettings.fontSizeFactor.value,
                 color: linkColor,

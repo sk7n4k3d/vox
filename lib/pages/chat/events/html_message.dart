@@ -47,6 +47,10 @@ class HtmlMessage extends StatelessWidget {
   final Room room;
   final Color textColor;
   final double fontSize;
+
+  /// Police du corps du message (bulles). null → police par défaut du thème.
+  /// Permet d'aligner SMS et Matrix sur la même famille choisie en réglages.
+  final String? fontFamily;
   final TextStyle linkStyle;
   final void Function(LinkableElement) onOpen;
   final String? eventId;
@@ -59,6 +63,7 @@ class HtmlMessage extends StatelessWidget {
     required this.room,
     required this.fontSize,
     required this.linkStyle,
+    this.fontFamily,
     this.textColor = Colors.black,
     required this.onOpen,
     this.eventId,
@@ -322,7 +327,7 @@ class HtmlMessage extends StatelessWidget {
                     ),
                   ..._renderWithLineBreaks(node.nodes, context, depth: depth),
                 ],
-                style: TextStyle(fontSize: fontSize, color: textColor),
+                style: TextStyle(fontSize: fontSize, color: textColor, fontFamily: fontFamily),
               ),
             ),
           ),
@@ -502,7 +507,7 @@ class HtmlMessage extends StatelessWidget {
                       ),
                   ],
                 ),
-                style: TextStyle(fontSize: fontSize, color: textColor),
+                style: TextStyle(fontSize: fontSize, color: textColor, fontFamily: fontFamily),
               ),
             ),
           ),
@@ -553,7 +558,11 @@ class HtmlMessage extends StatelessWidget {
       default:
         return TextSpan(
           style: switch (node.localName) {
-            'body' => TextStyle(fontSize: fontSize, color: textColor),
+            'body' => TextStyle(
+              fontSize: fontSize,
+              color: textColor,
+              fontFamily: fontFamily,
+            ),
             'a' => linkStyle,
             'strong' => const TextStyle(fontWeight: FontWeight.bold),
             'em' || 'i' => const TextStyle(fontStyle: FontStyle.italic),

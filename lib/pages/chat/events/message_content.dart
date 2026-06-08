@@ -1,5 +1,6 @@
 import 'dart:math';
 
+import 'package:fluffychat/config/design_tokens.dart';
 import 'package:fluffychat/config/setting_keys.dart';
 import 'package:fluffychat/l10n/l10n.dart';
 import 'package:fluffychat/pages/chat/events/poll.dart';
@@ -289,6 +290,9 @@ class MessageContent extends StatelessWidget {
               html: html,
               textColor: effectiveTextColor,
               room: event.room,
+              fontFamily: FluffyTypography.resolveMessageFont(
+                AppSettings.messageFontFamily.value,
+              ),
               fontSize:
                   AppSettings.fontSizeFactor.value *
                   AppConfig.messageFontSize *

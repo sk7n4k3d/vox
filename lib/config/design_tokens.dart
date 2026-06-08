@@ -75,6 +75,23 @@ class FluffyTypography {
   static const String mono = 'JetBrainsMono';
   static const String orbitron = 'Orbitron';
 
+  /// Les familles proposées pour la police des bulles de message, dans l'ordre
+  /// du sélecteur de réglages. La clé '' = défaut (Inter).
+  static const List<({String value, String label})> messageFontChoices = [
+    (value: '', label: 'Inter (défaut)'),
+    (value: rajdhani, label: 'Rajdhani'),
+    (value: mono, label: 'JetBrains Mono'),
+    (value: orbitron, label: 'Orbitron'),
+  ];
+
+  /// Résout la valeur stockée dans AppSettings.messageFontFamily vers une famille
+  /// de police réelle. '' (ou inconnue) → Inter, la police de lecture par défaut.
+  static String resolveMessageFont(String stored) {
+    return messageFontChoices.any((c) => c.value == stored && stored.isNotEmpty)
+        ? stored
+        : inter;
+  }
+
   static const TextStyle display = TextStyle(
     fontFamily: rajdhani,
     fontSize: 32,

@@ -130,6 +130,12 @@ class SettingsStyleController extends State<SettingsStyle> {
     setState(() {});
   }
 
+  /// Change la police des bulles de message (SMS + Matrix). '' = Inter (défaut).
+  Future<void> changeMessageFont(String value) async {
+    await AppSettings.messageFontFamily.setItem(value);
+    setState(() {});
+  }
+
   @override
   Widget build(BuildContext context) => SettingsStyleView(this);
 }

@@ -35,6 +35,9 @@ enum AppSettings<T> {
   sendPublicReadReceipts<bool>('chat.fluffy.send_public_read_receipts', true),
   swipeRightToLeftToReply<bool>('chat.fluffy.swipeRightToLeftToReply', true),
   screenEffectsEnabled<bool>('chat.fluffy.screen_effects_enabled', true),
+  // Police des bulles de message (SMS + Matrix, identique). Valeurs :
+  // '' = Inter (défaut), 'Rajdhani', 'JetBrainsMono', 'Orbitron'.
+  messageFontFamily<String>('chat.fluffy.message_font_family', ''),
   sendOnEnter<bool>('chat.fluffy.send_on_enter', false),
   showPresences<bool>('chat.fluffy.show_presences', true),
   displayNavigationRail<bool>('chat.fluffy.display_navigation_rail', false),
