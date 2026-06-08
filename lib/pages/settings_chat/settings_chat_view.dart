@@ -106,6 +106,10 @@ class SettingsChatView extends StatelessWidget {
                             setting: AppSettings.autoplayImages,
                           ),
                         SettingsSwitchListTile.adaptive(
+                          title: 'Effets plein écran',
+                          setting: AppSettings.screenEffectsEnabled,
+                        ),
+                        SettingsSwitchListTile.adaptive(
                           title: L10n.of(context).sendOnEnter,
                           setting: AppSettings.sendOnEnter,
                         ),
