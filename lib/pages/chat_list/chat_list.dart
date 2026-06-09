@@ -189,6 +189,10 @@ class ChatListController extends State<ChatList>
   StreamSubscription<SmsOpenRequest>? _smsOpenSub;
   Timer? _smsReloadDebounce;
 
+  /// Garde-fou : la proposition d'exemption batterie n'est tentée qu'une fois par
+  /// session (sinon elle se redéclencherait à chaque rechargement SMS).
+  bool _batteryPromptChecked = false;
+
   Future<void> _loadSmsConversations() async {
     if (!await SmsBridge.instance.isDefaultSmsApp()) {
       // Lost (or never had) the default-SMS role: clear any stale SMS rows so
@@ -198,6 +202,9 @@ class ChatListController extends State<ChatList>
       }
       return;
     }
+    // VOX est l'app SMS par défaut : s'assurer qu'elle peut recevoir les SMS
+    // même fermée + tel en veille (exemption Doze).
+    unawaited(_maybePromptBatteryExemption());
     final convs = await SmsBridge.instance.listConversations();
     final archived = await SmsBridge.instance.archivedThreadIds();
     if (!mounted) return;
@@ -225,6 +232,42 @@ class ChatListController extends State<ChatList>
       }
     }
     setState(() => smsConversations = visible);
+  }
+
+  /// Une fois par session : si VOX est l'app SMS par défaut mais n'est pas
+  /// exemptée d'optimisation batterie, propose à l'utilisateur de l'exempter.
+  /// Sans cette exemption, en Doze profond / standby bas, Android diffère le
+  /// réveil du process pour SMS_DELIVER → SMS reçus en retard ou ratés quand
+  /// l'app est fermée (Matrix y échappe via son push FCM).
+  Future<void> _maybePromptBatteryExemption() async {
+    if (_batteryPromptChecked) return;
+    _batteryPromptChecked = true;
+    if (await SmsBridge.instance.isIgnoringBatteryOptimizations()) return;
+    if (!mounted) return;
+    final accept = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Réception des SMS en arrière-plan'),
+        content: const Text(
+          'Pour recevoir tes SMS/MMS même quand VOX est fermée, autorise '
+          "l'application à ignorer l'optimisation de batterie. Sans ça, Android "
+          'peut retarder ou bloquer les messages pendant la veille du téléphone.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: const Text('Plus tard'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(context).pop(true),
+            child: const Text('Activer'),
+          ),
+        ],
+      ),
+    );
+    if (accept == true) {
+      await SmsBridge.instance.requestIgnoreBatteryOptimizations();
+    }
   }
 
   /// Opens an SMS conversation in the dedicated [SmsChatPage], then refreshes

@@ -118,6 +118,12 @@ class SmsBridgePlugin private constructor(
 
             "requestDefaultSmsRole" -> result.success(requestDefaultSmsRole())
 
+            "isIgnoringBatteryOptimizations" ->
+                result.success(isIgnoringBatteryOptimizations())
+
+            "requestIgnoreBatteryOptimizations" ->
+                result.success(requestIgnoreBatteryOptimizations())
+
             // Retire la notification d'un thread (appelé quand Dart ouvre/lit la conv).
             "cancelSmsNotification" -> {
                 val threadId = call.longArg("threadId")
@@ -309,6 +315,49 @@ class SmsBridgePlugin private constructor(
             }
         } catch (e: Exception) {
             Log.e(SmsBridge.TAG, "requestDefaultSmsRole failed: ${e.message}")
+            false
+        }
+    }
+
+    // ── Exemption d'optimisation batterie (Doze) ───────────────────────────────
+    // Indispensable pour une app SMS par défaut : sans exemption, en Doze profond
+    // / standby bucket bas, Android DIFFÈRE le réveil du process pour le broadcast
+    // SMS_DELIVER → SMS reçus en retard ou ratés quand l'app est fermée (Matrix y
+    // échappe via son push FCM). Même approche que Signal / QKSMS.
+
+    private fun isIgnoringBatteryOptimizations(): Boolean {
+        return try {
+            val pm = context.getSystemService(Context.POWER_SERVICE) as? android.os.PowerManager
+            pm?.isIgnoringBatteryOptimizations(context.packageName) ?: false
+        } catch (e: Exception) {
+            Log.e(SmsBridge.TAG, "isIgnoringBatteryOptimizations failed: ${e.message}")
+            false
+        }
+    }
+
+    /**
+     * Ouvre le prompt système « ignorer l'optimisation batterie » pour VOX. Intent
+     * direct [android.provider.Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS]
+     * (autorisé hors Play Store ; VOX est sideloadée), nécessite la permission
+     * REQUEST_IGNORE_BATTERY_OPTIMIZATIONS dans le manifest.
+     * @return true si déjà exempté, ou si l'intent a pu être lancé.
+     */
+    private fun requestIgnoreBatteryOptimizations(): Boolean {
+        if (isIgnoringBatteryOptimizations()) return true
+        return try {
+            val intent = Intent(
+                android.provider.Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS,
+            ).apply { data = android.net.Uri.parse("package:${context.packageName}") }
+            val act = activity
+            if (act != null) {
+                act.startActivity(intent)
+            } else {
+                intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                context.startActivity(intent)
+            }
+            true
+        } catch (e: Exception) {
+            Log.e(SmsBridge.TAG, "requestIgnoreBatteryOptimizations failed: ${e.message}")
             false
         }
     }

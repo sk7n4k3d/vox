@@ -125,6 +125,33 @@ class SmsBridge {
     }
   }
 
+  /// True if VOX is exempt from battery optimizations (Doze whitelist). Required
+  /// for a default SMS app: without it, the SMS_DELIVER broadcast can be deferred
+  /// (or the process not woken) when the app is closed and the phone is in deep
+  /// Doze, so incoming SMS/MMS arrive late or not at all.
+  Future<bool> isIgnoringBatteryOptimizations() async {
+    try {
+      return await _channel
+              .invokeMethod<bool>('isIgnoringBatteryOptimizations') ??
+          false;
+    } on PlatformException {
+      return false;
+    }
+  }
+
+  /// Launches the system "ignore battery optimizations" prompt for VOX. Returns
+  /// true if already exempt or if the prompt was launched (NOT that the user
+  /// accepted — poll [isIgnoringBatteryOptimizations] to confirm).
+  Future<bool> requestIgnoreBatteryOptimizations() async {
+    try {
+      return await _channel
+              .invokeMethod<bool>('requestIgnoreBatteryOptimizations') ??
+          false;
+    } on PlatformException {
+      return false;
+    }
+  }
+
   Future<List<SmsConversation>> listConversations() async {
     try {
       final raw = await _channel.invokeMethod<List<dynamic>>(

@@ -37,6 +37,9 @@
     <uses-permission android:name="android.permission.RECEIVE_WAP_PUSH" />
     <!-- Optionnel : résolution displayName des numéros. Non bloquant si refusé. -->
     <uses-permission android:name="android.permission.READ_CONTACTS" />
+    <!-- App SMS par défaut : exemption Doze pour que SMS_DELIVER réveille le
+         process même app fermée + tel en veille profonde (sinon SMS différés/ratés). -->
+    <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
 
     <!-- To make app compatible with tablets -->
     <uses-feature android:name="android.hardware.camera" android:required="false"/>
