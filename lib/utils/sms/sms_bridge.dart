@@ -151,11 +151,18 @@ class SmsBridge {
     }
   }
 
-  Future<List<SmsMessage>> listMessages(String threadId) async {
+  /// Liste les messages d'un thread, paginé. [limit] = nombre max (0 = tout).
+  /// [beforeMs] = ne renvoyer que les messages STRICTEMENT antérieurs à cette
+  /// date epoch-ms (0 = les plus récents). Résultat trié ancien → récent.
+  Future<List<SmsMessage>> listMessages(
+    String threadId, {
+    int limit = 0,
+    int beforeMs = 0,
+  }) async {
     try {
       final raw = await _channel.invokeMethod<List<dynamic>>(
         'listMessages',
-        {'threadId': threadId},
+        {'threadId': threadId, 'limit': limit, 'beforeMs': beforeMs},
       );
       return (raw ?? [])
           .map((e) => SmsMessage.fromMap(Map<String, dynamic>.from(e)))

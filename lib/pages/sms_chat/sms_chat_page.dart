@@ -197,17 +197,31 @@ class _SmsChatPageState extends State<SmsChatPage> {
     if (hasText != _hasText) setState(() => _hasText = hasText);
   }
 
+  /// Taille de la première page et des pages suivantes (pagination SMS pour
+  /// ouvrir instantanément les longues conversations).
+  static const int _pageSize = 50;
+  bool _hasMore = true;
+  bool _loadingMore = false;
+
   void _onScroll() {
     if (!_scroll.hasClients) return;
     // > 240px above the bottom → show the jump-to-bottom button.
     final show = _scroll.position.maxScrollExtent - _scroll.position.pixels >
         240;
     if (show != _showScrollDown) setState(() => _showScrollDown = show);
+    // Proche du HAUT (messages anciens) → charger la page précédente.
+    if (_scroll.position.pixels <= 80 && _hasMore && !_loadingMore) {
+      _loadMore();
+    }
   }
 
   Future<void> _load() async {
-    final messages = await SmsBridge.instance.listMessages(widget.threadId);
-    // Mark the thread read in the background; result is irrelevant to the UI.
+    // 1re page : les [_pageSize] messages les plus récents → affichage immédiat
+    // même sur une conversation de plusieurs milliers de messages.
+    final messages = await SmsBridge.instance.listMessages(
+      widget.threadId,
+      limit: _pageSize,
+    );
     unawaited(SmsBridge.instance.markRead(widget.threadId));
     if (!mounted) return;
     setState(() {
@@ -215,9 +229,42 @@ class _SmsChatPageState extends State<SmsChatPage> {
         ..clear()
         ..addAll(messages);
       _sortMessages();
+      _hasMore = messages.length >= _pageSize;
       _loading = false;
     });
     _scrollToBottom(animated: false);
+  }
+
+  /// Charge la page précédente (messages plus anciens) quand on remonte. Préserve
+  /// la position de scroll pour ne pas faire sauter la liste.
+  Future<void> _loadMore() async {
+    if (_messages.isEmpty) return;
+    _loadingMore = true;
+    final oldestMs = _messages.first.date;
+    final older = await SmsBridge.instance.listMessages(
+      widget.threadId,
+      limit: _pageSize,
+      beforeMs: oldestMs,
+    );
+    if (!mounted) {
+      _loadingMore = false;
+      return;
+    }
+    final before = _scroll.hasClients ? _scroll.position.maxScrollExtent : 0.0;
+    setState(() {
+      // Insère en tête en évitant les doublons (id déjà présents).
+      final seen = _messages.map((m) => m.id).toSet();
+      _messages.insertAll(0, older.where((m) => !seen.contains(m.id)));
+      _sortMessages();
+      _hasMore = older.length >= _pageSize;
+      _loadingMore = false;
+    });
+    // Compense le décalage introduit par les nouveaux items en tête.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!_scroll.hasClients) return;
+      final after = _scroll.position.maxScrollExtent;
+      _scroll.jumpTo(_scroll.position.pixels + (after - before));
+    });
   }
 
   void _listenIncoming() {

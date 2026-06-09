@@ -154,7 +154,11 @@ class SmsBridgePlugin private constructor(
                     result.error("BAD_ARGS", "threadId missing", null)
                     return
                 }
-                launchReply(result) { SmsBridge.listMessages(context, threadId) }
+                val limit = (call.argument<Number>("limit"))?.toInt() ?: 0
+                val beforeMs = call.longArg("beforeMs") ?: 0L
+                launchReply(result) {
+                    SmsBridge.listMessages(context, threadId, limit, beforeMs)
+                }
             }
 
             "sendSms" -> {

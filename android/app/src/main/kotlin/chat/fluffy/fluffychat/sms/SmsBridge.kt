@@ -305,13 +305,41 @@ object SmsBridge {
      * Le champ `id` reste l'`_ID` de la ligne dans sa table respective. `isMms` permet à Dart
      * de distinguer la table d'origine ; `attachments` est toujours présent (vide pour les SMS).
      */
-    suspend fun listMessages(context: Context, threadId: Long): List<Map<String, Any?>> =
+    /**
+     * Liste les messages d'un thread, paginé. Charge au plus [limit] messages les
+     * plus récents STRICTEMENT antérieurs à [beforeMs] (ou les plus récents si
+     * beforeMs <= 0). Renvoyés triés ASC (ancien → récent) comme avant.
+     *
+     * Pagination : à l'ouverture, appeler avec beforeMs=0 → les `limit` derniers.
+     * Pour remonter, rappeler avec beforeMs = date du plus ancien message déjà
+     * chargé. limit<=0 = pas de limite (compat / petits threads).
+     *
+     * Perf : SMS et MMS sont chacun query en DATE DESC LIMIT, fusionnés, coupés à
+     * [limit], puis re-triés ASC. Les parts MMS sont lues en batch (1 query).
+     */
+    suspend fun listMessages(
+        context: Context,
+        threadId: Long,
+        limit: Int = 0,
+        beforeMs: Long = 0L,
+    ): List<Map<String, Any?>> =
         withContext(Dispatchers.IO) {
             if (threadId <= 0L) return@withContext emptyList()
             val out = ArrayList<Map<String, Any?>>()
+            // Sur-échantillonne chaque source (SMS+MMS) pour qu'après fusion+coupe
+            // on ait bien les `limit` plus récents tous types confondus.
+            val perSourceLimit = if (limit > 0) limit else 0
 
             // ── SMS ──
             try {
+                val smsSel = StringBuilder("${Telephony.Sms.THREAD_ID}=?")
+                val smsArgs = arrayListOf(threadId.toString())
+                if (beforeMs > 0L) {
+                    smsSel.append(" AND ${Telephony.Sms.DATE}<?")
+                    smsArgs.add(beforeMs.toString())
+                }
+                val smsOrder = "${Telephony.Sms.DATE} DESC" +
+                    if (perSourceLimit > 0) " LIMIT $perSourceLimit" else ""
                 context.contentResolver.query(
                     Telephony.Sms.CONTENT_URI,
                     arrayOf(
@@ -323,9 +351,9 @@ object SmsBridge {
                         Telephony.Sms.STATUS,
                         Telephony.Sms.READ,
                     ),
-                    "${Telephony.Sms.THREAD_ID}=?",
-                    arrayOf(threadId.toString()),
-                    "${Telephony.Sms.DATE} ASC",
+                    smsSel.toString(),
+                    smsArgs.toTypedArray(),
+                    smsOrder,
                 )?.use { c ->
                     val idxId = c.getColumnIndexOrThrow(Telephony.Sms._ID)
                     val idxAddr = c.getColumnIndexOrThrow(Telephony.Sms.ADDRESS)
@@ -357,19 +385,39 @@ object SmsBridge {
             }
 
             // ── MMS ──
-            out += listMms(context, threadId)
+            out += listMms(context, threadId, perSourceLimit, beforeMs)
 
-            // Fusion triée par date ASC (les SMS sont en ms, on a normalisé les MMS en ms aussi).
-            out.sortedBy { (it["date"] as? Long) ?: 0L }
+            // Fusion : tri DESC, coupe aux `limit` plus récents tous types
+            // confondus, puis re-tri ASC pour l'affichage (ancien → récent).
+            val merged = out.sortedByDescending { (it["date"] as? Long) ?: 0L }
+            val capped = if (limit > 0) merged.take(limit) else merged
+            capped.sortedBy { (it["date"] as? Long) ?: 0L }
         }
 
     /**
      * Lit les MMS d'un thread + leurs parts. DATE du provider MMS est en SECONDES → normalisée ms.
      * Pour chaque MMS : `body` = concat des parts text/plain ; `attachments` = parts non-texte/non-smil.
      */
-    private fun listMms(context: Context, threadId: Long): List<Map<String, Any?>> {
+    private fun listMms(
+        context: Context,
+        threadId: Long,
+        limit: Int = 0,
+        beforeMs: Long = 0L,
+    ): List<Map<String, Any?>> {
         val out = ArrayList<Map<String, Any?>>()
         try {
+            // beforeMs est en ms ; la colonne MMS DATE est en SECONDES.
+            val sel = StringBuilder("${Telephony.Mms.THREAD_ID}=?")
+            val args = arrayListOf(threadId.toString())
+            if (beforeMs > 0L) {
+                sel.append(" AND ${Telephony.Mms.DATE}<?")
+                args.add((beforeMs / 1000L).toString())
+            }
+            val order = "${Telephony.Mms.DATE} DESC" +
+                if (limit > 0) " LIMIT $limit" else ""
+            // 1re passe : collecte les MMS (sans les parts), mémorise les ids.
+            val rows = ArrayList<MutableMap<String, Any?>>()
+            val mmsIds = ArrayList<Long>()
             context.contentResolver.query(
                 Telephony.Mms.CONTENT_URI,
                 arrayOf(
@@ -380,9 +428,9 @@ object SmsBridge {
                     Telephony.Mms.SUBJECT,
                     Telephony.Mms.MESSAGE_TYPE,
                 ),
-                "${Telephony.Mms.THREAD_ID}=?",
-                arrayOf(threadId.toString()),
-                "${Telephony.Mms.DATE} ASC",
+                sel.toString(),
+                args.toTypedArray(),
+                order,
             )?.use { c ->
                 val idxId = c.getColumnIndexOrThrow(Telephony.Mms._ID)
                 val idxDate = c.getColumnIndexOrThrow(Telephony.Mms.DATE)
@@ -391,31 +439,48 @@ object SmsBridge {
                 val idxSubject = c.getColumnIndexOrThrow(Telephony.Mms.SUBJECT)
                 while (c.moveToNext()) {
                     val mmsId = c.getLong(idxId)
-                    val box = c.getInt(idxBox)
-                    val isFromMe = box == Telephony.Mms.MESSAGE_BOX_SENT ||
-                        box == Telephony.Mms.MESSAGE_BOX_OUTBOX
-                    val (text, attachments) = mmsParts(context, mmsId)
-                    val subject = c.getString(idxSubject)?.takeUnless { it.isBlank() || it == "NoSubject" }
-                    // Ne pas répéter le sujet s'il est déjà identique au texte
-                    // (certains MMS copient le corps dans le sujet → doublon).
-                    val subj = subject?.takeUnless { it.trim() == text.trim() }
-                    val body = listOfNotNull(subj, text.takeIf { it.isNotBlank() }).joinToString("\n")
-                    val address = if (isFromMe) "" else (mmsSenderAddress(context, mmsId) ?: "")
-                    out += mapOf(
-                        "id" to mmsId,
-                        "address" to address,
-                        "body" to body,
-                        "date" to c.getLong(idxDate) * 1000L,
-                        "isFromMe" to isFromMe,
-                        // Mappe la box MMS vers une sémantique type proche des SMS pour Dart.
-                        "type" to if (isFromMe) Telephony.Sms.MESSAGE_TYPE_SENT
-                                  else Telephony.Sms.MESSAGE_TYPE_INBOX,
-                        "status" to 0,
-                        "read" to (c.getInt(idxRead) == 1),
-                        "isMms" to true,
-                        "attachments" to attachments,
+                    mmsIds.add(mmsId)
+                    rows.add(
+                        mutableMapOf(
+                            "_mmsId" to mmsId,
+                            "_box" to c.getInt(idxBox),
+                            "_date" to c.getLong(idxDate),
+                            "_read" to c.getInt(idxRead),
+                            "_subject" to c.getString(idxSubject),
+                        ),
                     )
                 }
+            }
+            // 2e passe : TOUTES les parts en UNE query (anti N+1).
+            val partsByMms = mmsPartsBatch(context, mmsIds)
+            for (row in rows) {
+                val mmsId = row["_mmsId"] as Long
+                val box = row["_box"] as Int
+                val isFromMe = box == Telephony.Mms.MESSAGE_BOX_SENT ||
+                    box == Telephony.Mms.MESSAGE_BOX_OUTBOX
+                val (text, attachments) =
+                    partsByMms[mmsId] ?: ("" to emptyList())
+                val subject = (row["_subject"] as? String)
+                    ?.takeUnless { it.isBlank() || it == "NoSubject" }
+                // Ne pas répéter le sujet s'il est déjà identique au texte
+                // (certains MMS copient le corps dans le sujet → doublon).
+                val subj = subject?.takeUnless { it.trim() == text.trim() }
+                val body = listOfNotNull(subj, text.takeIf { it.isNotBlank() }).joinToString("\n")
+                val address = if (isFromMe) "" else (mmsSenderAddress(context, mmsId) ?: "")
+                out += mapOf(
+                    "id" to mmsId,
+                    "address" to address,
+                    "body" to body,
+                    "date" to (row["_date"] as Long) * 1000L,
+                    "isFromMe" to isFromMe,
+                    // Mappe la box MMS vers une sémantique type proche des SMS pour Dart.
+                    "type" to if (isFromMe) Telephony.Sms.MESSAGE_TYPE_SENT
+                              else Telephony.Sms.MESSAGE_TYPE_INBOX,
+                    "status" to 0,
+                    "read" to ((row["_read"] as Int) == 1),
+                    "isMms" to true,
+                    "attachments" to attachments,
+                )
             }
         } catch (e: SecurityException) {
             Log.e(TAG, "listMms($threadId): READ_SMS denied: ${e.message}")
@@ -423,6 +488,79 @@ object SmsBridge {
             Log.e(TAG, "listMms($threadId) failed: ${e.message}")
         }
         return out
+    }
+
+    /**
+     * Lit les parts text+attachments de PLUSIEURS MMS en une seule query
+     * (`MSG_ID IN (...)`), pour éviter le N+1 sur les longues conversations.
+     * @return map mmsId → Pair(texte dédupliqué, attachments).
+     */
+    private fun mmsPartsBatch(
+        context: Context,
+        mmsIds: List<Long>,
+    ): Map<Long, Pair<String, List<Map<String, Any?>>>> {
+        if (mmsIds.isEmpty()) return emptyMap()
+        val textsByMms = HashMap<Long, LinkedHashSet<String>>()
+        val attachByMms = HashMap<Long, ArrayList<Map<String, Any?>>>()
+        try {
+            val placeholders = mmsIds.joinToString(",") { "?" }
+            context.contentResolver.query(
+                MMS_PART_URI,
+                arrayOf(
+                    Telephony.Mms.Part._ID,
+                    Telephony.Mms.Part.MSG_ID,
+                    Telephony.Mms.Part.CONTENT_TYPE,
+                    Telephony.Mms.Part.NAME,
+                    Telephony.Mms.Part.FILENAME,
+                    Telephony.Mms.Part.TEXT,
+                    Telephony.Mms.Part._DATA,
+                ),
+                "${Telephony.Mms.Part.MSG_ID} IN ($placeholders)",
+                mmsIds.map { it.toString() }.toTypedArray(),
+                null,
+            )?.use { c ->
+                val idxId = c.getColumnIndexOrThrow(Telephony.Mms.Part._ID)
+                val idxMsg = c.getColumnIndexOrThrow(Telephony.Mms.Part.MSG_ID)
+                val idxCt = c.getColumnIndexOrThrow(Telephony.Mms.Part.CONTENT_TYPE)
+                val idxName = c.getColumnIndexOrThrow(Telephony.Mms.Part.NAME)
+                val idxFile = c.getColumnIndexOrThrow(Telephony.Mms.Part.FILENAME)
+                val idxText = c.getColumnIndexOrThrow(Telephony.Mms.Part.TEXT)
+                val idxData = c.getColumnIndexOrThrow(Telephony.Mms.Part._DATA)
+                while (c.moveToNext()) {
+                    val partId = c.getLong(idxId)
+                    val msgId = c.getLong(idxMsg)
+                    val mime = c.getString(idxCt) ?: ""
+                    when {
+                        mime == "application/smil" -> { /* présentation, ignorée */ }
+                        mime == "text/plain" -> {
+                            val data = c.getString(idxData)
+                            val t = if (data != null) readMmsPartText(context, partId)
+                                    else c.getString(idxText)
+                            val trimmed = t?.trim()
+                            if (!trimmed.isNullOrEmpty()) {
+                                textsByMms.getOrPut(msgId) { LinkedHashSet() }.add(trimmed)
+                            }
+                        }
+                        else -> {
+                            val fileName = c.getString(idxName)
+                                ?: c.getString(idxFile)
+                                ?: "part_$partId"
+                            attachByMms.getOrPut(msgId) { ArrayList() } += mapOf(
+                                "partId" to partId,
+                                "mimeType" to mime,
+                                "fileName" to fileName,
+                            )
+                        }
+                    }
+                }
+            }
+        } catch (e: Exception) {
+            Log.w(TAG, "mmsPartsBatch failed: ${e.message}")
+        }
+        return mmsIds.associateWith { id ->
+            (textsByMms[id]?.joinToString("\n") ?: "") to
+                (attachByMms[id] ?: emptyList())
+        }
     }
 
     /**
