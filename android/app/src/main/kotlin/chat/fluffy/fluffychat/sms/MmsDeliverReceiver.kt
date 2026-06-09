@@ -34,10 +34,13 @@ class MmsDeliverReceiver : BroadcastReceiver() {
             Log.e(SmsBridge.TAG, "WAP_PUSH_DELIVER: PDU notification illisible")
             return
         }
+        // PII expurgée : ni le numéro, ni la content-location, ni le transaction-id
+        // ne doivent atterrir en clair dans logcat. On ne logge que des présences.
         Log.i(
             SmsBridge.TAG,
-            "MMS notif parsée: from=${notif.from} size=${notif.messageSize} " +
-                "txn=${notif.transactionId} loc=${notif.contentLocation}",
+            "MMS notif parsée: size=${notif.messageSize} " +
+                "from=${if (notif.from.isNullOrBlank()) "?" else "ok"} " +
+                "loc=${if (notif.contentLocation.isNullOrBlank()) "absente" else "ok"}",
         )
 
         // Déclenche le download réel (asynchrone). goAsync pour tenir le process.

@@ -1884,7 +1884,7 @@ object SmsBridge {
             val (mmsId, threadId) = insertRetrievedMms(context, retrieved, sender)
             file.delete()
             if (mmsId > 0) {
-                Log.i(TAG, "MMS entrant ingéré mmsId=$mmsId thread=$threadId from=$sender")
+                Log.i(TAG, "MMS entrant ingéré mmsId=$mmsId thread=$threadId")
                 // Notifie Dart : un MMS est désormais lisible dans le provider.
                 onMmsReceived?.invoke(
                     mapOf(
