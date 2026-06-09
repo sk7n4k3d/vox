@@ -24,6 +24,7 @@ import 'package:fluffychat/widgets/cyber/cyber_widgets.dart';
 import 'package:fluffychat/widgets/cyber/ephemeral_picker.dart';
 import 'package:fluffychat/widgets/cyber/link_preview_card.dart';
 import 'package:fluffychat/widgets/cyber/scheduled_send.dart';
+import 'package:fluffychat/widgets/cyber/screen_effect_overlay.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_linkify/flutter_linkify.dart';
@@ -155,6 +156,20 @@ class _SmsChatPageState extends State<SmsChatPage> {
   /// keyboard icon.
   bool _showEmoji = false;
 
+  /// Effets plein écran (pluie/cœurs/confettis…) — même contrôleur que le chat
+  /// Matrix (chat.dart). Throttle 3s, reduce-motion et anti-doublon intégrés.
+  final ScreenEffectController _screenEffectController = ScreenEffectController();
+
+  /// Joue l'effet plein écran correspondant au [body] si le réglage est actif.
+  void _maybePlayEffect(String body) {
+    if (!mounted) return;
+    final fx = smsScreenEffectFor(
+      body,
+      effectsEnabled: AppSettings.screenEffectsEnabled.value,
+    );
+    if (fx != null) _screenEffectController.play(context, fx);
+  }
+
   @override
   void initState() {
     super.initState();
@@ -191,6 +206,7 @@ class _SmsChatPageState extends State<SmsChatPage> {
     _scroll.removeListener(_onScroll);
     _scroll.dispose();
     _animateInClear?.cancel();
+    _screenEffectController.dispose();
     super.dispose();
   }
 
@@ -319,6 +335,7 @@ class _SmsChatPageState extends State<SmsChatPage> {
       _scheduleAnimateInClear(incomingId);
       unawaited(SmsBridge.instance.markRead(widget.threadId));
       _scrollToBottom();
+      _maybePlayEffect(sms.body);
     });
   }
 
@@ -370,6 +387,7 @@ class _SmsChatPageState extends State<SmsChatPage> {
     });
     _scheduleAnimateInClear(optimistic.id);
     _scrollToBottom();
+    _maybePlayEffect(body);
 
     final int? rowId;
     if (hasImage) {
