@@ -396,7 +396,10 @@ object SmsBridge {
                         box == Telephony.Mms.MESSAGE_BOX_OUTBOX
                     val (text, attachments) = mmsParts(context, mmsId)
                     val subject = c.getString(idxSubject)?.takeUnless { it.isBlank() || it == "NoSubject" }
-                    val body = listOfNotNull(subject, text.takeIf { it.isNotBlank() }).joinToString("\n")
+                    // Ne pas répéter le sujet s'il est déjà identique au texte
+                    // (certains MMS copient le corps dans le sujet → doublon).
+                    val subj = subject?.takeUnless { it.trim() == text.trim() }
+                    val body = listOfNotNull(subj, text.takeIf { it.isNotBlank() }).joinToString("\n")
                     val address = if (isFromMe) "" else (mmsSenderAddress(context, mmsId) ?: "")
                     out += mapOf(
                         "id" to mmsId,
@@ -434,7 +437,11 @@ object SmsBridge {
      * thread de taille réaliste (quelques dizaines de MMS).
      */
     private fun mmsParts(context: Context, mmsId: Long): Pair<String, List<Map<String, Any?>>> {
-        val text = StringBuilder()
+        // Certains MMS (expéditeurs iOS, ou double-stockage à la réception)
+        // contiennent la MÊME part text/plain en double → le texte s'affichait
+        // collé deux fois dans la bulle. On dédoublonne les fragments de texte
+        // identiques et on les joint proprement.
+        val textParts = LinkedHashSet<String>()
         val attachments = ArrayList<Map<String, Any?>>()
         try {
             context.contentResolver.query(
@@ -466,7 +473,8 @@ object SmsBridge {
                             val data = c.getString(idxData)
                             val t = if (data != null) readMmsPartText(context, partId)
                                     else c.getString(idxText)
-                            if (!t.isNullOrEmpty()) text.append(t)
+                            val trimmed = t?.trim()
+                            if (!trimmed.isNullOrEmpty()) textParts.add(trimmed)
                         }
                         else -> {
                             val fileName = c.getString(idxName)
@@ -484,7 +492,7 @@ object SmsBridge {
         } catch (e: Exception) {
             Log.w(TAG, "mmsParts($mmsId) failed: ${e.message}")
         }
-        return text.toString() to attachments
+        return textParts.joinToString("\n") to attachments
     }
 
     /** Concat des parts text/plain d'un MMS (pour le snippet conv-list). Null si aucune. */
