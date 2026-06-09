@@ -15,6 +15,7 @@ ScreenEffect? smsScreenEffectFor(String body, {required bool effectsEnabled}) {
 /// Même critère que le chemin Matrix (AnimatedEmojiText.hasAnimatable).
 bool smsShouldJumbo({required String body, required bool hasMedia}) {
   if (hasMedia) return false;
+  // hasAnimatable gère déjà le corps vide ; gardé pour lisibilité de l'invariant.
   if (body.isEmpty) return false;
   return AnimatedEmojiText.hasAnimatable(body);
 }

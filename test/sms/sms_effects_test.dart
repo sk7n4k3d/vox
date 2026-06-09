@@ -12,6 +12,9 @@ void main() {
     test('returns null for a plain text message', () {
       expect(smsScreenEffectFor('salut ça va', effectsEnabled: true), isNull);
     });
+    test('returns null for an empty body', () {
+      expect(smsScreenEffectFor('', effectsEnabled: true), isNull);
+    });
   });
 
   group('smsShouldJumbo', () {
