@@ -42,6 +42,10 @@ object SmsBridge {
 
     const val TAG = "SmsBridge"
 
+    // Plafond de taille d'un m-retrieve-conf lu en RAM (cf. ingestDownloadedMms) :
+    // borne anti-OOM contre une content-location servant une réponse géante.
+    private const val MAX_PDU_BYTES = 4L * 1024 * 1024
+
     /**
      * Callback poussé à chaque SMS entrant (après écriture dans l'inbox du provider).
      * Branché par [SmsBridgePlugin] vers le MethodChannel Dart. Null si Flutter pas attaché.
@@ -1108,7 +1112,7 @@ object SmsBridge {
                 return@execute
             }
             val ok = MmsNetworkManager.withNetwork(app) { _ ->
-                Log.i(TAG, "MMS network acquis → POST $mmscUrl (proxy=$proxyHost:$proxyPort)")
+                Log.i(TAG, "MMS network acquis → POST MMSC (proxy=${if (proxyHost.isNullOrBlank()) "non" else "oui"})")
                 // The process is already bound to the MMS network by the manager,
                 // so a plain HTTP connection routes over cellular MMS.
                 val resp = MmsHttpClient.postPdu(
@@ -1143,19 +1147,19 @@ object SmsBridge {
 
         // (1) CarrierConfigManager — official, permission-free.
         readMmsFromCarrierConfig(context)?.let {
-            Log.i(TAG, "MMS APN via CarrierConfig: ${it.first}")
+            Log.i(TAG, "MMS APN via CarrierConfig (résolu)")
             return it
         }
 
         // (2) Carriers content provider (may throw SecurityException).
         readMmsFromCarriersProvider(context, numeric)?.let {
-            Log.i(TAG, "MMS APN via provider: ${it.first}")
+            Log.i(TAG, "MMS APN via provider (résolu)")
             return it
         }
 
         // (3) Built-in table for known carriers.
         builtInMmsApn(numeric)?.let {
-            Log.i(TAG, "MMS APN via built-in (numeric=$numeric): ${it.first}")
+            Log.i(TAG, "MMS APN via built-in (numeric=$numeric, résolu)")
             return it
         }
 
@@ -1785,6 +1789,16 @@ object SmsBridge {
                 onDone()
                 return
             }
+            // Defense-in-depth : ne déclenche le download que sur un scheme
+            // http(s). La content-location vient du WAP push (attaquant-influençable) ;
+            // un scheme exotique (file:, content:) ne doit jamais atteindre le
+            // framework de download.
+            val locScheme = android.net.Uri.parse(location).scheme?.lowercase()
+            if (locScheme != "http" && locScheme != "https") {
+                Log.e(TAG, "downloadIncomingMms: scheme content-location non autorisé, abandon")
+                onDone()
+                return
+            }
             val dir = File(context.cacheDir, "mms_in").apply { mkdirs() }
             val downloadFile = File(dir, "dl_${System.currentTimeMillis()}.pdu")
             // FileProvider-backed content URI the framework can write to.
@@ -1817,7 +1831,7 @@ object SmsBridge {
                 null,
                 pi,
             )
-            Log.i(TAG, "downloadMultimediaMessage soumis pour loc=$location")
+            Log.i(TAG, "downloadMultimediaMessage soumis (loc ${location.length} c)")
         } catch (e: Exception) {
             Log.e(TAG, "downloadIncomingMms failed: ${e.message}")
         } finally {
@@ -1849,6 +1863,15 @@ object SmsBridge {
             val file = File(pduPath)
             if (!file.exists() || file.length() == 0L) {
                 Log.e(TAG, "ingestDownloadedMms: PDU vide/absent ($pduPath)")
+                return@withContext false
+            }
+            // Plafond avant readBytes() : la taille = réponse HTTP de la
+            // content-location (influençable). Sans borne, un PDU géant lèverait
+            // OutOfMemoryError (un Error, NON rattrapé par le catch) → crash du
+            // process de l'app SMS par défaut. 4 Mo >> un MMS réel (~300 Ko–1 Mo).
+            if (file.length() > MAX_PDU_BYTES) {
+                Log.e(TAG, "ingestDownloadedMms: PDU trop volumineux (${file.length()} o), abandon")
+                file.delete()
                 return@withContext false
             }
             val pdu = file.readBytes()

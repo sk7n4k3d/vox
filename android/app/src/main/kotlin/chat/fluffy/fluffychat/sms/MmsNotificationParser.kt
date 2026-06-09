@@ -1,6 +1,7 @@
 package chat.fluffy.fluffychat.sms
 
 import android.util.Log
+import java.io.ByteArrayOutputStream
 
 /**
  * Minimal parser for an MMS **M-Notification.ind** PDU (the body of a WAP push
@@ -114,12 +115,18 @@ object MmsNotificationParser {
 
         /** Reads the next octet as an unsigned 0..255 int. */
         fun readByte(): Int {
+            // Borne explicite : un PDU tronqué (input attaquant) ne doit jamais
+            // déréférencer hors buffer. L'exception est rattrapée par parse().
+            if (pos >= data.size) throw IndexOutOfBoundsException("PDU tronqué")
             val b = data[pos].toInt() and 0xFF
             pos++
             return b
         }
 
-        private fun peek(): Int = data[pos].toInt() and 0xFF
+        private fun peek(): Int {
+            if (pos >= data.size) throw IndexOutOfBoundsException("PDU tronqué")
+            return data[pos].toInt() and 0xFF
+        }
 
         /** Null-terminated text-string (skips a leading 0x7F/quote if present). */
         fun readText(): String {
@@ -127,14 +134,16 @@ object MmsNotificationParser {
             if (hasRemaining() && (peek() == 0x22 || peek() == 0x7F || peek() == 0x80)) {
                 pos++
             }
-            val sb = StringBuilder()
+            // Accumule les octets puis décode en UTF-8 (toChar() octet par octet
+            // donnerait du Latin-1 et casserait les noms/URLs non-ASCII).
+            val bytes = ByteArrayOutputStream()
             while (hasRemaining()) {
-                val c = data[pos].toInt() and 0xFF
+                val c = data[pos]
                 pos++
-                if (c == 0) break
-                sb.append(c.toChar())
+                if (c.toInt() == 0) break
+                bytes.write(c.toInt())
             }
-            return sb.toString()
+            return bytes.toString("UTF-8")
         }
 
         /** Short integer (high bit set) or long integer (length-prefixed). */
@@ -187,9 +196,13 @@ object MmsNotificationParser {
 
         private fun readUintvar(): Int {
             var value = 0
-            while (hasRemaining()) {
+            var n = 0
+            // WSP uintvar = 5 octets max (32 bits utiles) ; au-delà = PDU forgé,
+            // on s'arrête pour éviter un overflow Int silencieux.
+            while (hasRemaining() && n < 5) {
                 val b = readByte() and 0xFF
                 value = (value shl 7) or (b and 0x7F)
+                n++
                 if (b and 0x80 == 0) break
             }
             return value

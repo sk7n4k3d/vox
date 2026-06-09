@@ -95,7 +95,9 @@ class MmsPduProvider : ContentProvider() {
             val file = File(dir, name)
             return try {
                 val canonical = file.canonicalPath
-                if (!canonical.startsWith(dir.canonicalPath)) {
+                // Séparateur inclus : sinon un sibling `rawmms_evil` passerait le
+                // préfixe `rawmms`. Le fichier doit être STRICTEMENT sous le dossier.
+                if (!canonical.startsWith(dir.canonicalPath + File.separator)) {
                     Log.e(SmsBridge.TAG, "MmsPduProvider: path traversal blocked: $name")
                     null
                 } else {

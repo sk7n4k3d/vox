@@ -1,6 +1,7 @@
 package chat.fluffy.fluffychat.sms
 
 import android.util.Log
+import java.io.ByteArrayOutputStream
 
 /**
  * Parser for an MMS **m-retrieve-conf** PDU (the actual downloaded message body).
@@ -37,6 +38,10 @@ object MmsRetrieveParser {
     private const val FIELD_DATE = 0x85
     private const val FIELD_SUBJECT = 0x96
     private const val FIELD_FROM_ADDRESS_PRESENT = 0x80
+
+    // Plafond du nombre de parts d'un MMS : un message réel en a < 50. Borne
+    // contre un `count` multipart forgé (uintvar) qui ferait exploser l'alloc.
+    private const val MAX_PARTS = 1024
 
     fun parse(pdu: ByteArray): Retrieved? {
         return try {
@@ -78,7 +83,7 @@ object MmsRetrieveParser {
     private fun parseMultipart(c: Cursor): List<Part> {
         val out = ArrayList<Part>()
         if (!c.hasRemaining()) return out
-        val count = c.readUintvar()
+        val count = c.readUintvar().coerceAtMost(MAX_PARTS)
         for (i in 0 until count) {
             if (!c.hasRemaining()) break
             val headersLen = c.readUintvar()
@@ -114,9 +119,15 @@ object MmsRetrieveParser {
         fun position() = pos
         fun seek(p: Int) { pos = p.coerceIn(0, data.size) }
 
-        fun peekByte(): Int = data[pos].toInt() and 0xFF
+        fun peekByte(): Int {
+            if (pos >= data.size) throw IndexOutOfBoundsException("PDU tronqué")
+            return data[pos].toInt() and 0xFF
+        }
 
         fun readByte(): Int {
+            // Borne explicite : un m-retrieve-conf tronqué ne doit pas déréférencer
+            // hors buffer. L'exception est rattrapée par parse().
+            if (pos >= data.size) throw IndexOutOfBoundsException("PDU tronqué")
             val b = data[pos].toInt() and 0xFF
             pos++
             return b
@@ -131,21 +142,25 @@ object MmsRetrieveParser {
 
         fun readText(): String {
             if (hasRemaining() && (peekByte() == 0x22 || peekByte() == 0x7F)) pos++
-            val sb = StringBuilder()
+            // Décodage UTF-8 (toChar() octet par octet = Latin-1 = noms cassés).
+            val bytes = ByteArrayOutputStream()
             while (hasRemaining()) {
-                val ch = data[pos].toInt() and 0xFF
+                val ch = data[pos]
                 pos++
-                if (ch == 0) break
-                sb.append(ch.toChar())
+                if (ch.toInt() == 0) break
+                bytes.write(ch.toInt())
             }
-            return sb.toString()
+            return bytes.toString("UTF-8")
         }
 
         fun readUintvar(): Int {
             var value = 0
-            while (hasRemaining()) {
+            var n = 0
+            // WSP uintvar = 5 octets max ; au-delà = PDU forgé → on coupe.
+            while (hasRemaining() && n < 5) {
                 val b = readByte()
                 value = (value shl 7) or (b and 0x7F)
+                n++
                 if (b and 0x80 == 0) break
             }
             return value
