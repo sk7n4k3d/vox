@@ -11,8 +11,11 @@ ScreenEffect? smsScreenEffectFor(String body, {required bool effectsEnabled}) {
 }
 
 /// Vrai si la bulle SMS doit rendre le corps en gros emoji animé (jumbomoji) :
-/// le message ne porte aucun média ET son corps est 1-3 emojis animables.
-/// Même critère que le chemin Matrix (AnimatedEmojiText.hasAnimatable).
+/// le message ne porte aucun média ET son corps est 1-3 emojis animables
+/// (`AnimatedEmojiText.hasAnimatable`, même widget de rendu que Matrix).
+/// NB : volontairement un peu plus permissif que Matrix — qui restreint le jumbo
+/// à UN seul emoji du picker (`bigEmojis.contains`) — conformément au spec SMS
+/// validé (« 1-3 emojis seuls »).
 bool smsShouldJumbo({required String body, required bool hasMedia}) {
   if (hasMedia) return false;
   // hasAnimatable gère déjà le corps vide ; gardé pour lisibilité de l'invariant.
