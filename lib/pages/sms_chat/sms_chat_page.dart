@@ -335,6 +335,10 @@ class _SmsChatPageState extends State<SmsChatPage> {
       _scheduleAnimateInClear(incomingId);
       unawaited(SmsBridge.instance.markRead(widget.threadId));
       _scrollToBottom();
+      // Pas de garde d'âge ici (contrairement au chemin Matrix) : le stream
+      // `incoming` ne livre que les SMS/MMS reçus en live, jamais l'historique au
+      // démarrage — donc aucun déluge d'effets à craindre. Le throttle 3s du
+      // contrôleur couvre les arrivées rapprochées.
       _maybePlayEffect(sms.body);
     });
   }
