@@ -12,10 +12,12 @@ import 'package:fluffychat/config/themes.dart';
 import 'package:fluffychat/l10n/l10n.dart';
 import 'package:fluffychat/pages/chat/chat_date_separator.dart';
 import 'package:fluffychat/pages/chat/events/swipe_to_reply.dart';
+import 'package:fluffychat/pages/sms_chat/sms_effects.dart';
 import 'package:fluffychat/utils/ephemeral/ephemeral_messages.dart';
 import 'package:fluffychat/utils/scheduled/scheduled_messages.dart';
 import 'package:fluffychat/utils/sms/map_linkifier.dart';
 import 'package:fluffychat/utils/sms/sms_bridge.dart';
+import 'package:fluffychat/widgets/cyber/animated_emoji_text.dart';
 import 'package:fluffychat/widgets/cyber/chat_bubble_skin.dart';
 import 'package:fluffychat/widgets/cyber/cyber_fx.dart';
 import 'package:fluffychat/widgets/cyber/cyber_widgets.dart';
@@ -1511,7 +1513,26 @@ class _SmsBubble extends StatelessWidget {
               resolveMediaPath: resolveImagePath,
             ),
           ),
-        if (hasText)
+        if (hasText &&
+            smsShouldJumbo(
+              body: message.body,
+              hasMedia: media.isNotEmpty || files.isNotEmpty,
+            ))
+          Padding(
+            // Gros emoji animé (parité Matrix message_content.dart) : même taille
+            // ×5 que la bulle Matrix jumbo.
+            padding: const EdgeInsets.symmetric(
+              horizontal: FluffySpacing.lg,
+              vertical: FluffySpacing.sm,
+            ),
+            child: AnimatedEmojiText(
+              text: message.body,
+              size: AppConfig.messageFontSize *
+                  AppSettings.fontSizeFactor.value *
+                  5,
+            ),
+          )
+        else if (hasText)
           Padding(
             // Same interior padding as the Matrix bubble (16 / 8).
             padding: const EdgeInsets.symmetric(
