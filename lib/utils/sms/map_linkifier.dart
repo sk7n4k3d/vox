@@ -33,8 +33,16 @@ class MapAddressLinkifier extends Linkifier {
     for (final element in elements) {
       if (element is TextElement) {
         final text = element.text;
+        final matches = _addressRegex.allMatches(text).toList();
+        // Aucune adresse : on garde l'élément tel quel. (Avant, les deux blocs
+        // ci-dessous ajoutaient TOUS LES DEUX le texte complet → chaque message
+        // sans adresse s'affichait en double, ex « cs089xncs089xn ».)
+        if (matches.isEmpty) {
+          list.add(element);
+          continue;
+        }
         var lastEnd = 0;
-        for (final match in _addressRegex.allMatches(text)) {
+        for (final match in matches) {
           if (match.start > lastEnd) {
             list.add(TextElement(text.substring(lastEnd, match.start)));
           }
@@ -44,9 +52,6 @@ class MapAddressLinkifier extends Linkifier {
         }
         if (lastEnd < text.length) {
           list.add(TextElement(text.substring(lastEnd)));
-        }
-        if (lastEnd == 0 && _addressRegex.allMatches(text).isEmpty) {
-          list.add(element);
         }
       } else {
         list.add(element);
