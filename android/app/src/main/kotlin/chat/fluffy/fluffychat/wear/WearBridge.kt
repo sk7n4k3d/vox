@@ -34,6 +34,10 @@ object WearBridge {
     private const val DATA_KEY = "payload"
     private const val UPDATED_KEY = "updatedAt"
 
+    // Plafond d'un vocal lu en RAM depuis un Asset DataLayer (anti-OOM sur Asset
+    // forgé/volumineux). 8 Mo = très large pour un message vocal Opus.
+    private const val MAX_VOICE_BYTES = 8 * 1024 * 1024
+
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
     /**
@@ -220,8 +224,15 @@ object WearBridge {
      */
     private fun persistPendingVoice(context: Context, msg: VoiceMessage) {
         try {
-            val header = """{"uuid":"${msg.uuid}","roomId":"${msg.roomId}",""" +
-                """"durationMs":${msg.durationMs},"mimeType":"${msg.mimeType}"}"""
+            // org.json échappe correctement uuid/roomId/mimeType (un `"` ou `,`
+            // dans une valeur cassait le JSON concaténé et permettait, au relire,
+            // de rediriger le vocal vers une autre room).
+            val header = org.json.JSONObject()
+                .put("uuid", msg.uuid)
+                .put("roomId", msg.roomId)
+                .put("durationMs", msg.durationMs)
+                .put("mimeType", msg.mimeType)
+                .toString()
             val headerBytes = header.toByteArray(StandardCharsets.UTF_8)
             val ts = System.currentTimeMillis()
             val file = File(pendingVoicesDir(context), "${ts}_${msg.uuid}.bin")
@@ -249,11 +260,11 @@ object WearBridge {
             if (headerLen <= 0 || headerLen > raw.size - 4) return null
             val header = String(raw, 4, headerLen, StandardCharsets.UTF_8)
             val audioBytes = raw.copyOfRange(4 + headerLen, raw.size)
-            // Parse JSON manually (no Gson dep): fields are fixed, simple regex.
-            val uuid = Regex(""""uuid":"([^"]+)"""").find(header)?.groupValues?.get(1) ?: return null
-            val roomId = Regex(""""roomId":"([^"]+)"""").find(header)?.groupValues?.get(1) ?: return null
-            val durationMs = Regex(""""durationMs":(\d+)""").find(header)?.groupValues?.get(1)?.toIntOrNull() ?: 0
-            val mimeType = Regex(""""mimeType":"([^"]+)"""").find(header)?.groupValues?.get(1) ?: "audio/ogg"
+            val obj = org.json.JSONObject(header)
+            val uuid = obj.optString("uuid").ifEmpty { return null }
+            val roomId = obj.optString("roomId").ifEmpty { return null }
+            val durationMs = obj.optInt("durationMs", 0)
+            val mimeType = obj.optString("mimeType", "audio/ogg")
             VoiceMessage(uuid, roomId, durationMs, mimeType, audioBytes)
         } catch (t: Throwable) {
             Log.w(TAG, "readPendingVoice failed for ${file.name}", t)
@@ -315,8 +326,13 @@ object WearBridge {
     private fun InputStream.readAllBytesCompat(): ByteArray {
         val buf = ByteArrayOutputStream()
         val chunk = ByteArray(8192)
+        var total = 0
         var n: Int
         while (this.read(chunk).also { n = it } != -1) {
+            total += n
+            if (total > MAX_VOICE_BYTES) {
+                throw java.io.IOException("voice payload > $MAX_VOICE_BYTES o, rejeté")
+            }
             buf.write(chunk, 0, n)
         }
         return buf.toByteArray()
