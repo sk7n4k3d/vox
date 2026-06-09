@@ -22,6 +22,17 @@ abstract class ScreenEffectDetector {
     '🥂': ScreenEffect.celebration,
     '🔥': ScreenEffect.fire,
     '💪': ScreenEffect.fire,
+    '🌧️': ScreenEffect.rain,
+    '☔': ScreenEffect.rain,
+    '⛈️': ScreenEffect.rain,
+    '✨': ScreenEffect.sparkle,
+    '🌟': ScreenEffect.sparkle,
+    '💫': ScreenEffect.sparkle,
+    '💋': ScreenEffect.kiss,
+    '😘': ScreenEffect.kiss,
+    '😗': ScreenEffect.kiss,
+    '🎁': ScreenEffect.party,
+    '🪩': ScreenEffect.party,
   };
 
   static const Map<String, ScreenEffect> _byKeyword = {
@@ -44,6 +55,13 @@ abstract class ScreenEffectDetector {
     'tu gères': ScreenEffect.fire,
     'santé': ScreenEffect.celebration,
     'cheers': ScreenEffect.celebration,
+    'il pleut': ScreenEffect.rain,
+    'gros bisous': ScreenEffect.kiss,
+    'bisous': ScreenEffect.kiss,
+    'je te fais un bisou': ScreenEffect.kiss,
+    'la fête': ScreenEffect.party,
+    "c'est la fête": ScreenEffect.party,
+    'on fait la fête': ScreenEffect.party,
   };
 
   static ScreenEffect? detect(String body) {

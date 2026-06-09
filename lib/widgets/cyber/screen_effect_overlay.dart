@@ -28,13 +28,72 @@ class ScreenEffectController {
 
     if (effect.render == ScreenEffectRender.particles) {
       final cyber = CyberColors.of(context);
+      // « Grande fête » = bien plus de particules, large dispersion.
+      final isParty = effect == ScreenEffect.party;
       Confetti.launch(
         context,
         options: ConfettiOptions(
-          particleCount: 80,
-          spread: 70,
+          particleCount: isParty ? 200 : 80,
+          spread: isParty ? 160 : 70,
+          startVelocity: isParty ? 55 : 45,
           y: 0.6,
-          colors: [cyber.cyan, cyber.magenta, Colors.white],
+          colors: isParty
+              ? [
+                  cyber.cyan,
+                  cyber.magenta,
+                  cyber.violet,
+                  const Color(0xFFFFE066),
+                  Colors.white,
+                ]
+              : [cyber.cyan, cyber.magenta, Colors.white],
+        ),
+      );
+      return true;
+    }
+
+    if (effect.render == ScreenEffectRender.rainfall) {
+      // Pluie : fines gouttes bleutées lâchées du haut, chute rapide et droite.
+      Confetti.launch(
+        context,
+        options: const ConfettiOptions(
+          particleCount: 200,
+          angle: 270,
+          spread: 30,
+          startVelocity: 45,
+          gravity: 1.2,
+          drift: 0.2,
+          decay: 1.0,
+          ticks: 400,
+          scalar: 0.6,
+          x: 0.5,
+          y: 0,
+          flat: true,
+          colors: [Color(0xFF4FA8FF), Color(0xFF7FC4FF), Color(0xFFBFE3FF)],
+        ),
+      );
+      return true;
+    }
+
+    if (effect.render == ScreenEffectRender.sparkle) {
+      // Paillettes : éclats dorés/cyan qui jaillissent du centre et scintillent.
+      final cyber = CyberColors.of(context);
+      Confetti.launch(
+        context,
+        options: ConfettiOptions(
+          particleCount: 120,
+          spread: 360, // toutes directions
+          startVelocity: 28,
+          gravity: 0.3,
+          decay: 0.92,
+          ticks: 300,
+          scalar: 0.8,
+          y: 0.45,
+          colors: [
+            const Color(0xFFFFE066),
+            const Color(0xFFFFD700),
+            cyber.cyan,
+            Colors.white,
+          ],
         ),
       );
       return true;
