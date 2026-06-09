@@ -233,6 +233,20 @@ class _SmsChatPageState extends State<SmsChatPage> {
       _loading = false;
     });
     _scrollToBottom(animated: false);
+    _prefetchMedia(messages);
+  }
+
+  /// Pré-extrait en arrière-plan les parts média (images + vidéos) des messages
+  /// chargés, pour qu'elles soient déjà en cache quand la bulle arrive à l'écran
+  /// (plus de loader « à la volée » au scroll). Best-effort, non bloquant.
+  void _prefetchMedia(List<SmsMessage> messages) {
+    for (final m in messages) {
+      for (final a in m.visualMedia) {
+        // putIfAbsent via _resolveMmsPart : déclenche le chargement une fois et
+        // mémoïse, sans relancer si déjà en cours / fait.
+        unawaited(_resolveMmsPart(a.partId));
+      }
+    }
   }
 
   /// Charge la page précédente (messages plus anciens) quand on remonte. Préserve
@@ -259,6 +273,7 @@ class _SmsChatPageState extends State<SmsChatPage> {
       _hasMore = older.length >= _pageSize;
       _loadingMore = false;
     });
+    _prefetchMedia(older);
     // Compense le décalage introduit par les nouveaux items en tête.
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!_scroll.hasClients) return;
