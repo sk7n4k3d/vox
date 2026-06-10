@@ -1,5 +1,7 @@
 import 'dart:async';
 
+import 'package:animations/animations.dart';
+import 'package:fluffychat/config/design_tokens.dart';
 import 'package:fluffychat/config/themes.dart';
 import 'package:fluffychat/pages/archive/archive.dart';
 import 'package:fluffychat/pages/bootstrap/bootstrap_dialog.dart';
@@ -514,11 +516,28 @@ abstract class AppRoutes {
     BuildContext context,
     GoRouterState state,
     Widget child,
-  ) => FluffyThemes.isColumnMode(context)
-      ? noTransitionPageBuilder(context, state, child)
-      : MaterialPage(
-          key: state.pageKey,
-          restorationId: state.pageKey.value,
-          child: child,
-        );
+  ) {
+    if (FluffyThemes.isColumnMode(context)) {
+      return noTransitionPageBuilder(context, state, child);
+    }
+    final reduceMotion =
+        MediaQuery.maybeOf(context)?.disableAnimations ?? false;
+    if (reduceMotion) {
+      return noTransitionPageBuilder(context, state, child);
+    }
+    return CustomTransitionPage(
+      key: state.pageKey,
+      restorationId: state.pageKey.value,
+      transitionDuration: FluffyDurations.medium,
+      reverseTransitionDuration: FluffyDurations.medium,
+      transitionsBuilder: (context, animation, secondaryAnimation, child) =>
+          FadeThroughTransition(
+            animation: animation,
+            secondaryAnimation: secondaryAnimation,
+            fillColor: Theme.of(context).scaffoldBackgroundColor,
+            child: child,
+          ),
+      child: child,
+    );
+  }
 }
