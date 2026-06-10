@@ -2,7 +2,9 @@ import 'dart:ui';
 
 import 'package:fluffychat/config/cyberpunk_theme_extension.dart';
 import 'package:fluffychat/config/design_tokens.dart';
+import 'package:fluffychat/widgets/cyber/cyber_pressable.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 /// CYBERCORE shared building blocks — used to bring every remaining vanilla
 /// screen (auth, settings sub-pages, chat details, new chat, viewers…) up to
@@ -136,11 +138,17 @@ class CyberSettingsTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    return Material(
+    final onTap = this.onTap;
+    final tile = Material(
       color: Colors.transparent,
       child: InkWell(
         borderRadius: FluffyRadius.brLg,
-        onTap: onTap,
+        onTap: onTap == null
+            ? null
+            : () {
+                HapticFeedback.lightImpact();
+                onTap();
+              },
         child: Padding(
           padding: const EdgeInsets.symmetric(
             horizontal: FluffySpacing.md,
@@ -194,6 +202,8 @@ class CyberSettingsTile extends StatelessWidget {
         ),
       ),
     );
+    if (onTap == null) return tile;
+    return CyberPressable(child: tile);
   }
 }
 

@@ -1,7 +1,9 @@
 import 'package:fluffychat/config/cyberpunk_theme_extension.dart';
 import 'package:fluffychat/config/design_tokens.dart';
 import 'package:fluffychat/l10n/l10n.dart';
+import 'package:fluffychat/widgets/cyber/cyber_pressable.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:go_router/go_router.dart';
 
 /// New-chat FAB, themed to match CYBERCORE: a cyan→magenta gradient disc with a
@@ -20,25 +22,31 @@ class StartChatFab extends StatelessWidget {
         color: Colors.transparent,
         child: Tooltip(
           message: L10n.of(context).newChat,
-          child: InkWell(
-            onTap: () => context.go('/rooms/newprivatechat'),
-            customBorder: const CircleBorder(),
-            child: Container(
-              width: 56,
-              height: 56,
-              decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                gradient: LinearGradient(
-                  colors: [cyber.cyan, cyber.magenta],
-                  begin: Alignment.topLeft,
-                  end: Alignment.bottomRight,
+          child: CyberPressable(
+            child: InkWell(
+              onTap: () {
+                HapticFeedback.lightImpact();
+                context.go('/rooms/newprivatechat');
+              },
+              customBorder: const CircleBorder(),
+              child: Container(
+                width: 56,
+                height: 56,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  gradient: LinearGradient(
+                    colors: [cyber.cyan, cyber.magenta],
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
+                  ),
+                  boxShadow:
+                      FluffyElevation.glowMagenta(cyber.magenta, alpha: 0.5),
                 ),
-                boxShadow: FluffyElevation.glowMagenta(cyber.magenta, alpha: 0.5),
-              ),
-              child: const Icon(
-                Icons.edit_square,
-                color: Colors.black,
-                size: 24,
+                child: const Icon(
+                  Icons.edit_square,
+                  color: Colors.black,
+                  size: 24,
+                ),
               ),
             ),
           ),
