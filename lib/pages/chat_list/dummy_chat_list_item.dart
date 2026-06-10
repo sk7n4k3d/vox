@@ -1,5 +1,9 @@
+import 'package:fluffychat/widgets/cyber/cyber_skeleton.dart';
 import 'package:flutter/material.dart';
 
+/// Placeholder row shown while the chat list is loading (or behind the
+/// empty-state illustration). Rendered with [CyberSkeleton] shimmer boxes —
+/// [animate] drives the shimmer (frozen automatically under reduce-motion).
 class DummyChatListItem extends StatelessWidget {
   final double opacity;
   final bool animate;
@@ -12,59 +16,39 @@ class DummyChatListItem extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final titleColor = theme.textTheme.bodyLarge!.color!.withAlpha(100);
-    final subtitleColor = theme.textTheme.bodyLarge!.color!.withAlpha(50);
     return Opacity(
       opacity: opacity,
       child: ListTile(
-        leading: CircleAvatar(
-          backgroundColor: titleColor,
-          child: animate
-              ? CircularProgressIndicator(
-                  strokeWidth: 1,
-                  color: theme.textTheme.bodyLarge!.color,
-                )
-              : const SizedBox.shrink(),
+        leading: CyberSkeleton(
+          width: 40,
+          height: 40,
+          borderRadius: const BorderRadius.all(Radius.circular(20)),
+          animate: animate,
         ),
         title: Row(
           children: [
             Expanded(
-              child: Container(
-                height: 14,
-                decoration: BoxDecoration(
-                  color: titleColor,
-                  borderRadius: BorderRadius.circular(3),
-                ),
-              ),
+              child: CyberSkeleton(height: 14, animate: animate),
             ),
             const SizedBox(width: 36),
-            Container(
-              height: 14,
+            CyberSkeleton(
               width: 14,
-              decoration: BoxDecoration(
-                color: subtitleColor,
-                borderRadius: BorderRadius.circular(14),
-              ),
+              height: 14,
+              borderRadius: const BorderRadius.all(Radius.circular(7)),
+              animate: animate,
             ),
             const SizedBox(width: 12),
-            Container(
-              height: 14,
+            CyberSkeleton(
               width: 14,
-              decoration: BoxDecoration(
-                color: subtitleColor,
-                borderRadius: BorderRadius.circular(14),
-              ),
+              height: 14,
+              borderRadius: const BorderRadius.all(Radius.circular(7)),
+              animate: animate,
             ),
           ],
         ),
-        subtitle: Container(
-          decoration: BoxDecoration(
-            color: subtitleColor,
-            borderRadius: BorderRadius.circular(3),
-          ),
-          height: 12,
-          margin: const EdgeInsets.only(right: 22),
+        subtitle: Padding(
+          padding: const EdgeInsets.only(right: 22),
+          child: CyberSkeleton(height: 12, animate: animate),
         ),
       ),
     );

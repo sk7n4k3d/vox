@@ -2,6 +2,7 @@ import 'package:fluffychat/config/design_tokens.dart';
 import 'package:fluffychat/l10n/l10n.dart';
 import 'package:fluffychat/pages/archive/archive.dart';
 import 'package:fluffychat/pages/chat_list/chat_list_item.dart';
+import 'package:fluffychat/pages/chat_list/dummy_chat_list_item.dart';
 import 'package:fluffychat/widgets/cyber/cyber_fx.dart';
 import 'package:fluffychat/widgets/cyber/cyber_widgets.dart';
 import 'package:fluffychat/widgets/layouts/max_width_body.dart';
@@ -55,10 +56,14 @@ class ArchiveView extends StatelessWidget {
                 );
               }
               if (!snapshot.hasData) {
-                return Center(
-                  child: CircularProgressIndicator.adaptive(
-                    strokeWidth: 2,
-                    valueColor: AlwaysStoppedAnimation<Color>(cyber.cyan),
+                // Initial loading: shimmer skeleton rows instead of a spinner,
+                // keeping the list silhouette while the archive resolves.
+                const skeletonCount = 6;
+                return ListView.builder(
+                  itemCount: skeletonCount,
+                  itemBuilder: (context, i) => DummyChatListItem(
+                    opacity: (skeletonCount - i) / skeletonCount,
+                    animate: true,
                   ),
                 );
               } else {
