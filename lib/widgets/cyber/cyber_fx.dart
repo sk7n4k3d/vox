@@ -108,3 +108,65 @@ class CyberManaged extends StatelessWidget {
 /// already falls back to fade internally when the OS requests reduced motion.
 Route<T> cyberRoute<T>(Widget page) =>
     GKPageRoute<T>(page: page, type: GKTransitionType.warp);
+
+/// One-shot staggered entrance for flat list items: fade + slight slide-up
+/// played once after `index * 35ms` (delay capped at 12 items so long lists
+/// don't lag behind). Shared variant of the chatlist's `_StaggeredFadeIn`,
+/// used on static screens (settings, members, search results) for the same
+/// "premium app launch" feel. Renders the child statically under
+/// reduce-motion; plain rebuilds don't replay the animation.
+class CyberStaggeredIn extends StatefulWidget {
+  const CyberStaggeredIn({
+    required this.index,
+    required this.child,
+    super.key,
+  });
+
+  /// Position of the item in its list — converted to a capped entrance delay.
+  final int index;
+  final Widget child;
+
+  @override
+  State<CyberStaggeredIn> createState() => _CyberStaggeredInState();
+}
+
+class _CyberStaggeredInState extends State<CyberStaggeredIn>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _ctrl = AnimationController(
+    vsync: this,
+    duration: FluffyDurations.medium,
+  );
+
+  @override
+  void initState() {
+    super.initState();
+    Future.delayed(Duration(milliseconds: widget.index.clamp(0, 12) * 35), () {
+      if (mounted) _ctrl.forward();
+    });
+  }
+
+  @override
+  void dispose() {
+    _ctrl.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (CyberMotion.reduced(context)) return widget.child;
+    return AnimatedBuilder(
+      animation: _ctrl,
+      builder: (context, child) {
+        final t = Curves.easeOutCubic.transform(_ctrl.value);
+        return Opacity(
+          opacity: t,
+          child: Transform.translate(
+            offset: Offset(0, (1 - t) * 12),
+            child: child,
+          ),
+        );
+      },
+      child: widget.child,
+    );
+  }
+}

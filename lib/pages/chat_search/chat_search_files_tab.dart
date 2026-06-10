@@ -3,6 +3,7 @@ import 'package:fluffychat/l10n/l10n.dart';
 import 'package:fluffychat/pages/chat_search/search_footer.dart';
 import 'package:fluffychat/utils/date_time_extension.dart';
 import 'package:fluffychat/utils/matrix_sdk_extensions/event_extension.dart';
+import 'package:fluffychat/widgets/cyber/cyber_fx.dart';
 import 'package:flutter/material.dart';
 import 'package:matrix/matrix.dart';
 
@@ -56,48 +57,58 @@ class ChatSearchFilesTab extends StatelessWidget {
           final sameEnvironment =
               prevEvent != null &&
               prevEvent.originServerTs.sameEnvironment(event.originServerTs);
-          return Padding(
-            padding: const EdgeInsets.all(8.0),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                if (!sameEnvironment) ...[
-                  Row(
-                    children: [
-                      Expanded(
-                        child: Container(height: 1, color: theme.dividerColor),
-                      ),
-                      Padding(
-                        padding: const EdgeInsets.all(8.0),
-                        child: Text(
-                          event.originServerTs.localizedTime(context),
-                          style: theme.textTheme.labelSmall,
-                          textAlign: TextAlign.center,
+          // Entrance stagger: results cascade in. Static under reduce-motion.
+          return CyberStaggeredIn(
+            index: i,
+            child: Padding(
+              padding: const EdgeInsets.all(8.0),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  if (!sameEnvironment) ...[
+                    Row(
+                      children: [
+                        Expanded(
+                          child: Container(
+                            height: 1,
+                            color: theme.dividerColor,
+                          ),
                         ),
-                      ),
-                      Expanded(
-                        child: Container(height: 1, color: theme.dividerColor),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 4),
-                ],
-                Material(
-                  borderRadius: BorderRadius.circular(AppConfig.borderRadius),
-                  color: theme.colorScheme.onInverseSurface,
-                  clipBehavior: Clip.hardEdge,
-                  child: ListTile(
-                    leading: const Icon(Icons.file_present_outlined),
-                    title: Text(
-                      filename,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
+                        Padding(
+                          padding: const EdgeInsets.all(8.0),
+                          child: Text(
+                            event.originServerTs.localizedTime(context),
+                            style: theme.textTheme.labelSmall,
+                            textAlign: TextAlign.center,
+                          ),
+                        ),
+                        Expanded(
+                          child: Container(
+                            height: 1,
+                            color: theme.dividerColor,
+                          ),
+                        ),
+                      ],
                     ),
-                    subtitle: Text('$sizeString | $filetype'),
-                    onTap: () => event.saveFile(context),
+                    const SizedBox(height: 4),
+                  ],
+                  Material(
+                    borderRadius: BorderRadius.circular(AppConfig.borderRadius),
+                    color: theme.colorScheme.onInverseSurface,
+                    clipBehavior: Clip.hardEdge,
+                    child: ListTile(
+                      leading: const Icon(Icons.file_present_outlined),
+                      title: Text(
+                        filename,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                      subtitle: Text('$sizeString | $filetype'),
+                      onTap: () => event.saveFile(context),
+                    ),
                   ),
-                ),
-              ],
+                ],
+              ),
             ),
           );
         },

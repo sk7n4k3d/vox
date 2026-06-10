@@ -43,21 +43,9 @@ class SettingsView extends StatelessWidget {
     final storageColor = cyber.cyan.withValues(alpha: 0.65);
     final advancedColor = theme.colorScheme.onSurfaceVariant;
 
-    return Scaffold(
-      appBar: AppBar(
-        title: CyberGlitchText(
-          l10n.settings,
-          style: theme.appBarTheme.titleTextStyle ??
-              theme.textTheme.titleLarge,
-        ),
-        leading: Center(
-          child: BackButton(onPressed: () => context.go('/rooms')),
-        ),
-      ),
-      body: ListView(
-        key: const Key('SettingsListViewContent'),
-        padding: const EdgeInsets.only(bottom: 32),
-        children: [
+    // Entrance stagger: rows cascade in (fade + slide-up) on first paint,
+    // mirroring the chatlist launch feel. Static under reduce-motion.
+    final tiles = <Widget>[
           SettingsProfileHeader(controller: controller),
           const SizedBox(height: 8),
 
@@ -239,6 +227,25 @@ class SettingsView extends StatelessWidget {
               onTap: controller.logoutAction,
             ),
           ),
+    ];
+
+    return Scaffold(
+      appBar: AppBar(
+        title: CyberGlitchText(
+          l10n.settings,
+          style: theme.appBarTheme.titleTextStyle ??
+              theme.textTheme.titleLarge,
+        ),
+        leading: Center(
+          child: BackButton(onPressed: () => context.go('/rooms')),
+        ),
+      ),
+      body: ListView(
+        key: const Key('SettingsListViewContent'),
+        padding: const EdgeInsets.only(bottom: 32),
+        children: [
+          for (var i = 0; i < tiles.length; i++)
+            CyberStaggeredIn(index: i, child: tiles[i]),
         ],
       ),
     );
