@@ -89,250 +89,278 @@ class ChatListViewBody extends StatelessWidget {
             ? const LiquidGlassAppBar(showGreeting: true).preferredSize.height
             : 0.0;
 
+        final cyberTheme = CyberColors.of(context);
         return SafeArea(
           top: !showLiquidAppBar,
-          child: CustomScrollView(
-            controller: controller.scrollController,
-            slivers: [
-              if (showLiquidAppBar)
-                SliverToBoxAdapter(child: SizedBox(height: topInset)),
-              if (controller.isSearchMode)
-                ChatListHeader(controller: controller),
-              if (showLiquidAppBar)
-                SliverPersistentHeader(
-                  pinned: true,
-                  delegate: ChatListFilterPillsDelegate(
-                    controller: controller,
+          // Pull-to-refresh néon : spinner cyan sur pastille glass sombre
+          // (alphaBlend rend le verre opaque pour que le spinner reste
+          // lisible au-dessus des items). edgeOffset décale l'indicateur
+          // sous la LiquidGlassAppBar pour qu'il n'apparaisse pas derrière
+          // le blur.
+          child: RefreshIndicator(
+            onRefresh: controller.onPullToRefresh,
+            color: cyberTheme.cyan,
+            backgroundColor: Color.alphaBlend(
+              cyberTheme.glassFillStrong,
+              theme.colorScheme.surface,
+            ),
+            edgeOffset: topInset,
+            child: CustomScrollView(
+              // Toujours scrollable, sinon le geste pull-to-refresh est
+              // impossible quand la liste ne remplit pas l'écran.
+              physics: const AlwaysScrollableScrollPhysics(),
+              controller: controller.scrollController,
+              slivers: [
+                if (showLiquidAppBar)
+                  SliverToBoxAdapter(child: SizedBox(height: topInset)),
+                if (controller.isSearchMode)
+                  ChatListHeader(controller: controller),
+                if (showLiquidAppBar)
+                  SliverPersistentHeader(
+                    pinned: true,
+                    delegate: ChatListFilterPillsDelegate(
+                      controller: controller,
+                    ),
                   ),
-                ),
-              SliverList(
-                delegate: SliverChildListDelegate([
-                  if (controller.isSearchMode) ...[
-                    SearchTitle(
-                      title: L10n.of(context).publicRooms,
-                      icon: const Icon(Icons.explore_outlined),
-                    ),
-                    PublicRoomsHorizontalList(publicRooms: publicRooms),
-                    SearchTitle(
-                      title: L10n.of(context).publicSpaces,
-                      icon: const Icon(Icons.workspaces_outlined),
-                    ),
-                    PublicRoomsHorizontalList(publicRooms: publicSpaces),
-                    SearchTitle(
-                      title: L10n.of(context).users,
-                      icon: const Icon(Icons.group_outlined),
-                    ),
-                    AnimatedContainer(
-                      clipBehavior: Clip.hardEdge,
-                      decoration: const BoxDecoration(),
-                      height:
-                          userSearchResult == null ||
-                              userSearchResult.results.isEmpty
-                          ? 0
-                          : 106,
-                      duration: FluffyThemes.animationDuration,
-                      curve: FluffyThemes.animationCurve,
-                      child: userSearchResult == null
-                          ? null
-                          : ListView.builder(
-                              scrollDirection: Axis.horizontal,
-                              itemCount: userSearchResult.results.length,
-                              itemBuilder: (context, i) => _SearchItem(
-                                title:
-                                    userSearchResult.results[i].displayName ??
-                                    userSearchResult
-                                        .results[i]
-                                        .userId
-                                        .localpart ??
-                                    L10n.of(context).unknownDevice,
-                                avatar: userSearchResult.results[i].avatarUrl,
-                                onPressed: () => UserDialog.show(
-                                  context: context,
-                                  profile: userSearchResult.results[i],
+                SliverList(
+                  delegate: SliverChildListDelegate([
+                    if (controller.isSearchMode) ...[
+                      SearchTitle(
+                        title: L10n.of(context).publicRooms,
+                        icon: const Icon(Icons.explore_outlined),
+                      ),
+                      PublicRoomsHorizontalList(publicRooms: publicRooms),
+                      SearchTitle(
+                        title: L10n.of(context).publicSpaces,
+                        icon: const Icon(Icons.workspaces_outlined),
+                      ),
+                      PublicRoomsHorizontalList(publicRooms: publicSpaces),
+                      SearchTitle(
+                        title: L10n.of(context).users,
+                        icon: const Icon(Icons.group_outlined),
+                      ),
+                      AnimatedContainer(
+                        clipBehavior: Clip.hardEdge,
+                        decoration: const BoxDecoration(),
+                        height:
+                            userSearchResult == null ||
+                                userSearchResult.results.isEmpty
+                            ? 0
+                            : 106,
+                        duration: FluffyThemes.animationDuration,
+                        curve: FluffyThemes.animationCurve,
+                        child: userSearchResult == null
+                            ? null
+                            : ListView.builder(
+                                scrollDirection: Axis.horizontal,
+                                itemCount: userSearchResult.results.length,
+                                itemBuilder: (context, i) => _SearchItem(
+                                  title:
+                                      userSearchResult.results[i].displayName ??
+                                      userSearchResult
+                                          .results[i]
+                                          .userId
+                                          .localpart ??
+                                      L10n.of(context).unknownDevice,
+                                  avatar: userSearchResult.results[i].avatarUrl,
+                                  onPressed: () => UserDialog.show(
+                                    context: context,
+                                    profile: userSearchResult.results[i],
+                                  ),
                                 ),
                               ),
-                            ),
-                    ),
-                  ],
-                  if (!controller.isSearchMode &&
-                      AppSettings.showPresences.value)
-                    GestureDetector(
-                      onLongPress: controller.dismissStatusList,
-                      child: StatusMessageList(
-                        onStatusEdit: controller.setStatus,
                       ),
-                    ),
-                  // Filter pills moved to a dedicated SliverPersistentHeader
-                  // above; see ChatListFilterPills.
-                  if (controller.isSearchMode)
-                    SearchTitle(
-                      title: L10n.of(context).chats,
-                      icon: const Icon(Icons.forum_outlined),
-                    ),
-                  if (client.prevBatch != null &&
-                      rooms.isEmpty &&
-                      !controller.isSearchMode) ...[
-                    Column(
-                      mainAxisAlignment: .center,
-                      children: [
-                        Stack(
-                          alignment: Alignment.center,
-                          children: [
-                            const Column(
-                              mainAxisSize: .min,
-                              children: [
-                                DummyChatListItem(opacity: 0.5, animate: false),
-                                DummyChatListItem(opacity: 0.3, animate: false),
-                              ],
-                            ),
-                            Icon(
-                              CupertinoIcons.chat_bubble_text_fill,
-                              size: 128,
-                              color: theme.colorScheme.secondary,
-                            ),
-                          ],
+                    ],
+                    if (!controller.isSearchMode &&
+                        AppSettings.showPresences.value)
+                      GestureDetector(
+                        onLongPress: controller.dismissStatusList,
+                        child: StatusMessageList(
+                          onStatusEdit: controller.setStatus,
                         ),
-                        Padding(
-                          padding: const EdgeInsets.all(16.0),
-                          child: Text(
-                            client.rooms.isEmpty
-                                ? L10n.of(context).noChatsFoundHere
-                                : L10n.of(context).noMoreChatsFound,
-                            textAlign: TextAlign.center,
-                            style: TextStyle(
-                              fontSize: 18,
-                              color: theme.colorScheme.secondary,
+                      ),
+                    // Filter pills moved to a dedicated SliverPersistentHeader
+                    // above; see ChatListFilterPills.
+                    if (controller.isSearchMode)
+                      SearchTitle(
+                        title: L10n.of(context).chats,
+                        icon: const Icon(Icons.forum_outlined),
+                      ),
+                    if (client.prevBatch != null &&
+                        rooms.isEmpty &&
+                        !controller.isSearchMode) ...[
+                      Column(
+                        mainAxisAlignment: .center,
+                        children: [
+                          Stack(
+                            alignment: Alignment.center,
+                            children: [
+                              const Column(
+                                mainAxisSize: .min,
+                                children: [
+                                  DummyChatListItem(
+                                    opacity: 0.5,
+                                    animate: false,
+                                  ),
+                                  DummyChatListItem(
+                                    opacity: 0.3,
+                                    animate: false,
+                                  ),
+                                ],
+                              ),
+                              Icon(
+                                CupertinoIcons.chat_bubble_text_fill,
+                                size: 128,
+                                color: theme.colorScheme.secondary,
+                              ),
+                            ],
+                          ),
+                          Padding(
+                            padding: const EdgeInsets.all(16.0),
+                            child: Text(
+                              client.rooms.isEmpty
+                                  ? L10n.of(context).noChatsFoundHere
+                                  : L10n.of(context).noMoreChatsFound,
+                              textAlign: TextAlign.center,
+                              style: TextStyle(
+                                fontSize: 18,
+                                color: theme.colorScheme.secondary,
+                              ),
                             ),
                           ),
-                        ),
-                      ],
-                    ),
-                  ],
-                ]),
-              ),
-              if (client.prevBatch == null)
-                SliverList(
-                  delegate: SliverChildBuilderDelegate(
-                    (context, i) => DummyChatListItem(
-                      opacity: (dummyChatCount - i) / dummyChatCount,
-                      animate: true,
-                    ),
-                    childCount: dummyChatCount,
-                  ),
+                        ],
+                      ),
+                    ],
+                  ]),
                 ),
-              if (client.prevBatch != null)
-                Builder(
-                  builder: (context) {
-                    // Merge Matrix rooms + native SMS conversations into one
-                    // date-sorted layout (SMS only present when VOX is the
-                    // default SMS app). While searching we keep the SMS that
-                    // match the query (by contact name, number or last-message
-                    // snippet) instead of hiding them all — so search spans
-                    // Matrix rooms AND SMS/MMS threads.
-                    final sms = controller.isSearchMode
-                        ? (filter.isEmpty
-                            ? const <SmsConversation>[]
-                            : controller.smsConversations.where((c) {
-                                final hay = [
-                                  c.displayName ?? '',
-                                  c.address,
-                                  c.snippet,
-                                ].join(' ').toLowerCase();
-                                return hay.contains(filter);
-                              }).toList())
-                        : controller.smsConversations;
-                    final entries = _ChatListSections.layout(rooms, sms);
-                    return SliverList.builder(
-                      itemCount: entries.length,
-                      itemBuilder: (BuildContext context, int i) {
-                        final entry = entries[i];
-                        if (entry.isHeader) {
-                          return _ChatListSectionHeader(
-                            label: entry.headerLabel!,
-                          );
-                        }
-                        if (entry.sms != null) {
-                          final sms = entry.sms!;
-                          final cyber = CyberColors.of(context);
+                if (client.prevBatch == null)
+                  SliverList(
+                    delegate: SliverChildBuilderDelegate(
+                      (context, i) => DummyChatListItem(
+                        opacity: (dummyChatCount - i) / dummyChatCount,
+                        animate: true,
+                      ),
+                      childCount: dummyChatCount,
+                    ),
+                  ),
+                if (client.prevBatch != null)
+                  Builder(
+                    builder: (context) {
+                      // Merge Matrix rooms + native SMS conversations into one
+                      // date-sorted layout (SMS only present when VOX is the
+                      // default SMS app). While searching we keep the SMS that
+                      // match the query (by contact name, number or last-message
+                      // snippet) instead of hiding them all — so search spans
+                      // Matrix rooms AND SMS/MMS threads.
+                      final sms = controller.isSearchMode
+                          ? (filter.isEmpty
+                                ? const <SmsConversation>[]
+                                : controller.smsConversations.where((c) {
+                                    final hay = [
+                                      c.displayName ?? '',
+                                      c.address,
+                                      c.snippet,
+                                    ].join(' ').toLowerCase();
+                                    return hay.contains(filter);
+                                  }).toList())
+                          : controller.smsConversations;
+                      final entries = _ChatListSections.layout(rooms, sms);
+                      return SliverList.builder(
+                        itemCount: entries.length,
+                        itemBuilder: (BuildContext context, int i) {
+                          final entry = entries[i];
+                          if (entry.isHeader) {
+                            return _ChatListSectionHeader(
+                              label: entry.headerLabel!,
+                            );
+                          }
+                          if (entry.sms != null) {
+                            final sms = entry.sms!;
+                            final cyber = CyberColors.of(context);
+                            return _StaggeredFadeIn(
+                              delayMs: (i.clamp(0, 12)) * 35,
+                              child: Dismissible(
+                                key: Key('sms_dismiss_${sms.threadId}'),
+                                // Swipe left → delete (magenta), right → archive
+                                // (violet).
+                                background: _SwipeBg(
+                                  color: cyber.violet,
+                                  icon: Icons.archive_outlined,
+                                  alignment: Alignment.centerLeft,
+                                ),
+                                secondaryBackground: _SwipeBg(
+                                  color: cyber.magenta,
+                                  icon: Icons.delete_outline_rounded,
+                                  alignment: Alignment.centerRight,
+                                ),
+                                confirmDismiss: (dir) async {
+                                  if (dir == DismissDirection.startToEnd) {
+                                    await controller.archiveSms(sms);
+                                    return false; // refresh handles removal
+                                  }
+                                  final ok = await showDialog<bool>(
+                                    context: context,
+                                    builder: (ctx) => AlertDialog(
+                                      title: Text(L10n.of(ctx).delete),
+                                      content: Text(
+                                        'Supprimer la conversation avec '
+                                        '${sms.title} ?',
+                                      ),
+                                      actions: [
+                                        TextButton(
+                                          onPressed: () =>
+                                              Navigator.pop(ctx, false),
+                                          child: Text(L10n.of(ctx).cancel),
+                                        ),
+                                        TextButton(
+                                          onPressed: () =>
+                                              Navigator.pop(ctx, true),
+                                          child: Text(
+                                            L10n.of(ctx).delete,
+                                            style: TextStyle(
+                                              color: cyber.magenta,
+                                            ),
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  );
+                                  if (ok == true) {
+                                    await controller.deleteSms(sms);
+                                  }
+                                  return false;
+                                },
+                                child: SmsListItem(
+                                  key: Key('sms_item_${sms.threadId}'),
+                                  conversation: sms,
+                                  onTap: () => controller.onSmsTap(sms),
+                                  onLongPress: () =>
+                                      controller.smsContextAction(sms),
+                                ),
+                              ),
+                            );
+                          }
+                          final room = entry.room!;
+                          final space = spaceDelegateCandidates[room.id];
                           return _StaggeredFadeIn(
                             delayMs: (i.clamp(0, 12)) * 35,
-                            child: Dismissible(
-                              key: Key('sms_dismiss_${sms.threadId}'),
-                              // Swipe left → delete (magenta), right → archive
-                              // (violet).
-                              background: _SwipeBg(
-                                color: cyber.violet,
-                                icon: Icons.archive_outlined,
-                                alignment: Alignment.centerLeft,
-                              ),
-                              secondaryBackground: _SwipeBg(
-                                color: cyber.magenta,
-                                icon: Icons.delete_outline_rounded,
-                                alignment: Alignment.centerRight,
-                              ),
-                              confirmDismiss: (dir) async {
-                                if (dir == DismissDirection.startToEnd) {
-                                  await controller.archiveSms(sms);
-                                  return false; // refresh handles removal
-                                }
-                                final ok = await showDialog<bool>(
-                                  context: context,
-                                  builder: (ctx) => AlertDialog(
-                                    title: Text(L10n.of(ctx).delete),
-                                    content: Text(
-                                      'Supprimer la conversation avec '
-                                      '${sms.title} ?',
-                                    ),
-                                    actions: [
-                                      TextButton(
-                                        onPressed: () =>
-                                            Navigator.pop(ctx, false),
-                                        child: Text(L10n.of(ctx).cancel),
-                                      ),
-                                      TextButton(
-                                        onPressed: () =>
-                                            Navigator.pop(ctx, true),
-                                        child: Text(
-                                          L10n.of(ctx).delete,
-                                          style: TextStyle(color: cyber.magenta),
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                );
-                                if (ok == true) await controller.deleteSms(sms);
-                                return false;
-                              },
-                              child: SmsListItem(
-                                key: Key('sms_item_${sms.threadId}'),
-                                conversation: sms,
-                                onTap: () => controller.onSmsTap(sms),
-                                onLongPress: () =>
-                                    controller.smsContextAction(sms),
-                              ),
+                            child: ChatListItem(
+                              room,
+                              space: space,
+                              key: Key('chat_list_item_${room.id}'),
+                              filter: filter,
+                              onTap: () => controller.onChatTap(room),
+                              onLongPress: (context) => controller
+                                  .chatContextAction(room, context, space),
+                              activeChat: controller.activeChat == room.id,
                             ),
                           );
-                        }
-                        final room = entry.room!;
-                        final space = spaceDelegateCandidates[room.id];
-                        return _StaggeredFadeIn(
-                          delayMs: (i.clamp(0, 12)) * 35,
-                          child: ChatListItem(
-                            room,
-                            space: space,
-                            key: Key('chat_list_item_${room.id}'),
-                            filter: filter,
-                            onTap: () => controller.onChatTap(room),
-                            onLongPress: (context) => controller
-                                .chatContextAction(room, context, space),
-                            activeChat: controller.activeChat == room.id,
-                          ),
-                        );
-                      },
-                    );
-                  },
-                ),
-            ],
+                        },
+                      );
+                    },
+                  ),
+              ],
+            ),
           ),
         );
       },
@@ -454,7 +482,8 @@ class _ChatListSections {
         // Stable fallback: a room with no lastEvent must keep a fixed sort key,
         // not DateTime.now() (which advances every rebuild and makes the row
         // jump to the top and reshuffle on each frame).
-        ts: r.lastEvent?.originServerTs ??
+        ts:
+            r.lastEvent?.originServerTs ??
             DateTime.fromMillisecondsSinceEpoch(0),
         room: r,
         sms: null,
@@ -492,15 +521,9 @@ class _ChatListEntry {
   final SmsConversation? sms;
   final String? headerLabel;
 
-  _ChatListEntry.header(this.headerLabel)
-      : room = null,
-        sms = null;
-  _ChatListEntry.room(this.room)
-      : headerLabel = null,
-        sms = null;
-  _ChatListEntry.sms(this.sms)
-      : headerLabel = null,
-        room = null;
+  _ChatListEntry.header(this.headerLabel) : room = null, sms = null;
+  _ChatListEntry.room(this.room) : headerLabel = null, sms = null;
+  _ChatListEntry.sms(this.sms) : headerLabel = null, room = null;
 
   bool get isHeader => room == null && sms == null;
 }
@@ -566,10 +589,7 @@ class _ChatListSectionHeader extends StatelessWidget {
               color: accent,
               borderRadius: const BorderRadius.all(Radius.circular(1)),
               boxShadow: [
-                BoxShadow(
-                  color: accent.withValues(alpha: 0.6),
-                  blurRadius: 6,
-                ),
+                BoxShadow(color: accent.withValues(alpha: 0.6), blurRadius: 6),
               ],
             ),
           ),
@@ -587,8 +607,7 @@ class _ChatListSectionHeader extends StatelessWidget {
           Expanded(
             child: Container(
               height: 0.5,
-              color: theme.colorScheme.outlineVariant
-                  .withValues(alpha: 0.25),
+              color: theme.colorScheme.outlineVariant.withValues(alpha: 0.25),
             ),
           ),
         ],
@@ -602,10 +621,7 @@ class _ChatListSectionHeader extends StatelessWidget {
 /// "premium app launch" feel. Subsequent rebuilds (scroll, sync) don't
 /// replay the animation thanks to the local _shown flag.
 class _StaggeredFadeIn extends StatefulWidget {
-  const _StaggeredFadeIn({
-    required this.child,
-    required this.delayMs,
-  });
+  const _StaggeredFadeIn({required this.child, required this.delayMs});
 
   final Widget child;
   final int delayMs;

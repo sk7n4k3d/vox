@@ -141,10 +141,7 @@ class ChatListController extends State<ChatList>
   /// unlocked this session, or the user just authenticated).
   Future<bool> _gateConversation(String id) async {
     if (!ConversationLock.instance.isHidden(id)) return true;
-    return ConversationLock.instance.authenticate(
-      id,
-      L10n.of(context).appLock,
-    );
+    return ConversationLock.instance.authenticate(id, L10n.of(context).appLock);
   }
 
   /// Toggles the per-conversation lock for [id]. Locking is immediate;
@@ -214,9 +211,9 @@ class ChatListController extends State<ChatList>
     final visible = <SmsConversation>[];
     for (final c in convs) {
       if (archived.contains(c.threadId)) continue;
-      if (ConversationLock.instance.isHidden(ConversationLock.smsId(
-        c.threadId,
-      ))) {
+      if (ConversationLock.instance.isHidden(
+        ConversationLock.smsId(c.threadId),
+      )) {
         visible.add(
           SmsConversation(
             threadId: c.threadId,
@@ -232,6 +229,27 @@ class ChatListController extends State<ChatList>
       }
     }
     setState(() => smsConversations = visible);
+  }
+
+  /// Pull-to-refresh de la liste de conversations : force un one-shot sync
+  /// Matrix (ou attend le sync en cours) puis recharge les conversations SMS.
+  /// Best-effort : offline/timeout ne doit jamais faire crasher le geste —
+  /// l'indicateur se contente de s'arrêter. Le `.timeout` borne l'attente car
+  /// `oneShotSync` peut rejoindre un long-poll /sync déjà en vol (jusqu'à 30s).
+  Future<void> onPullToRefresh() async {
+    try {
+      await Matrix.of(context).client
+          .oneShotSync(timeout: const Duration(seconds: 5))
+          .timeout(const Duration(seconds: 10));
+    } catch (_) {
+      // Réseau down / timeout : on laisse le sync de fond reprendre la main.
+    }
+    if (!mounted) return;
+    try {
+      await _loadSmsConversations();
+    } catch (_) {
+      // Bridge SMS indisponible (non-Android, rôle perdu…) : non bloquant.
+    }
   }
 
   /// Une fois par session : si VOX est l'app SMS par défaut mais n'est pas
@@ -352,9 +370,7 @@ class ChatListController extends State<ChatList>
           label: locked
               ? L10n.of(context).unlockConversation
               : L10n.of(context).lockConversation,
-          icon: Icon(
-            locked ? Icons.lock_open_outlined : Icons.lock_outline,
-          ),
+          icon: Icon(locked ? Icons.lock_open_outlined : Icons.lock_outline),
         ),
         AdaptiveModalAction(
           value: 'ephemeral',
