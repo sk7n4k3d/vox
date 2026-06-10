@@ -1,6 +1,7 @@
 import 'package:fluffychat/l10n/l10n.dart';
 import 'package:fluffychat/utils/url_launcher.dart';
 import 'package:fluffychat/widgets/adaptive_dialogs/adaptive_dialog_action.dart';
+import 'package:fluffychat/widgets/adaptive_dialogs/cyber_dialog_shell.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_linkify/flutter_linkify.dart';
 
@@ -17,46 +18,48 @@ Future<OkCancelResult?> showOkCancelAlertDialog({
 }) => showAdaptiveDialog<OkCancelResult>(
   context: context,
   useRootNavigator: useRootNavigator,
-  builder: (context) => AlertDialog.adaptive(
-    title: ConstrainedBox(
-      constraints: const BoxConstraints(maxWidth: 256),
-      child: Text(title),
-    ),
-    content: ConstrainedBox(
-      constraints: const BoxConstraints(maxWidth: 256),
-      child: message == null
-          ? null
-          : SelectableLinkify(
-              text: message,
-              textScaleFactor: MediaQuery.textScalerOf(context).scale(1),
-              linkStyle: TextStyle(
-                color: Theme.of(context).colorScheme.primary,
-                decorationColor: Theme.of(context).colorScheme.primary,
+  builder: (context) => CyberDialogShell(
+    child: AlertDialog.adaptive(
+      title: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 256),
+        child: Text(title),
+      ),
+      content: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 256),
+        child: message == null
+            ? null
+            : SelectableLinkify(
+                text: message,
+                textScaleFactor: MediaQuery.textScalerOf(context).scale(1),
+                linkStyle: TextStyle(
+                  color: Theme.of(context).colorScheme.primary,
+                  decorationColor: Theme.of(context).colorScheme.primary,
+                ),
+                options: const LinkifyOptions(humanize: false),
+                onOpen: (url) => UrlLauncher(context, url.url).launchUrl(),
               ),
-              options: const LinkifyOptions(humanize: false),
-              onOpen: (url) => UrlLauncher(context, url.url).launchUrl(),
-            ),
-    ),
-    actions: [
-      AdaptiveDialogAction(
-        key: Key('ok_cancel_alert_dialog_cancel_button'),
-        onPressed: () =>
-            Navigator.of(context).pop<OkCancelResult>(OkCancelResult.cancel),
-        child: Text(cancelLabel ?? L10n.of(context).cancel),
       ),
-      AdaptiveDialogAction(
-        key: Key('ok_cancel_alert_dialog_ok_button'),
-        onPressed: () =>
-            Navigator.of(context).pop<OkCancelResult>(OkCancelResult.ok),
-        autofocus: true,
-        child: Text(
-          okLabel ?? L10n.of(context).ok,
-          style: isDestructive
-              ? TextStyle(color: Theme.of(context).colorScheme.error)
-              : null,
+      actions: [
+        AdaptiveDialogAction(
+          key: Key('ok_cancel_alert_dialog_cancel_button'),
+          onPressed: () =>
+              Navigator.of(context).pop<OkCancelResult>(OkCancelResult.cancel),
+          child: Text(cancelLabel ?? L10n.of(context).cancel),
         ),
-      ),
-    ],
+        AdaptiveDialogAction(
+          key: Key('ok_cancel_alert_dialog_ok_button'),
+          onPressed: () =>
+              Navigator.of(context).pop<OkCancelResult>(OkCancelResult.ok),
+          autofocus: true,
+          child: Text(
+            okLabel ?? L10n.of(context).ok,
+            style: isDestructive
+                ? TextStyle(color: Theme.of(context).colorScheme.error)
+                : null,
+          ),
+        ),
+      ],
+    ),
   ),
 );
 
@@ -69,33 +72,35 @@ Future<OkCancelResult?> showOkAlertDialog({
 }) => showAdaptiveDialog<OkCancelResult>(
   context: context,
   useRootNavigator: useRootNavigator,
-  builder: (context) => AlertDialog.adaptive(
-    title: ConstrainedBox(
-      constraints: const BoxConstraints(maxWidth: 256),
-      child: Text(title),
-    ),
-    content: ConstrainedBox(
-      constraints: const BoxConstraints(maxWidth: 256),
-      child: message == null
-          ? null
-          : SelectableLinkify(
-              text: message,
-              textScaleFactor: MediaQuery.textScalerOf(context).scale(1),
-              linkStyle: TextStyle(
-                color: Theme.of(context).colorScheme.primary,
-                decorationColor: Theme.of(context).colorScheme.primary,
-              ),
-              options: const LinkifyOptions(humanize: false),
-              onOpen: (url) => UrlLauncher(context, url.url).launchUrl(),
-            ),
-    ),
-    actions: [
-      AdaptiveDialogAction(
-        onPressed: () =>
-            Navigator.of(context).pop<OkCancelResult>(OkCancelResult.ok),
-        autofocus: true,
-        child: Text(okLabel ?? L10n.of(context).close),
+  builder: (context) => CyberDialogShell(
+    child: AlertDialog.adaptive(
+      title: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 256),
+        child: Text(title),
       ),
-    ],
+      content: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 256),
+        child: message == null
+            ? null
+            : SelectableLinkify(
+                text: message,
+                textScaleFactor: MediaQuery.textScalerOf(context).scale(1),
+                linkStyle: TextStyle(
+                  color: Theme.of(context).colorScheme.primary,
+                  decorationColor: Theme.of(context).colorScheme.primary,
+                ),
+                options: const LinkifyOptions(humanize: false),
+                onOpen: (url) => UrlLauncher(context, url.url).launchUrl(),
+              ),
+      ),
+      actions: [
+        AdaptiveDialogAction(
+          onPressed: () =>
+              Navigator.of(context).pop<OkCancelResult>(OkCancelResult.ok),
+          autofocus: true,
+          child: Text(okLabel ?? L10n.of(context).close),
+        ),
+      ],
+    ),
   ),
 );
