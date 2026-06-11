@@ -73,7 +73,7 @@ class SmsChatPage extends StatefulWidget {
   State<SmsChatPage> createState() => _SmsChatPageState();
 }
 
-class _SmsChatPageState extends State<SmsChatPage> {
+class _SmsChatPageState extends State<SmsChatPage> with WidgetsBindingObserver {
   /// Telephony `Sms.Type` constants (android.provider.Telephony.TextBasedSmsColumns).
   static const int _typeSent = 2;
   static const int _typeOutbox = 4;
@@ -173,6 +173,7 @@ class _SmsChatPageState extends State<SmsChatPage> {
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _composer.addListener(_onComposerChanged);
     _scroll.addListener(_onScroll);
     // Mark this thread as on-screen (no notif while open) and clear any pending
@@ -197,6 +198,7 @@ class _SmsChatPageState extends State<SmsChatPage> {
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     // No longer on screen: let notifications fire for this thread again.
     SmsBridge.instance.setActiveThread(null);
     _incomingSub?.cancel();
@@ -208,6 +210,26 @@ class _SmsChatPageState extends State<SmsChatPage> {
     _animateInClear?.cancel();
     _screenEffectController.dispose();
     super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    super.didChangeAppLifecycleState(state);
+    if (!mounted) return;
+    // App en arrière-plan alors que cette conversation est ouverte : libérer le
+    // « thread actif » pour que SmsNotifier notifie de nouveau les messages de
+    // ce thread. Sans ça, dispose() (seul autre point qui remet le thread à -1)
+    // n'est PAS appelé quand on met l'app en fond sans quitter la conv → tous les
+    // SMS/MMS de ce thread sont silencieusement avalés (bug « pas de notif »).
+    if (state == AppLifecycleState.paused ||
+        state == AppLifecycleState.hidden ||
+        state == AppLifecycleState.detached) {
+      SmsBridge.instance.setActiveThread(null);
+    } else if (state == AppLifecycleState.resumed) {
+      // Retour au premier plan sur cette conversation : pas de notif pour ce
+      // qu'on est en train de lire.
+      SmsBridge.instance.setActiveThread(widget.threadId);
+    }
   }
 
   void _onComposerChanged() {
