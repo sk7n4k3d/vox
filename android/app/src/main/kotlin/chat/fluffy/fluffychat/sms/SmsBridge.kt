@@ -2091,10 +2091,14 @@ object SmsBridge {
             }
         }
 
-        // 3. Adresse expéditeur (content://mms/<id>/addr).
-        if (!sender.isNullOrBlank()) {
+        // 3. Adresse expéditeur (content://mms/<id>/addr). On stocke le numéro
+        // NORMALISÉ (cleanSender, sans suffixe /TYPE=PLMN) et non le brut : sinon
+        // le provider crée une canonical-address distincte « +33…/TYPE=PLMN » →
+        // un thread fantôme à 0 message en doublon du vrai thread (le thread du
+        // message, lui, est déjà résolu via cleanSender plus haut).
+        if (!cleanSender.isNullOrBlank()) {
             val addrValues = ContentValues().apply {
-                put("address", sender)
+                put("address", cleanSender)
                 put("type", 137) // FROM
                 put("charset", 106) // UTF-8
                 put("msg_id", mmsId)
