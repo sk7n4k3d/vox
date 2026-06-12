@@ -1824,11 +1824,23 @@ object SmsBridge {
             )
 
             val sms = smsManager(context)
+            // La CarrierConfig plafonne le download MMS (Orange = maxMessageSize
+            // 307200 = 300 Ko). Passer configOverrides=null applique CE plafond →
+            // les MMS plus gros (vidéos, grosses photos) échouent silencieusement
+            // au téléchargement → « rien reçu » pour ces expéditeurs (Noémie passe
+            // car ses MMS sont petits). On relève le plafond pour le download,
+            // comme le font Google Messages / QKSMS / Signal.
+            val configOverrides = android.os.Bundle().apply {
+                putInt(
+                    android.telephony.SmsManager.MMS_CONFIG_MAX_MESSAGE_SIZE,
+                    5 * 1024 * 1024, // 5 Mo : large pour vidéos/grosses images MMS
+                )
+            }
             sms.downloadMultimediaMessage(
                 context,
                 location,
                 contentUri,
-                null,
+                configOverrides,
                 pi,
             )
             Log.i(TAG, "downloadMultimediaMessage soumis (loc ${location.length} c)")
