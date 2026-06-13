@@ -216,6 +216,7 @@ object SmsNotifier {
     ): NotificationCompat.Action {
         val remoteInput = RemoteInput.Builder(KEY_REPLY_TEXT)
             .setLabel("Répondre")
+            .setChoices(arrayOf("👍", "OK", "J'arrive", "Je rappelle", "Merci"))
             .build()
         val intent = Intent(context, SmsReplyReceiver::class.java).apply {
             action = ACTION_REPLY
