@@ -16,6 +16,10 @@ import androidx.core.content.LocusIdCompat
 import androidx.core.content.pm.ShortcutInfoCompat
 import androidx.core.content.pm.ShortcutManagerCompat
 import androidx.core.graphics.drawable.IconCompat
+import com.google.mlkit.nl.smartreply.SmartReply
+import com.google.mlkit.nl.smartreply.SmartReplySuggestion
+import com.google.mlkit.nl.smartreply.SmartReplySuggestionResult
+import com.google.mlkit.nl.smartreply.TextMessage
 import org.json.JSONArray
 import org.json.JSONObject
 
@@ -206,6 +210,62 @@ object SmsNotifier {
     fun cancel(context: Context, threadId: Long) {
         history.remove(threadId)
         NotificationManagerCompat.from(context).cancel(threadId.toInt())
+    }
+
+    /**
+     * Génère de manière asynchrone (ML Kit on-device, PAS GMS) jusqu'à 3
+     * suggestions de réponses rapides pour le thread [threadId], puis appelle
+     * [onSuggestions] sur le thread ML Kit avec la liste (vide si échec ou
+     * résultat non SUCCESS).
+     *
+     * Usage conseillé : appeler depuis notifyIncoming() juste après avoir posté
+     * la notif de base, puis dans onSuggestions re-poster la notif en remplaçant
+     * le setChoices() statique par les suggestions ML Kit :
+     *
+     *   suggestRepliesAsync(threadId, senderId) { suggestions ->
+     *       if (suggestions.isNotEmpty()) {
+     *           // re-post la notif avec les suggestions dynamiques
+     *           // (construire le même NotificationCompat.Builder + setChoices)
+     *       }
+     *   }
+     *
+     * Note : le câblage "re-post notif avec suggestions" est intentionnellement
+     * laissé à finir ici (status PARTIAL) pour éviter de dupliquer le builder
+     * en dehors du scope de notifyIncoming et risquer une régression sur la
+     * structure existante.
+     *
+     * @param threadId   identifiant du thread SMS.
+     * @param senderId   identifiant opaque de l'expéditeur (numéro ou address) —
+     *                   utilisé par ML Kit pour distinguer les participants.
+     * @param onSuggestions callback appelé avec la liste de [SmartReplySuggestion]
+     *                      (max 3, peut être vide).
+     */
+    fun suggestRepliesAsync(
+        threadId: Long,
+        senderId: String,
+        onSuggestions: (List<SmartReplySuggestion>) -> Unit,
+    ) {
+        val msgs = history[threadId] ?: run {
+            onSuggestions(emptyList())
+            return
+        }
+        // Construit la conversation ML Kit : tous les messages du thread sont
+        // des messages distants (l'utilisateur local n'a pas encore répondu).
+        val conversation = msgs.map { (ts, body) ->
+            TextMessage.createForRemoteUser(body, ts, senderId)
+        }
+        SmartReply.getClient().suggestReplies(conversation)
+            .addOnSuccessListener { result ->
+                val suggestions = if (result.status == SmartReplySuggestionResult.STATUS_SUCCESS) {
+                    result.suggestions.take(3)
+                } else {
+                    emptyList()
+                }
+                onSuggestions(suggestions)
+            }
+            .addOnFailureListener {
+                onSuggestions(emptyList())
+            }
     }
 
     private fun buildReplyAction(

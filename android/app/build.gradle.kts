@@ -19,6 +19,9 @@ dependencies {
     // Wear OS bridge — DataClient + MessageClient + CapabilityClient phone↔watch
     implementation("com.google.android.gms:play-services-wearable:20.0.1")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-play-services:1.9.0")
+
+    // ML Kit Smart Reply — bundled (PAS play-services-mlkit-smart-reply qui exige GMS)
+    implementation("com.google.mlkit:smart-reply:17.0.4")
 }
 
 
