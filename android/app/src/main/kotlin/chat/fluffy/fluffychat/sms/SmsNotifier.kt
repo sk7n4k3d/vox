@@ -43,10 +43,12 @@ object SmsNotifier {
     const val CHANNEL_ID = "vox_sms"
     const val ACTION_REPLY = "eu.devlabz.vox.SMS_REPLY"
     const val ACTION_MARK_READ = "eu.devlabz.vox.SMS_MARK_READ"
+    const val ACTION_COPY_OTP = "eu.devlabz.vox.SMS_COPY_OTP"
     const val ACTION_VOICE_REPLY = "eu.devlabz.vox.SMS_VOICE_REPLY"
     const val KEY_REPLY_TEXT = "key_reply_text"
     const val EXTRA_THREAD_ID = "thread_id"
     const val EXTRA_ADDRESS = "address"
+    const val EXTRA_OTP_CODE = "otp_code"
 
     private const val PREFS = "FlutterSharedPreferences"
     private const val KEY_ENABLED = "flutter.chat.fluffy.sms_notifications_enabled"
@@ -167,6 +169,9 @@ object SmsNotifier {
 
         val replyAction = buildReplyAction(context, threadId, address, locked)
         val markReadAction = buildMarkReadAction(context, threadId)
+        // Code OTP/2FA détecté dans le corps → action « Copier le code » (jamais
+        // sur une conversation verrouillée, par sécurité).
+        val otpCode = if (locked) null else OtpExtractor.extract(body)
 
         // Conversations API — sharing shortcut long-lived pour ce thread.
         // Prérequis pour que la notif apparaisse dans la section "Conversations"
@@ -200,6 +205,12 @@ object SmsNotifier {
             .setAutoCancel(true)
             .setCategory(NotificationCompat.CATEGORY_MESSAGE)
             .setPriority(NotificationCompat.PRIORITY_HIGH)
+            .apply {
+                // Action « Copier le code » en premier quand un OTP est détecté.
+                if (otpCode != null) {
+                    addAction(buildCopyOtpAction(context, threadId, otpCode))
+                }
+            }
             .addAction(replyAction)
             .addAction(markReadAction)
             .setShortcutId(shortcutId)
@@ -304,6 +315,30 @@ object SmsNotifier {
             .setAllowGeneratedReplies(!locked)
             .setSemanticAction(NotificationCompat.Action.SEMANTIC_ACTION_REPLY)
             .build()
+    }
+
+    private fun buildCopyOtpAction(
+        context: Context,
+        threadId: Long,
+        code: String,
+    ): NotificationCompat.Action {
+        val intent = Intent(context, SmsReplyReceiver::class.java).apply {
+            action = ACTION_COPY_OTP
+            setPackage(context.packageName)
+            putExtra(EXTRA_THREAD_ID, threadId)
+            putExtra(EXTRA_OTP_CODE, code)
+        }
+        val pi = PendingIntent.getBroadcast(
+            context,
+            (threadId * 4 + 1).toInt(),
+            intent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+        )
+        return NotificationCompat.Action.Builder(
+            android.R.drawable.ic_menu_save,
+            "Copier $code",
+            pi,
+        ).build()
     }
 
     private fun buildMarkReadAction(

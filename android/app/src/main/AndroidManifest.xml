@@ -297,6 +297,7 @@
             <intent-filter>
                 <action android:name="eu.devlabz.vox.SMS_REPLY" />
                 <action android:name="eu.devlabz.vox.SMS_MARK_READ" />
+                <action android:name="eu.devlabz.vox.SMS_COPY_OTP" />
             </intent-filter>
         </receiver>
 

@@ -66,6 +66,22 @@ class SmsReplyReceiver : BroadcastReceiver() {
                     }
                 }
             }
+
+            SmsNotifier.ACTION_COPY_OTP -> {
+                val code = intent.getStringExtra(SmsNotifier.EXTRA_OTP_CODE)
+                if (!code.isNullOrBlank()) {
+                    val cm = context.getSystemService(Context.CLIPBOARD_SERVICE)
+                        as? android.content.ClipboardManager
+                    cm?.setPrimaryClip(
+                        android.content.ClipData.newPlainText("Code", code),
+                    )
+                    android.widget.Toast.makeText(
+                        context,
+                        "Code $code copié",
+                        android.widget.Toast.LENGTH_SHORT,
+                    ).show()
+                }
+            }
         }
     }
 }
