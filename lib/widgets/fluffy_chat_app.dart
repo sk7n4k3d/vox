@@ -41,6 +41,14 @@ class FluffyChatApp extends StatelessWidget {
       // Workaround for content sharings passed to go router:
       if (state.uri.scheme == 'content') return '/';
 
+      // SMS/MMS intents (sms:/smsto:/mms:/mmsto:, ex. "Envoyer un SMS" depuis le
+      // dialer) sont gérés nativement : MainActivity.handleSmsIntent →
+      // SmsBridgePlugin.setPendingSmsIntent → ChatList.openSmsFromIntent ouvre la
+      // bonne conversation. Sans ce garde, go_router essaie de matcher
+      // "sms:+33..." comme route et crashe ("no routes for location: sms:...").
+      const smsSchemes = {'sms', 'smsto', 'mms', 'mmsto'};
+      if (smsSchemes.contains(state.uri.scheme)) return '/';
+
       // Pass deep links to app:
       if (state.uri.toString().startsWith(AppConfig.deepLinkPrefix)) {
         return '/rooms/newprivatechat?deeplink=${state.uri}';
