@@ -159,7 +159,6 @@ object SmsNotifier {
         }
 
         val replyAction = buildReplyAction(context, threadId, address, locked)
-        val voiceAction = buildVoiceAction(context, threadId, address)
         val markReadAction = buildMarkReadAction(context, threadId)
 
         val notif = NotificationCompat.Builder(context, CHANNEL_ID)
@@ -174,7 +173,6 @@ object SmsNotifier {
             .setCategory(NotificationCompat.CATEGORY_MESSAGE)
             .setPriority(NotificationCompat.PRIORITY_HIGH)
             .addAction(replyAction)
-            .addAction(voiceAction)
             .addAction(markReadAction)
             .apply { if (!prefBool(context, KEY_SOUND, true)) setSilent(true) }
             .build()
@@ -219,28 +217,6 @@ object SmsNotifier {
             .setAllowGeneratedReplies(!locked)
             .setSemanticAction(NotificationCompat.Action.SEMANTIC_ACTION_REPLY)
             .build()
-    }
-
-    private fun buildVoiceAction(
-        context: Context,
-        threadId: Long,
-        address: String,
-    ): NotificationCompat.Action {
-        // Ouvre l'app sur la conversation avec un flag "démarre la dictée vocale".
-        val intent = buildAppIntent(context, threadId, address).apply {
-            putExtra("voice_reply", true)
-        }
-        val pi = PendingIntent.getActivity(
-            context,
-            (threadId * 4 + 1).toInt(),
-            intent,
-            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
-        )
-        return NotificationCompat.Action.Builder(
-            android.R.drawable.ic_btn_speak_now,
-            "Vocal",
-            pi,
-        ).build()
     }
 
     private fun buildMarkReadAction(
