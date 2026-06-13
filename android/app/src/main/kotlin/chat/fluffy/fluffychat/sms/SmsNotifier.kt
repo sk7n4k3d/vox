@@ -12,6 +12,9 @@ import androidx.core.app.NotificationManagerCompat
 import androidx.core.app.Person
 import androidx.core.app.RemoteInput
 import androidx.core.content.ContextCompat
+import androidx.core.content.LocusIdCompat
+import androidx.core.content.pm.ShortcutInfoCompat
+import androidx.core.content.pm.ShortcutManagerCompat
 import androidx.core.graphics.drawable.IconCompat
 import org.json.JSONArray
 import org.json.JSONObject
@@ -161,6 +164,21 @@ object SmsNotifier {
         val replyAction = buildReplyAction(context, threadId, address, locked)
         val markReadAction = buildMarkReadAction(context, threadId)
 
+        // Conversations API — sharing shortcut long-lived pour ce thread.
+        // Prérequis pour que la notif apparaisse dans la section "Conversations"
+        // et pour débloquer les bulles (Android 11+).
+        val shortcutId = "sms_$threadId"
+        runCatching {
+            val shortcut = ShortcutInfoCompat.Builder(context, shortcutId)
+                .setShortLabel(senderName)
+                .setLongLived(true)
+                .setPerson(person)
+                .setIntent(buildAppIntent(context, threadId, address))
+                .setCategories(setOf("androidx.core.content.pm.category.SHARE_TARGET"))
+                .build()
+            ShortcutManagerCompat.pushDynamicShortcut(context, shortcut)
+        }
+
         val notif = NotificationCompat.Builder(context, CHANNEL_ID)
             .setSmallIcon(
                 context.resources.getIdentifier(
@@ -174,6 +192,8 @@ object SmsNotifier {
             .setPriority(NotificationCompat.PRIORITY_HIGH)
             .addAction(replyAction)
             .addAction(markReadAction)
+            .setShortcutId(shortcutId)
+            .setLocusId(LocusIdCompat(shortcutId))
             .apply { if (!prefBool(context, KEY_SOUND, true)) setSilent(true) }
             .build()
 
