@@ -177,8 +177,14 @@ object SmsNotifier {
                 .setShortLabel(senderName)
                 .setLongLived(true)
                 .setPerson(person)
-                .setIntent(buildAppIntent(context, threadId, address))
-                .setCategories(setOf("androidx.core.content.pm.category.SHARE_TARGET"))
+                // ShortcutInfo EXIGE une action sur l'intent, sinon
+                // pushDynamicShortcut lève IllegalArgumentException (avalée par le
+                // runCatching) → le shortcut n'est jamais publié et la notif
+                // n'apparaît pas en "conversation". On force ACTION_VIEW.
+                .setIntent(
+                    buildAppIntent(context, threadId, address)
+                        .setAction(Intent.ACTION_VIEW),
+                )
                 .build()
             ShortcutManagerCompat.pushDynamicShortcut(context, shortcut)
         }
