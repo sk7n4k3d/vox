@@ -18,6 +18,7 @@ import 'package:fluffychat/utils/scheduled/scheduled_messages.dart';
 import 'package:fluffychat/utils/sms/map_linkifier.dart';
 import 'package:fluffychat/utils/sms/sms_bridge.dart';
 import 'package:fluffychat/widgets/cyber/animated_emoji_text.dart';
+import 'package:fluffychat/widgets/cyber/aurora_background.dart';
 import 'package:fluffychat/widgets/cyber/chat_bubble_skin.dart';
 import 'package:fluffychat/widgets/cyber/cyber_fx.dart';
 import 'package:fluffychat/widgets/cyber/cyber_widgets.dart';
@@ -28,7 +29,6 @@ import 'package:fluffychat/widgets/cyber/screen_effect_overlay.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_linkify/flutter_linkify.dart';
-import 'package:glow_effects/glow_effects.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:linkify/linkify.dart' show PhoneNumberLinkifier;
 import 'package:share_plus/share_plus.dart';
@@ -843,18 +843,10 @@ class _SmsChatPageState extends State<SmsChatPage> with WidgetsBindingObserver {
       ),
       body: Stack(
         children: [
-          // Same animated aurora backdrop as the Matrix timeline, faded low and
-          // isolated in a RepaintBoundary; renders nothing under reduce-motion.
-          Positioned.fill(
-            child: RepaintBoundary(
-              child: Opacity(
-                opacity: 0.22,
-                child: CyberManaged(
-                  effect: const AuroraEffect(speed: 0.35),
-                ),
-              ),
-            ),
-          ),
+          // Same animated aurora backdrop as the Matrix timeline — painted once
+          // and animated by transform (no per-pixel shader). Static under
+          // reduce-motion.
+          const Positioned.fill(child: AuroraBackground()),
           SafeArea(
             top: false,
             child: Column(
