@@ -22,6 +22,7 @@ import com.google.mlkit.nl.smartreply.SmartReplySuggestionResult
 import com.google.mlkit.nl.smartreply.TextMessage
 import org.json.JSONArray
 import org.json.JSONObject
+import java.util.Locale
 import java.util.concurrent.ConcurrentHashMap
 
 /**
@@ -57,6 +58,10 @@ object SmsNotifier {
     private const val KEY_SOUND = "flutter.chat.fluffy.sms_notifications_sound"
     private const val KEY_LOCKED = "flutter.chat.fluffy.locked_conversations"
 
+    private const val MAX_CONTEXT_MESSAGES = 8
+    private const val MAX_SUGGESTIONS = 3
+    private const val MAX_SUGGESTION_LENGTH = 80
+
     /**
      * Historique court par thread pour reconstruire le MessagingStyle.
      *
@@ -64,8 +69,15 @@ object SmsNotifier {
      * ([SmsBridge.ingestDownloadedMms]) → map concurrente + synchronisation sur la
      * liste interne (add/trim concurrents corrompaient l'entrée HashMap).
      */
+    private data class HistoryEntry(
+        val timestamp: Long,
+        val displayBody: String,
+        val fullBody: String,
+        val isLocal: Boolean,
+    )
+
     private val history =
-        ConcurrentHashMap<Long, MutableList<Pair<Long, String>>>() // threadId -> [(ts, body)]
+        ConcurrentHashMap<Long, MutableList<HistoryEntry>>() // threadId -> entries
 
     /**
      * Thread actuellement affiché au premier plan (posé par Dart via
@@ -130,7 +142,7 @@ object SmsNotifier {
         // partagée main/IO → on la mute et la snapshotte sous le verrou de la liste.
         val msgs = history.getOrPut(threadId) { mutableListOf() }
         val recentMsgs = synchronized(msgs) {
-            msgs.add(timestamp to shownBody)
+            msgs.add(HistoryEntry(timestamp, shownBody, body, isLocal = false))
             while (msgs.size > 8) msgs.removeAt(0)
             msgs.toList()
         }
@@ -170,8 +182,12 @@ object SmsNotifier {
                 if (locked) "Conversation verrouillée" else senderName,
             )
             .setGroupConversation(false)
-        recentMsgs.forEachIndexed { index, (ts, text) ->
-            val message = NotificationCompat.MessagingStyle.Message(text, ts, person)
+        recentMsgs.forEachIndexed { index, entry ->
+            val message = NotificationCompat.MessagingStyle.Message(
+                entry.displayBody,
+                entry.timestamp,
+                person,
+            )
             // Attach the image only to the most recent message (this MMS).
             if (index == recentMsgs.lastIndex && imageUri != null) {
                 message.setData(imageMime ?: "image/jpeg", imageUri)
@@ -179,7 +195,13 @@ object SmsNotifier {
             style.addMessage(message)
         }
 
-        val replyAction = buildReplyAction(context, threadId, address, locked)
+        val replyAction = buildReplyAction(
+            context = context,
+            threadId = threadId,
+            address = address,
+            locked = locked,
+            choices = if (locked) emptyArray() else quickRepliesFor(body),
+        )
         val markReadAction = buildMarkReadAction(context, threadId)
         // Code OTP/2FA détecté dans le corps → action « Copier le code » (jamais
         // sur une conversation verrouillée, par sécurité).
@@ -242,32 +264,25 @@ object SmsNotifier {
     }
 
     /**
-     * Génère de manière asynchrone (ML Kit on-device, PAS GMS) jusqu'à 3
-     * suggestions de réponses rapides pour le thread [threadId], puis appelle
-     * [onSuggestions] sur le thread ML Kit avec la liste (vide si échec ou
-     * résultat non SUCCESS).
+     * Génère de manière asynchrone (ML Kit on-device, PAS GMS) jusqu'à
+     * [MAX_SUGGESTIONS] suggestions de réponses rapides pour le thread
+     * [threadId], puis appelle [onSuggestions] (sur un thread interne ML Kit)
+     * avec la liste filtrée (vide en cas d'échec, de statut non SUCCESS, ou de
+     * fil français).
      *
-     * Usage conseillé : appeler depuis notifyIncoming() juste après avoir posté
-     * la notif de base, puis dans onSuggestions re-poster la notif en remplaçant
-     * le setChoices() statique par les suggestions ML Kit :
+     * ML Kit Smart Reply n'est entraîné que pour l'anglais : sur un fil détecté
+     * comme français on court-circuite volontairement (liste vide) pour laisser
+     * la place aux réponses rapides FR de [quickRepliesFor], plutôt que
+     * d'exposer des suggestions génériques. Aucune suggestion figée n'est
+     * injectée quand ML Kit ne renvoie rien.
      *
-     *   suggestRepliesAsync(threadId, senderId) { suggestions ->
-     *       if (suggestions.isNotEmpty()) {
-     *           // re-post la notif avec les suggestions dynamiques
-     *           // (construire le même NotificationCompat.Builder + setChoices)
-     *       }
-     *   }
-     *
-     * Note : le câblage "re-post notif avec suggestions" est intentionnellement
-     * laissé à finir ici (status PARTIAL) pour éviter de dupliquer le builder
-     * en dehors du scope de notifyIncoming et risquer une régression sur la
-     * structure existante.
-     *
-     * @param threadId   identifiant du thread SMS.
-     * @param senderId   identifiant opaque de l'expéditeur (numéro ou address) —
-     *                   utilisé par ML Kit pour distinguer les participants.
-     * @param onSuggestions callback appelé avec la liste de [SmartReplySuggestion]
-     *                      (max 3, peut être vide).
+     * @param threadId identifiant du thread SMS.
+     * @param senderId identifiant opaque de l'expéditeur (numéro ou address) —
+     *                 utilisé par ML Kit pour distinguer les participants
+     *                 distants.
+     * @param onSuggestions callback appelé avec la liste de
+     *                      [SmartReplySuggestion] (max [MAX_SUGGESTIONS], peut
+     *                      être vide).
      */
     fun suggestRepliesAsync(
         threadId: Long,
@@ -280,15 +295,27 @@ object SmsNotifier {
         }
         // Snapshot sous verrou : la liste peut être mutée en parallèle (main/IO).
         val snapshot = synchronized(msgs) { msgs.toList() }
-        // Construit la conversation ML Kit : tous les messages du thread sont
-        // des messages distants (l'utilisateur local n'a pas encore répondu).
-        val conversation = snapshot.map { (ts, body) ->
-            TextMessage.createForRemoteUser(body, ts, senderId)
+        val last = snapshot.lastOrNull()
+        if (last != null && looksFrench(last.fullBody)) {
+            onSuggestions(emptyList())
+            return
         }
+        // Conversation ML Kit : 8 derniers messages, ordre chronologique, corps
+        // complet, local/remote marqué par HistoryEntry.isLocal.
+        val conversation = snapshot
+            .sortedBy { it.timestamp }
+            .takeLast(MAX_CONTEXT_MESSAGES)
+            .map { entry ->
+                if (entry.isLocal) {
+                    TextMessage.createForLocalUser(entry.fullBody, entry.timestamp)
+                } else {
+                    TextMessage.createForRemoteUser(entry.fullBody, entry.timestamp, senderId)
+                }
+            }
         SmartReply.getClient().suggestReplies(conversation)
             .addOnSuccessListener { result ->
                 val suggestions = if (result.status == SmartReplySuggestionResult.STATUS_SUCCESS) {
-                    result.suggestions.take(3)
+                    filterSuggestions(result.suggestions)
                 } else {
                     emptyList()
                 }
@@ -299,16 +326,79 @@ object SmsNotifier {
             }
     }
 
+    /** Retire doublons/vides/trop longues et plafonne à [MAX_SUGGESTIONS]. */
+    private fun filterSuggestions(
+        raw: List<SmartReplySuggestion>,
+    ): List<SmartReplySuggestion> {
+        val seen = HashSet<String>()
+        val out = ArrayList<SmartReplySuggestion>(MAX_SUGGESTIONS)
+        for (suggestion in raw) {
+            val text = suggestion.text.trim()
+            if (text.isEmpty() || text.length > MAX_SUGGESTION_LENGTH) continue
+            if (!seen.add(text.lowercase(Locale.ROOT))) continue
+            out.add(suggestion)
+            if (out.size == MAX_SUGGESTIONS) break
+        }
+        return out
+    }
+
+    /**
+     * Réponses rapides contextuelles pour l'action « Répondre » de la notif.
+     *
+     * ML Kit n'étant fiable qu'en anglais, on préfère ici un petit jeu de
+     * réponses dérivé du contenu du dernier SMS plutôt que des libellés figés
+     * identiques pour tous les fils. Liste vide quand la langue n'est pas
+     * reconnue comme française (mieux vaut la saisie libre qu'un hors-sujet).
+     */
+    private fun quickRepliesFor(body: String): Array<String> {
+        if (!looksFrench(body)) return emptyArray()
+        val t = body.lowercase(Locale.ROOT)
+        return when {
+            FRENCH_THANKS.any { t.contains(it) } ->
+                arrayOf("De rien", "👍", "Avec plaisir")
+            t.contains("?") || FRENCH_QUESTION.any { t.contains(it) } ->
+                arrayOf("Oui", "Non", "Je te rappelle")
+            FRENCH_ETA.any { t.contains(it) } ->
+                arrayOf("J'arrive", "Je te rappelle", "👍")
+            else ->
+                arrayOf("👍", "D'accord", "J'arrive")
+        }
+    }
+
+    /** Détection basique : accents ou marqueurs fonctionnels français. */
+    private fun looksFrench(text: String): Boolean {
+        if (text.isBlank()) return false
+        if (text.any { it in "àâäéèêëîïôöùûüçœÀÂÄÉÈÊËÎÏÔÖÙÛÜÇŒ" }) return true
+        val lower = " ${text.lowercase(Locale.ROOT)} "
+        return FRENCH_MARKERS.count { lower.contains(it) } >= 2
+    }
+
+    private val FRENCH_MARKERS = listOf(
+        "bonjour", "salut", "coucou", "merci", "stp", "s'il te plaît",
+        "je ", "tu ", "nous ", "vous ", " on ", "est-ce", " demain",
+        "aujourd'hui", " ce soir", " pour ", " avec ", " que ",
+        " qui ", " quoi", " comment", " quand", " où ", " combien",
+        " bien ", " très ", " oui", " pas ", " plus ",
+    )
+
+    private val FRENCH_THANKS = listOf("merci", "thanks")
+    private val FRENCH_QUESTION = listOf("quand", "heure", "où", "combien", "peux-tu", "peux tu")
+    private val FRENCH_ETA = listOf("rdv", "rendez", "arriv", "retard", "route")
+
     private fun buildReplyAction(
         context: Context,
         threadId: Long,
         address: String,
         locked: Boolean,
+        choices: Array<String> = emptyArray(),
     ): NotificationCompat.Action {
-        val remoteInput = RemoteInput.Builder(KEY_REPLY_TEXT)
+        val remoteInputBuilder = RemoteInput.Builder(KEY_REPLY_TEXT)
             .setLabel("Répondre")
-            .setChoices(arrayOf("👍", "OK", "J'arrive", "Je rappelle", "Merci"))
-            .build()
+        // Suggestions contextuelles uniquement (voir quickRepliesFor). Liste
+        // vide → aucune choice : mieux vaut la saisie libre qu'un libellé
+        // toujours identique et hors contexte.
+        if (choices.isNotEmpty()) remoteInputBuilder.setChoices(choices)
+        val remoteInput = remoteInputBuilder.build()
         val intent = Intent(context, SmsReplyReceiver::class.java).apply {
             action = ACTION_REPLY
             setPackage(context.packageName)
