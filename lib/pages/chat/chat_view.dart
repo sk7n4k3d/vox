@@ -23,21 +23,35 @@ import '../../utils/stream_extension.dart';
 import 'chat_emoji_picker.dart';
 import 'chat_input_row.dart';
 
-class ChatView extends StatelessWidget {
+class ChatView extends StatefulWidget {
   final ChatController controller;
 
   const ChatView(this.controller, {super.key});
 
   @override
+  State<ChatView> createState() => _ChatViewState();
+}
+
+class _ChatViewState extends State<ChatView> {
+  ChatController get controller => widget.controller;
+
+  bool _joinStarted = false;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (_joinStarted || controller.room.membership != Membership.invite) return;
+    _joinStarted = true;
+    showFutureLoadingDialog(
+      context: context,
+      future: () => controller.room.join(),
+      exceptionContext: ExceptionContext.joinRoom,
+    );
+  }
+
+  @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    if (controller.room.membership == Membership.invite) {
-      showFutureLoadingDialog(
-        context: context,
-        future: () => controller.room.join(),
-        exceptionContext: ExceptionContext.joinRoom,
-      );
-    }
     final bottomSheetPadding = FluffyThemes.isColumnMode(context) ? 16.0 : 8.0;
     final scrollUpBannerEventId = controller.scrollUpBannerEventId;
 

@@ -43,6 +43,12 @@ class SendFileDialogState extends State<SendFileDialog> {
 
   final TextEditingController _labelTextController = TextEditingController();
 
+  @override
+  void dispose() {
+    _labelTextController.dispose();
+    super.dispose();
+  }
+
   Future<void> _send() async {
     final scaffoldMessenger = ScaffoldMessenger.of(widget.outerContext);
     final l10n = L10n.of(context);

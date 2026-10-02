@@ -64,6 +64,7 @@ class MessageReactions extends StatelessWidget {
       children: [
         ...visible.map(
           (r) => _Reaction(
+            key: ValueKey(r.key),
             reactionKey: r.key,
             count: r.count,
             reacted: r.reacted,
@@ -131,6 +132,7 @@ class MessageReactions extends StatelessWidget {
               children: [
                 for (final r in all)
                   _Reaction(
+                    key: ValueKey(r.key),
                     reactionKey: r.key,
                     count: r.count,
                     reacted: r.reacted,
@@ -173,6 +175,7 @@ class _Reaction extends StatefulWidget {
   final void Function()? onLongPress;
 
   const _Reaction({
+    super.key,
     required this.reactionKey,
     required this.count,
     required this.reacted,

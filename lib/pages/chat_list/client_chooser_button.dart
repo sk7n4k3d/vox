@@ -11,10 +11,22 @@ import 'package:url_launcher/url_launcher_string.dart';
 import '../../utils/fluffy_share.dart';
 import 'chat_list.dart';
 
-class ClientChooserButton extends StatelessWidget {
+class ClientChooserButton extends StatefulWidget {
   final ChatListController controller;
 
   const ClientChooserButton(this.controller, {super.key});
+
+  @override
+  State<ClientChooserButton> createState() => _ClientChooserButtonState();
+}
+
+class _ClientChooserButtonState extends State<ClientChooserButton> {
+  final Map<Client, Future<Profile>> _profileFutures = {};
+
+  ChatListController get controller => widget.controller;
+
+  Future<Profile> _profileFuture(Client client) =>
+      _profileFutures.putIfAbsent(client, client.fetchOwnProfile);
 
   List<PopupMenuEntry<Object>> _bundleMenuItems(BuildContext context) {
     final matrix = Matrix.of(context);
@@ -115,7 +127,7 @@ class ClientChooserButton extends StatelessWidget {
               (client) => PopupMenuItem(
                 value: client,
                 child: FutureBuilder<Profile?>(
-                  future: client.fetchOwnProfile(),
+                  future: _profileFuture(client),
                   builder: (context, snapshot) => Row(
                     children: [
                       Avatar(
@@ -167,7 +179,7 @@ class ClientChooserButton extends StatelessWidget {
     var clientCount = 0;
     matrix.accountBundles.forEach((key, value) => clientCount += value.length);
     return FutureBuilder<Profile>(
-      future: matrix.client.isLogged() ? matrix.client.fetchOwnProfile() : null,
+      future: matrix.client.isLogged() ? _profileFuture(matrix.client) : null,
       builder: (context, snapshot) => Material(
         clipBehavior: Clip.hardEdge,
         borderRadius: BorderRadius.circular(99),

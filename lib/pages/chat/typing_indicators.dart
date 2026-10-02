@@ -7,9 +7,25 @@ import 'package:fluffychat/widgets/avatar.dart';
 import 'package:fluffychat/widgets/matrix.dart';
 import 'package:flutter/material.dart';
 
-class TypingIndicators extends StatelessWidget {
+class TypingIndicators extends StatefulWidget {
   final ChatController controller;
   const TypingIndicators(this.controller, {super.key});
+
+  @override
+  State<TypingIndicators> createState() => _TypingIndicatorsState();
+}
+
+class _TypingIndicatorsState extends State<TypingIndicators> {
+  ChatController get controller => widget.controller;
+
+  late final Stream<Object> _syncStream = controller.room.client.onSync.stream
+      .where(
+        (syncUpdate) =>
+            syncUpdate.rooms?.join?[controller.room.id]?.ephemeral?.any(
+              (ephemeral) => ephemeral.type == 'm.typing',
+            ) ??
+            false,
+      );
 
   @override
   Widget build(BuildContext context) {
@@ -18,13 +34,7 @@ class TypingIndicators extends StatelessWidget {
     const avatarSize = Avatar.defaultSize / 2;
 
     return StreamBuilder<Object>(
-      stream: controller.room.client.onSync.stream.where(
-        (syncUpdate) =>
-            syncUpdate.rooms?.join?[controller.room.id]?.ephemeral?.any(
-              (ephemeral) => ephemeral.type == 'm.typing',
-            ) ??
-            false,
-      ),
+      stream: _syncStream,
       builder: (context, _) {
         final typingUsers = controller.room.typingUsers
           ..removeWhere((u) => u.stateKey == Matrix.of(context).client.userID);

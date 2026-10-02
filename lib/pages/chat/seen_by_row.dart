@@ -4,9 +4,24 @@ import 'package:fluffychat/widgets/matrix.dart';
 import 'package:flutter/material.dart';
 import 'package:matrix/matrix.dart';
 
-class SeenByRow extends StatelessWidget {
+class SeenByRow extends StatefulWidget {
   final Event event;
   const SeenByRow({super.key, required this.event});
+
+  @override
+  State<SeenByRow> createState() => _SeenByRowState();
+}
+
+class _SeenByRowState extends State<SeenByRow> {
+  Event get event => widget.event;
+
+  late final Stream<SyncUpdate> _syncStream = event.room.client.onSync.stream.where(
+    (syncUpdate) =>
+        syncUpdate.rooms?.join?[event.room.id]?.ephemeral?.any(
+          (ephemeral) => ephemeral.type == 'm.receipt',
+        ) ??
+        false,
+  );
 
   @override
   Widget build(BuildContext context) {
@@ -14,13 +29,7 @@ class SeenByRow extends StatelessWidget {
 
     const maxAvatars = 7;
     return StreamBuilder(
-      stream: event.room.client.onSync.stream.where(
-        (syncUpdate) =>
-            syncUpdate.rooms?.join?[event.room.id]?.ephemeral?.any(
-              (ephemeral) => ephemeral.type == 'm.receipt',
-            ) ??
-            false,
-      ),
+      stream: _syncStream,
       builder: (context, asyncSnapshot) {
         final seenByUsers = event.receipts
             .map((r) => r.user)

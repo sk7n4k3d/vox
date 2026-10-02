@@ -471,10 +471,22 @@ class _EphemeralIndicator extends StatelessWidget {
   }
 }
 
-class _ChatAccountPicker extends StatelessWidget {
+class _ChatAccountPicker extends StatefulWidget {
   final ChatController controller;
 
   const _ChatAccountPicker(this.controller);
+
+  @override
+  State<_ChatAccountPicker> createState() => _ChatAccountPickerState();
+}
+
+class _ChatAccountPickerState extends State<_ChatAccountPicker> {
+  final Map<Client, Future<Profile>> _profileFutures = {};
+
+  ChatController get controller => widget.controller;
+
+  Future<Profile> _profileFuture(Client client) =>
+      _profileFutures.putIfAbsent(client, client.fetchOwnProfile);
 
   void _popupMenuButtonSelected(String mxid, BuildContext context) {
     final client = Matrix.of(
@@ -493,7 +505,7 @@ class _ChatAccountPicker extends StatelessWidget {
     return Padding(
       padding: const EdgeInsets.all(8.0),
       child: FutureBuilder<Profile>(
-        future: controller.sendingClient.fetchOwnProfile(),
+        future: _profileFuture(controller.sendingClient),
         builder: (context, snapshot) => PopupMenuButton<String>(
           useRootNavigator: true,
           onSelected: (mxid) => _popupMenuButtonSelected(mxid, context),
@@ -502,7 +514,7 @@ class _ChatAccountPicker extends StatelessWidget {
                 (client) => PopupMenuItem(
                   value: client!.userID,
                   child: FutureBuilder<Profile>(
-                    future: client.fetchOwnProfile(),
+                    future: _profileFuture(client),
                     builder: (context, snapshot) => ListTile(
                       leading: Avatar(
                         mxContent: snapshot.data?.avatarUrl,

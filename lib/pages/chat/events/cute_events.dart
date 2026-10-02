@@ -124,6 +124,13 @@ class _CuteEventOverlayState extends State<CuteEventOverlay>
   }
 
   @override
+  void dispose() {
+    controller?.removeStatusListener(_hideOverlay);
+    controller?.dispose();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
     return AnimatedBuilder(
       animation: controller!,

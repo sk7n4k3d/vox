@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 
 import 'package:http/http.dart' as http;
 
@@ -81,7 +82,7 @@ class LinkPreviewService {
           bytes.addAll(chunk);
           if (bytes.length >= _maxBytes) break;
         }
-        final html = String.fromCharCodes(bytes);
+        final html = utf8.decode(bytes, allowMalformed: true);
         final data = _parse(url, html);
         return data;
       } finally {

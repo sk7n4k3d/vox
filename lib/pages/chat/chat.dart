@@ -1087,13 +1087,15 @@ class ChatController extends State<ChatPageWithRoom>
     String eventId, {
     bool highlightEvent = true,
   }) async {
-    final foundEvent = timeline!.events.firstWhereOrNull(
+    final tl = timeline;
+    if (tl == null) return;
+    final foundEvent = tl.events.firstWhereOrNull(
       (event) => event.eventId == eventId,
     );
 
     final eventIndex = foundEvent == null
         ? -1
-        : timeline!.events
+        : tl.events
               .filterByVisibleInGui(
                 exceptionEventId: eventId,
                 threadId: activeThreadId,
@@ -1113,6 +1115,7 @@ class ChatController extends State<ChatPageWithRoom>
       });
       await loadTimelineFuture;
       WidgetsBinding.instance.addPostFrameCallback((timeStamp) {
+        if (!mounted) return;
         scrollToEventId(eventId);
       });
       return;
@@ -1131,7 +1134,9 @@ class ChatController extends State<ChatPageWithRoom>
   }
 
   Future<void> scrollDown() async {
-    if (!timeline!.allowNewEvent) {
+    final tl = timeline;
+    if (tl == null) return;
+    if (!tl.allowNewEvent) {
       setState(() {
         timeline = null;
         _scrolledUp = false;
@@ -1156,14 +1161,17 @@ class ChatController extends State<ChatPageWithRoom>
     if (emoji == null) return;
     final text = sendController.text;
     final selection = sendController.selection;
-    final newText = sendController.text.isEmpty
+    final baseOffset = selection.isValid ? selection.baseOffset : text.length;
+    final start = selection.isValid ? selection.start : text.length;
+    final end = selection.isValid ? selection.end : text.length;
+    final newText = text.isEmpty
         ? emoji.emoji
-        : text.replaceRange(selection.start, selection.end, emoji.emoji);
+        : text.replaceRange(start, end, emoji.emoji);
     sendController.value = TextEditingValue(
       text: newText,
       selection: TextSelection.collapsed(
         // don't forget an UTF-8 combined emoji might have a length > 1
-        offset: selection.baseOffset + emoji.emoji.length,
+        offset: baseOffset + emoji.emoji.length,
       ),
     );
   }
@@ -1434,17 +1442,18 @@ class ChatController extends State<ChatPageWithRoom>
   Future<void> onPhoneButtonTap() async {
     // VoIP required Android SDK 21
     if (PlatformInfos.isAndroid) {
-      DeviceInfoPlugin().androidInfo.then((value) {
-        if (value.version.sdkInt < 21) {
-          Navigator.pop(context);
-          showOkAlertDialog(
-            context: context,
-            title: L10n.of(context).unsupportedAndroidVersion,
-            message: L10n.of(context).unsupportedAndroidVersionLong,
-            okLabel: L10n.of(context).close,
-          );
-        }
-      });
+      final androidInfo = await DeviceInfoPlugin().androidInfo;
+      if (!mounted) return;
+      if (androidInfo.version.sdkInt < 21) {
+        Navigator.pop(context);
+        await showOkAlertDialog(
+          context: context,
+          title: L10n.of(context).unsupportedAndroidVersion,
+          message: L10n.of(context).unsupportedAndroidVersionLong,
+          okLabel: L10n.of(context).close,
+        );
+        return;
+      }
     }
     final callType = await showModalActionPopup<CallType>(
       context: context,
@@ -1465,6 +1474,7 @@ class ChatController extends State<ChatPageWithRoom>
       ],
     );
     if (callType == null) return;
+    if (!mounted) return;
 
     final voipPlugin = Matrix.of(context).voipPlugin;
     try {

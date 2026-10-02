@@ -26,6 +26,15 @@ class _StartPollBottomSheetState extends State<StartPollBottomSheet> {
 
   String? _txid;
 
+  @override
+  void dispose() {
+    _bodyController.dispose();
+    for (final answer in _answers) {
+      answer.dispose();
+    }
+    super.dispose();
+  }
+
   Future<void> _createPoll() async {
     try {
       var id = 0;

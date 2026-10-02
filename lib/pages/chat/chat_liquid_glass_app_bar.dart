@@ -440,10 +440,21 @@ class _BridgePill extends StatelessWidget {
 }
 
 /// Single-priority subtitle: typing > last seen > member count.
-class _SubtitleLine extends StatelessWidget {
+class _SubtitleLine extends StatefulWidget {
   final ChatController controller;
 
   const _SubtitleLine({required this.controller});
+
+  @override
+  State<_SubtitleLine> createState() => _SubtitleLineState();
+}
+
+class _SubtitleLineState extends State<_SubtitleLine> {
+  ChatController get controller => widget.controller;
+
+  late final Stream<bool> _syncStream = controller.room.client.onSync.stream
+      .where((s) => s.hasRoomUpdate)
+      .rateLimit(const Duration(milliseconds: 500));
 
   @override
   Widget build(BuildContext context) {
@@ -462,9 +473,7 @@ class _SubtitleLine extends StatelessWidget {
         );
 
     return StreamBuilder<Object>(
-      stream: room.client.onSync.stream
-          .where((s) => s.hasRoomUpdate)
-          .rateLimit(const Duration(milliseconds: 500)),
+      stream: _syncStream,
       builder: (context, _) {
         // Sync status takes over when the client is still warming up.
         final syncStatus = room.client.onSyncStatus.value;

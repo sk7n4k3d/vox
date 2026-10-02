@@ -272,3 +272,256 @@ lib/widgets/matrix.dart:94                                  TODO: Multi-client V
 | 8 | UX/sécu | `liquid_glass_app_bar.dart:16` | cache profil jamais invalidé |
 | 9 | perf | `chat_liquid_glass_app_bar.dart:65` + `sms_chat_page.dart:2117` | BackdropFilter re-flou chaque frame |
 | 10 | perf | `message_reactions.dart:309,352` | blur 8 par pastille de réaction |
+
+---
+
+# Audit Dart — complément v2 (2026-10-03 00:20)
+
+- **Branche** : `feature/ux-refonte` @ `06848b6e5`
+- **Méthode** : relecture complète du code **post-fix** (`HEAD`), diff des correctifs v1,
+  comparaison avec `origin/main` (upstream FluffyChat) et lecture du SDK Matrix 6.2.0
+  (`~/.pub-cache/hosted/pub.dev/matrix-6.2.0`). **Aucun fichier source modifié.**
+- **But** : ce qui reste après le commit `d0195c01d` (« 4 crashes, 3 fuites, profil obsolète »).
+
+> **Acquis v1 — vérifiés corrigés dans `HEAD`** : comparateur de tri des réactions
+> (`message_reactions.dart:55` → `b.count.compareTo(a.count)`), `displayName!` →
+> `calcDisplayname()` (`:416`), `events.first` gardé par `if (events.isEmpty)`
+> (`chat_event_list.dart:40`), `substring(0,-1)` au Enter borné (`chat.dart:336`),
+> `removeObserver(this)` + dispose des 4 controllers (`chat.dart:590-608`), dispose
+> complet + `if (!mounted)` dans `_search` (`chat_list.dart:462,703-717`),
+> `resetOwnProfileCache()` câblé au logout + changement de compte/bundle. Les 2
+> `BackdropFilter` blur 8 par pastille de réaction ont été retirés.
+
+Les points ci-dessous sont **encore présents** dans `HEAD`.
+
+---
+
+## 15. FUITE — `_CuteEventOverlay` ne dispose jamais son `AnimationController`
+
+- **Fichier** : `lib/pages/chat/events/cute_events.dart:106-124`
+- **Sévérité** : fuite mémoire + listener fantôme (chaque « câlin / yeux / hug »)
+- **Cause** : `_CuteEventOverlayState with TickerProviderStateMixin` crée
+  `controller = AnimationController(...)` (l.117), fait `forward()` + `addStatusListener(_hideOverlay)`
+  (l.122) mais **n'a aucune méthode `dispose()`**. Le `OverlayEntry` est retiré à la fin
+  de l'animation (`onAnimationEnd`), ce qui démonte le State : `SingleTickerProviderStateMixin.dispose`
+  lève alors en debug (« disposed with an active Ticker ») et, en release, le controller
+  et son status listener restent attachés. Le chemin **automatique** (`addOverlay` depuis
+  `initState` si `autoplayImages`) passe par ce code à chaque event `cute_type`.
+- **Fix** :
+  ```dart
+  @override
+  void dispose() {
+    controller?.removeStatusListener(_hideOverlay);
+    controller?.dispose();
+    super.dispose();
+  }
+  ```
+
+## 16. CRASH — `typeEmoji` : `selection.start/end` = -1 non gardés
+
+- **Fichier** : `lib/pages/chat/chat.dart:1155-1163`
+- **Sévérité** : crash (`RangeError`) à la sélection d'un emoji depuis le picker
+- **Cause** : `text.replaceRange(selection.start, selection.end, emoji.emoji)`.
+  Même cause racine que le bug #4 de la v1 (corrigé sur le handler Entrée, **pas ici**) :
+  quand le texte est posé par programme (`_loadDraft` l.284, `cancelReplyEventAction`
+  l.1479, `editSelectedEventAction` l.1197), `sendController.selection` peut valoir
+  `TextSelection.collapsed(offset: -1)` → `replaceRange(-1, -1, …)` lève. Le chemin
+  SMS équivalent garde bien `sel.isValid` (`sms_chat_page.dart:535`).
+- **Fix** :
+  ```dart
+  final start = selection.isValid ? selection.start : text.length;
+  final end = selection.isValid ? selection.end : text.length;
+  ```
+
+## 17. CRASH — `scrollToEventId` / `scrollDown` : `timeline!` non gardé + récursion sans `mounted`
+
+- **Fichier** : `lib/pages/chat/chat.dart:1086-1126` et `:1131-1143`
+- **Sévérité** : crash (`Null check operator`) / `setState` après dispose
+- **Cause** : `scrollToEventId` fait `timeline!.events.firstWhereOrNull(...)` (l.1090) et
+  `scrollDown` fait `if (!timeline!.allowNewEvent)` (l.1134) sans garde. Or `timeline`
+  est mis à `null` volontairement dans plusieurs chemins (`_getTimeline` échoue, `scrollDown`
+  lui-même, `dispose`). Pire : le chemin de rechargement relance
+  `WidgetsBinding.instance.addPostFrameCallback((_) { scrollToEventId(eventId); })` (l.1110-1117)
+  **sans test `mounted`** → si la page est fermée pendant le rechargement, la callback
+  relance une récursion sur un State démonté (`setState`/`timeline!`).
+  Appelants : bannière « aller au dernier message », `PinnedEvents`, `MiniAudioPlayer`
+  (`mini_audio_player.dart:74`), deep-link `?event=`.
+- **Fix** : `final tl = timeline; if (tl == null) return;` en tête des deux méthodes, et
+  `if (!mounted) return;` dans la closure post-frame.
+
+## 18. CRASH/UX — `onPhoneButtonTap` : `.then` sans `mounted` (régression vs upstream)
+
+- **Fichier** : `lib/pages/chat/chat.dart:1434-1445`
+- **Sévérité** : crash (`context` après dispose) + comportement changé
+- **Cause** : l'upstream faisait `final androidInfo = await DeviceInfoPlugin().androidInfo;
+  if (!mounted) return; … if (sdkInt < 21) { …; return; }`. Le fork a remplacé par un
+  `DeviceInfoPlugin().androidInfo.then((value) { if (value.version.sdkInt < 21) {
+  Navigator.pop(context); showOkAlertDialog(context: context, …); } });` :
+  1. pas de `mounted` → si l'utilisateur quitte l'écran avant la résolution (le plugin
+     Android est async), `Navigator.pop(context)`/`showOkAlertDialog` s'exécutent sur un
+     contexte démonté ;
+  2. il n'y a plus de `return` : même sur Android < 21 on enchaîne le popup d'appel.
+- **Fix** : revenir au `await … ; if (!mounted) return; … if (sdkInt < 21) { …; return; }`.
+
+## 19. LOGIQUE — `ChatView.build` déclenche `room.join()` à chaque rebuild (invitation)
+
+- **Fichier** : `lib/pages/chat/chat_view.dart:34-40`
+- **Sévérité** : UX/logique (join en double, dialogs empilés)
+- **Cause** : `showFutureLoadingDialog(context: context, future: () => controller.room.join())`
+  est appelé **dans `build`**, sans condition « déjà en cours », dès que
+  `membership == invite`. `ChatView` est reconstruit par plusieurs sources
+  (`StreamBuilder` room-state, `FutureBuilder` timeline, `setState` du contrôleur) →
+  plusieurs `join()` concurrents et plusieurs dialogs de chargement. (Présent aussi
+  upstream, mais réel.)
+- **Fix** : déplacer le join dans `initState`/un flag `_joining`, ou tester
+  `room.membership == invite && !_joinStarted`.
+
+## 20. UX — `LinkPreviewCard` : décodage Latin-1 au lieu d'UTF-8
+
+- **Fichier** : `lib/utils/sms/link_preview.dart:84`
+- **Sévérité** : UX/cosmétique (titres/descriptions illisibles)
+- **Cause** : `final html = String.fromCharCodes(bytes);` mappe chaque octet en code
+  point → tout corps UTF-8 non-ASCII (accents français, emoji, cyrillique…) devient du
+  mojibake (`é` → `Ã©`) dans les cartes d'aperçu de lien (Matrix et SMS).
+- **Fix** : `final html = utf8.decode(bytes, allowMalformed: true);` (importer
+  `dart:convert`).
+
+## 21. LOGIQUE — `_Reaction` sans `key` : animation sur la mauvaise pastille
+
+- **Fichier** : `lib/pages/chat/events/message_reactions.dart:66-94`
+- **Sévérité** : UX/état (animation appliquée au mauvais emoji)
+- **Cause** : les pastilles sont construites par `...visible.map((r) => _Reaction(...))`
+  **sans `key`**. `_Reaction` est un `StatefulWidget` qui garde un `_lastCount` et un
+  `AnimationController` ; `didUpdateWidget` rejoue le pop si `widget.count > _lastCount`.
+  Comme `reactionList` est **triée par count décroissant** (l.55), un changement de
+  nombre de réactions réordonne la liste : Flutter réapparie les States **par position**
+  → un State peut recevoir la `reactionKey` d'une autre réaction, et le pop se déclenche
+  sur la pastille voisine (voire sur une réaction dont le count a *baissé*).
+- **Fix** : `_Reaction(key: ValueKey(r.key), …)`. (Idem dans `_showAllReactionsSheet`
+  l.133.)
+
+## 22. FUITE — `StartPollBottomSheet` et `SendFileDialog` ne disposent pas leurs controllers
+
+- **Fichiers** :
+  - `lib/pages/chat/start_poll_bottom_sheet.dart:15-19` (`_bodyController` + `_answers`)
+  - `lib/pages/chat/send_file_dialog.dart:44` (`_labelTextController`)
+- **Sévérité** : fuite mémoire (mineure, par ouverture de dialog)
+- **Cause** : aucun `dispose()` dans `_StartPollBottomSheetState` ni dans
+  `SendFileDialogState` ; seuls les controllers d'`_answers` retirés manuellement sont
+  disposés (`start_poll_bottom_sheet.dart:106`). `_bodyController` + les réponses
+  restantes + `_labelTextController` restent attachés à leurs listeners.
+- **Fix** : ajouter
+  ```dart
+  @override
+  void dispose() {
+    _bodyController.dispose();
+    for (final a in _answers) { a.dispose(); }
+    _labelTextController.dispose();
+    super.dispose();
+  }
+  ```
+
+## 23. PERF — `fetchOwnProfile()` dans `FutureBuilder` re-fetché à chaque rebuild
+
+- **Fichiers** :
+  - `lib/pages/chat/chat_input_row.dart:496` et `:505` (`_ChatAccountPicker`)
+  - `lib/pages/chat_list/client_chooser_button.dart:118` et `:170`
+- **Sévérité** : perf (requête réseau + rebuild à chaque frappe/scroll)
+- **Cause** : la v1 a mémoïsé le profil de l'AppBar (`liquid_glass_app_bar.dart`), mais
+  les deux autres surfaces refont `fetchOwnProfile()` **directement dans le `FutureBuilder`** :
+  à chaque rebuild du composer (toggle emoji, focus, sélection…) un nouveau Future est créé
+  → nouvel appel réseau et flash « vide » entre deux snapshots. Le sélecteur de compte du
+  composer (`chat_input_row.dart:505`) le fait même pour **chaque client** à chaque
+  ouverture du menu.
+- **Fix** : réutiliser `_ownProfileCached(client)` (déjà écrit pour l'AppBar) dans ces
+  deux widgets, ou mémoïser par `client.userID`.
+
+## 24. PERF — flux `onSync` recréés à chaque build (subtitle, seen-by, typing)
+
+- **Fichiers** :
+  - `lib/pages/chat/chat_liquid_glass_app_bar.dart:480-483` (`_SubtitleLine`)
+  - `lib/pages/chat/seen_by_row.dart:17-23`
+  - `lib/pages/chat/typing_indicators.dart:21-27`
+- **Sévérité** : perf (allocation + abonnements inutiles)
+- **Cause** : chacun construit `room.client.onSync.stream.where(...).rateLimit(...)`
+  **dans le `build`**. Chaque rebuild crée un nouveau Stream et un nouveau `StreamBuilder`
+  s'y réabonne ; le `Timer` interne du `rateLimit` (`utils/stream_extension.dart:23`)
+  n'est pas annulé à l'annulation (il s'auto-neutralise via `isClosed`, donc pas de
+  crash, mais du travail jeté à chaque frame de scroll). Comme l'AppBar/timeline se
+  rebuild souvent (drag, typing, sélection), c'est du déchet permanent.
+- **Fix** : hoister le stream (champ `late final` du State) et le réutiliser.
+
+## 25. PERF — `BackdropFilter` plein écran animé sur les overlays modaux
+
+- **Fichiers** :
+  - `lib/pages/chat/events/message_context_overlay.dart:411-412` (blur 24 plein écran)
+  - `lib/pages/chat/voice_recording_overlay.dart:132-135` (blur 24 derrière le panneau)
+- **Sévérité** : perf (transitoire mais coûteux)
+- **Cause** : le menu contextuel long-press floute **tout l'écran** (`Positioned.fill`)
+  pendant que 3 `AnimationController` animent la bulle/les réactions/les actions
+  (`AnimatedBuilder`, l.380-382) → re-flou complet recalculé à chaque frame de l'entrée
+  ET de la sortie. Idem pour l'overlay d'enregistrement vocal, qui pulse en plus
+  (`_PulseRecDot`, `_SlideToCancelChevrons`, `_LockBadge`).
+- **Fix** : figer le blur pendant l'animation (n'animer que l'opacité d'un fond déjà
+  flouté), le réduire, ou utiliser `BackdropFilter.grouped` + `BackdropGroup`.
+
+## 26. CRASH (edge) — `_showScrollUpMaterialBanner(eventContextId!)` avec `eventContextId` null
+
+- **Fichier** : `lib/pages/chat/chat.dart:516-518`
+- **Sévérité** : crash (`Null check operator`) sur un chemin d'erreur
+- **Cause** : `_getTimeline` force `eventContextId = null` en tête quand l'id est invalide
+  (l.497-500). Le `catch` teste ensuite `if (e is TimeoutException || e is IOException)
+  _showScrollUpMaterialBanner(eventContextId!)`. Un `getTimeline()` initial (id null)
+  qui expire, ou une id invalide + timeout → `eventContextId!` lève.
+  (Présent aussi upstream.)
+- **Fix** : `if (eventContextId != null && (e is TimeoutException || e is IOException)) …`.
+
+---
+
+## Points mineurs additionnels
+
+- `lib/pages/chat/events/cute_events.dart:18` : `_isOverlayShown` est un `static` de
+  State partagé entre tous les widgets — un overlay déjà affiché bloque l'autoplay des
+  autres events `cute` (voulu), mais si `onAnimationEnd` n'est jamais appelé (controller
+  non disposé, cf. #15) le drapeau reste bloqué et **aucun** overlay ne se réaffiche plus
+  pour la session.
+- `lib/widgets/avatar_with_status_ring.dart:207-212` : `_PulseRing` démarre son ticker
+  dans l'initialiseur de champ `late final` (donc avant `initState`). Ticker muté
+  automatiquement hors écran par `TickerMode`, mais **toutes** les lignes non-lues
+  visibles de la liste pulsent simultanément (N tickers 60 fps). Envisager un seul
+  contrôleur partagé, comme pour les skeletons (#13 v1).
+- `lib/pages/chat_list/chat_list_body.dart:473-516` : `_ChatListSections.layout` re-trie
+  toute la liste à chaque build (à chaque sync, debounce SMS, frappe en recherche) et
+  `_bucketForTs` appelle `DateTime.now()` par item. Correct mais O(n log n) par frame de
+  sync ; un cache par `(lastEvent, now.day)` éviterait le re-tri.
+- `lib/pages/chat/events/message_context_overlay.dart:192-204` : `_withSelectedEvent`
+  mute `controller.selectedEvents` **sans `setState`** alors que le même `ChatController`
+  pilote l'AppBar en mode sélection ; la sélection peut rester « fantôme » jusqu'au
+  prochain rebuild.
+- `lib/pages/chat/events/message.dart:1029-1052` (`_AnimateIn`) : `addPostFrameCallback`
+  appelé **depuis `build`** pour passer `_animationFinished` → un frame supplémentaire
+  systématique par bulle animée ; `_AnimateInOnce` du SMS a le même schéma. Cosmétique.
+- `lib/pages/chat/chat.dart:373` + `:595` : l'ordre `inputFocus.removeListener(...)` puis
+  `inputFocus.dispose()` est correct ; RAS depuis la v1.
+- `lib/pages/chat/events/message_reactions.dart:387-424` : `reactionEntry!` /
+  `reactors!` restent forcés (toujours construits ensemble) — fragile, pas un bug actif.
+
+---
+
+## Top 10 du complément (par sévérité)
+
+| # | Sévérité | Emplacement | Résumé |
+|---|----------|-------------|--------|
+| 1 | crash | `chat.dart:1155-1163` (`typeEmoji`) | `selection.start/end` = -1 → `RangeError` |
+| 2 | crash | `chat.dart:1086-1143` | `timeline!` non gardé + récursion post-frame sans `mounted` |
+| 3 | crash/UX | `chat.dart:1434-1445` | `onPhoneButtonTap` `.then` sans `mounted` + `return` perdu |
+| 4 | fuite | `cute_events.dart:106-124` | `AnimationController` + status listener jamais disposés |
+| 5 | UX/logique | `chat_view.dart:34-40` | `room.join()` déclenché depuis `build` (join en double) |
+| 6 | UX | `link_preview.dart:84` | décodage Latin-1 au lieu d'UTF-8 (mojibake) |
+| 7 | état | `message_reactions.dart:66` | `_Reaction` sans `key` → pop sur la mauvaise pastille |
+| 8 | fuite | `start_poll_bottom_sheet.dart:15` / `send_file_dialog.dart:44` | controllers non disposés |
+| 9 | perf | `chat_input_row.dart:496,505` / `client_chooser_button.dart:118,170` | `fetchOwnProfile()` par rebuild |
+| 10 | perf | `chat_liquid_glass_app_bar.dart:480` / `seen_by_row.dart:17` / `typing_indicators.dart:21` | flux `onSync` recréés à chaque build |
+
+**Hors top-10 mais à traiter** : `chat.dart:517` (`eventContextId!` null, edge), overlays
+modaux à blur plein écran animé (#25), tickers de pastilles non-lues (#points mineurs).
