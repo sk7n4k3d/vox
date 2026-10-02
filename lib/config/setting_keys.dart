@@ -51,7 +51,7 @@ enum AppSettings<T> {
   ),
   displayChatDetailsColumn('chat.fluffy.display_chat_details_column', false),
   // AppConfig-mirrored settings
-  applicationName<String>('chat.fluffy.application_name', 'FluffyChat'),
+  applicationName<String>('chat.fluffy.application_name', 'VOX'),
   defaultHomeserver<String>('chat.fluffy.default_homeserver', 'matrix.org'),
   // colorSchemeSeed stored as ARGB int
   colorSchemeSeedInt<int>('chat.fluffy.color_scheme_seed', 0xFF5625BA),
@@ -94,7 +94,12 @@ enum AppSettings<T> {
     'chat.fluffy.sms_notifications_preview',
     true,
   ),
-  smsNotificationsSound<bool>('chat.fluffy.sms_notifications_sound', true);
+  smsNotificationsSound<bool>('chat.fluffy.sms_notifications_sound', true),
+  // Assistance IA — client LLM OpenAI-compatible (endpoint, clé, modèle).
+  llmEnabled<bool>('chat.fluffy.llm_enabled', false),
+  llmBaseUrl<String>('chat.fluffy.llm_base_url', 'https://llm.sk7.sh/v1'),
+  llmApiKey<String>('chat.fluffy.llm_api_key', ''),
+  llmModel<String>('chat.fluffy.llm_model', 'qwen3.5-titan1-16x');
 
   final String key;
   final T defaultValue;
