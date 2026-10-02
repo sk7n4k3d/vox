@@ -16,6 +16,7 @@ import 'package:fluffychat/utils/scheduled/scheduled_messages.dart';
 import 'package:fluffychat/utils/show_scaffold_dialog.dart';
 import 'package:fluffychat/utils/show_update_snackbar.dart';
 import 'package:fluffychat/utils/sms/sms_bridge.dart';
+import 'package:fluffychat/widgets/adaptive_dialogs/adaptive_dialog_action.dart';
 import 'package:fluffychat/widgets/adaptive_dialogs/show_modal_action_popup.dart';
 import 'package:fluffychat/widgets/adaptive_dialogs/show_ok_cancel_alert_dialog.dart';
 import 'package:fluffychat/widgets/adaptive_dialogs/show_text_input_dialog.dart';
@@ -96,8 +97,95 @@ class ChatListController extends State<ChatList>
     _activeSpaceId = null;
   });
 
+  /// Asks the user to accept, decline or block a room invitation.
+  ///
+  /// Tapping an invited room used to join it silently, with no explicit
+  /// "join / decline" affordance (only a small trailing trash icon). This
+  /// restores the confirmation dialog upstream FluffyChat showed here.
+  /// Returns true when the caller should proceed with the join.
+  Future<bool> _confirmRoomInvitation(Room room) async {
+    final theme = Theme.of(context);
+    final inviteEvent = room.getState(
+      EventTypes.RoomMember,
+      room.client.userID!,
+    );
+    final matrixLocals = MatrixLocals(L10n.of(context));
+    final reason = inviteEvent?.content.tryGet<String>('reason');
+    final inviterId = inviteEvent?.senderId;
+    final inviterName = inviterId == null
+        ? null
+        : room
+              .unsafeGetUserFromMemoryOrFallback(inviterId)
+              .calcDisplayname(i18n: matrixLocals);
+    final action = await showAdaptiveDialog<_InviteAction>(
+      context: context,
+      builder: (context) => AlertDialog.adaptive(
+        title: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 256),
+          child: Center(
+            child: Text(
+              room.getLocalizedDisplayname(matrixLocals),
+              textAlign: TextAlign.center,
+            ),
+          ),
+        ),
+        content: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 256, maxHeight: 256),
+          child: Text(
+            reason ??
+                (inviterName == null
+                    ? L10n.of(context).inviteGroupChat
+                    : L10n.of(context).youInvitedBy(inviterName)),
+            textAlign: TextAlign.center,
+          ),
+        ),
+        actions: [
+          AdaptiveDialogAction(
+            onPressed: () => Navigator.of(context).pop(_InviteAction.accept),
+            bigButtons: true,
+            child: Text(L10n.of(context).accept),
+          ),
+          AdaptiveDialogAction(
+            onPressed: () => Navigator.of(context).pop(_InviteAction.decline),
+            bigButtons: true,
+            child: Text(
+              L10n.of(context).declineInvitation,
+              style: TextStyle(color: theme.colorScheme.error),
+            ),
+          ),
+          if (inviterId != null)
+            AdaptiveDialogAction(
+              onPressed: () => Navigator.of(context).pop(_InviteAction.block),
+              bigButtons: true,
+              child: Text(
+                L10n.of(context).block,
+                style: TextStyle(color: theme.colorScheme.error),
+              ),
+            ),
+        ],
+      ),
+    );
+    if (!mounted) return false;
+    switch (action) {
+      case null:
+        return false;
+      case _InviteAction.accept:
+        return true;
+      case _InviteAction.decline:
+        await showFutureLoadingDialog(
+          context: context,
+          future: () => room.leave(),
+        );
+        return false;
+      case _InviteAction.block:
+        context.go('/rooms/settings/security/ignorelist', extra: inviterId);
+        return false;
+    }
+  }
+
   Future<void> onChatTap(Room room) async {
     if (room.membership == Membership.invite) {
+      if (!await _confirmRoomInvitation(room)) return;
       final joinResult = await showFutureLoadingDialog(
         context: context,
         future: () async {
@@ -1323,3 +1411,5 @@ enum ChatContextAction {
   addToSpace,
   block,
 }
+
+enum _InviteAction { accept, decline, block }

@@ -496,12 +496,23 @@ class _ChatListSections {
         sms: s,
       ));
     }
-    items.sort((a, b) => b.ts.compareTo(a.ts));
+    items.sort((a, b) {
+      // Room invitations are pinned above everything else, matching the SDK's
+      // own ordering. Otherwise their null lastEvent sorts them under
+      // "EARLIER" with a 1970 date and the user can't find them to accept.
+      final aInvite = a.room?.membership == Membership.invite;
+      final bInvite = b.room?.membership == Membership.invite;
+      if (aInvite != bInvite) return aInvite ? -1 : 1;
+      return b.ts.compareTo(a.ts);
+    });
 
     final entries = <_ChatListEntry>[];
     String? lastBucket;
     for (final it in items) {
-      final bucket = _bucketForTs(it.ts);
+      // Invitations have no meaningful date; keep them under the top header
+      // instead of a bogus 1970 "EARLIER" one.
+      final isInvite = it.room?.membership == Membership.invite;
+      final bucket = isInvite ? today : _bucketForTs(it.ts);
       if (bucket != lastBucket) {
         entries.add(_ChatListEntry.header(bucket));
         lastBucket = bucket;

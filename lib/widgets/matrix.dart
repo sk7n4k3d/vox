@@ -254,10 +254,19 @@ class MatrixState extends State<Matrix> with WidgetsBindingObserver {
           };
           request.onUpdate = null;
           hidPopup = true;
-          await KeyVerificationDialog(request: request).show(
-            FluffyChatApp.router.routerDelegate.navigatorKey.currentContext ??
-                context,
-          );
+          var navigatorContext =
+              FluffyChatApp.router.routerDelegate.navigatorKey.currentContext;
+          if (navigatorContext == null) {
+            // Cold start (e.g. opened from a push notification): the router's
+            // Navigator is not mounted yet. This widget sits above it, so its
+            // own context cannot be used to open a root-navigator dialog.
+            await WidgetsBinding.instance.endOfFrame;
+            navigatorContext =
+                FluffyChatApp.router.routerDelegate.navigatorKey.currentContext;
+          }
+          await KeyVerificationDialog(
+            request: request,
+          ).show(navigatorContext ?? context);
         });
     onLogoutSub[name] ??= c.onLoginStateChanged.stream
         .where((state) => state == LoginState.loggedOut)
