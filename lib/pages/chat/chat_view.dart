@@ -12,7 +12,7 @@ import 'package:fluffychat/pages/chat/pinned_events.dart';
 import 'package:fluffychat/pages/chat/reply_display.dart';
 import 'package:fluffychat/utils/account_config.dart';
 import 'package:fluffychat/utils/localized_exception_extension.dart';
-import 'package:fluffychat/widgets/cyber/aurora_background.dart';
+import 'package:fluffychat/widgets/cyber/cyber_backdrop.dart';
 import 'package:fluffychat/widgets/future_loading_dialog.dart';
 import 'package:fluffychat/widgets/matrix.dart';
 import 'package:fluffychat/widgets/mxc_image.dart';
@@ -163,7 +163,7 @@ class ChatView extends StatelessWidget {
                     // never competes with the message list for the frame budget.
                     // Renders statically under reduce-motion.
                     if (accountConfig.wallpaperUrl == null)
-                      const Positioned.fill(child: AuroraBackground()),
+                      const Positioned.fill(child: CyberScreenBackdrop()),
                     if (accountConfig.wallpaperUrl != null)
                       Opacity(
                         opacity: accountConfig.wallpaperOpacity ?? 0.5,
@@ -196,7 +196,8 @@ class ChatView extends StatelessWidget {
                           // Status bar + 64dp AppBar + any banner (pinned
                           // events, thread anchor, jump-to-unread pill).
                           SizedBox(
-                            height: MediaQuery.paddingOf(context).top +
+                            height:
+                                MediaQuery.paddingOf(context).top +
                                 64.0 +
                                 appbarBottomHeight,
                           ),

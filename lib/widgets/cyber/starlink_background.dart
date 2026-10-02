@@ -1,0 +1,168 @@
+import 'package:fluffychat/widgets/cyber/cyber_fx.dart';
+import 'package:fluffychat/widgets/cyber/cyber_widgets.dart';
+import 'package:flutter/material.dart';
+
+/// STARLINK — a moving constellation of electric-blue particles drifting
+/// through space, linked by luminous filaments when they pass close to each
+/// other, like a satellite mesh seen from the ground.
+///
+/// Perf contract (cyber_anim_contract):
+/// - NO shader, NO per-pixel work: each frame is ~30 [drawCircle]s plus at
+///   most a few dozen [drawLine]s — cheap vector primitives only.
+/// - Motion is a PURE FUNCTION of the animation value: positions derive
+///   deterministically from `t`, so the ticker never mutates state, never
+///   calls setState, and repaints stay inside the [RepaintBoundary].
+/// - Reduce-motion: renders the static `t = 0` constellation, no ticker.
+class StarlinkBackground extends StatefulWidget {
+  final double opacity;
+  final Duration period;
+
+  const StarlinkBackground({
+    this.opacity = 0.30,
+    this.period = const Duration(seconds: 48),
+    super.key,
+  });
+
+  @override
+  State<StarlinkBackground> createState() => _StarlinkBackgroundState();
+}
+
+class _StarlinkBackgroundState extends State<StarlinkBackground>
+    with SingleTickerProviderStateMixin {
+  AnimationController? _ctrl;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final reduced = CyberMotion.reduced(context);
+    if (reduced) {
+      _ctrl?.dispose();
+      _ctrl = null;
+    } else {
+      _ctrl ??= AnimationController(vsync: this, duration: widget.period)
+        ..repeat();
+    }
+  }
+
+  @override
+  void dispose() {
+    _ctrl?.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final cyber = CyberColors.of(context);
+    final ctrl = _ctrl;
+    return RepaintBoundary(
+      child: Opacity(
+        opacity: widget.opacity,
+        child: ctrl == null
+            ? CustomPaint(
+                painter: StarlinkPainter(
+                  t: 0,
+                  cyan: cyber.cyan,
+                  violet: cyber.violet,
+                  magenta: cyber.magenta,
+                ),
+              )
+            : AnimatedBuilder(
+                animation: ctrl,
+                builder: (context, _) => CustomPaint(
+                  painter: StarlinkPainter(
+                    t: ctrl.value,
+                    cyan: cyber.cyan,
+                    violet: cyber.violet,
+                    magenta: cyber.magenta,
+                  ),
+                ),
+              ),
+      ),
+    );
+  }
+}
+
+/// Deterministic particle mesh, painted from scratch at animation value [t].
+class StarlinkPainter extends CustomPainter {
+  /// Progress in [0, 1) of the drift loop.
+  final double t;
+  final Color cyan;
+  final Color violet;
+  final Color magenta;
+
+  const StarlinkPainter({
+    required this.t,
+    required this.cyan,
+    required this.violet,
+    required this.magenta,
+  });
+
+  /// Deterministic pseudo-random in [0, 1) from an integer seed (no storage).
+  static double _rand(int i, int salt) {
+    var x = (i * 374761393 + salt * 668265263) & 0x7FFFFFFF;
+    x = ((x ^ (x >> 13)) * 1274126177) & 0x7FFFFFFF;
+    return ((x ^ (x >> 16)) & 0x7FFFFFFF) / 0x7FFFFFFF;
+  }
+
+  /// Position of particle [i] at loop progress [t]. Particles wrap inside a
+  /// box larger than the viewport so the wrap pop happens off-screen.
+  static Offset _particle(int i, Size size, double t) {
+    final margin = size.shortestSide * 0.15;
+    final w = size.width + margin * 2;
+    final h = size.height + margin * 2;
+    final speed = 0.15 + _rand(i, 3) * 0.25; // fraction of the box per cycle
+    final dx = (_rand(i, 1) * 2 - 1) * speed * w * t;
+    final dy = (_rand(i, 2) * 2 - 1) * speed * h * t;
+    final x = ((_rand(i, 4) * w + dx) % w + w) % w - margin;
+    final y = ((_rand(i, 5) * h + dy) % h + h) % h - margin;
+    return Offset(x, y);
+  }
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    if (size.isEmpty) return;
+    const count = 30;
+    final linkDist = size.shortestSide * 0.16;
+    final pts = List.generate(count, (i) => _particle(i, size, t));
+
+    // Luminous filaments between close particles.
+    final linkPaint = Paint()
+      ..color = cyan.withValues(alpha: 0.35)
+      ..strokeWidth = 1.0
+      ..strokeCap = StrokeCap.round;
+    for (var i = 0; i < count; i++) {
+      for (var j = i + 1; j < count; j++) {
+        final d = (pts[i] - pts[j]).distance;
+        if (d >= linkDist) continue;
+        final a = (1 - d / linkDist) * 0.35;
+        canvas.drawLine(
+          pts[i],
+          pts[j],
+          linkPaint..color = cyan.withValues(alpha: a),
+        );
+      }
+    }
+
+    // Particles: a few bright 'satellites', the rest dim stars.
+    for (var i = 0; i < count; i++) {
+      final bright = _rand(i, 7) > 0.7;
+      final r = bright ? 2.2 : 1.1;
+      final glow = Paint()
+        ..color = cyan.withValues(alpha: bright ? 0.22 : 0.10)
+        ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 5);
+      canvas.drawCircle(pts[i], r * 3, glow);
+      final core = Paint()
+        ..color = (bright ? violet : cyan).withValues(
+          alpha: bright ? 0.95 : 0.55,
+        );
+      canvas.drawCircle(pts[i], r, core);
+    }
+  }
+
+  @override
+  bool shouldRepaint(StarlinkPainter old) =>
+      old.t != t ||
+      old.cyan != cyan ||
+      old.violet != violet ||
+      old.magenta != magenta;
+}

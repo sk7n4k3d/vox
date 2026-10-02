@@ -371,10 +371,20 @@ class MatrixState extends State<Matrix> with WidgetsBindingObserver {
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
 
-    onRoomKeyRequestSub.values.map((s) => s.cancel());
-    onKeyVerificationRequestSub.values.map((s) => s.cancel());
-    onLogoutSub.values.map((s) => s.cancel());
-    onNotification.values.map((s) => s.cancel());
+    // Upstream fluffychat#3132: `.map` is lazy on an Iterable, so these
+    // cancel() calls never ran and every stream subscription leaked.
+    for (final s in onRoomKeyRequestSub.values) {
+      s.cancel();
+    }
+    for (final s in onKeyVerificationRequestSub.values) {
+      s.cancel();
+    }
+    for (final s in onLogoutSub.values) {
+      s.cancel();
+    }
+    for (final s in onNotification.values) {
+      s.cancel();
+    }
 
     linuxNotifications?.close();
 

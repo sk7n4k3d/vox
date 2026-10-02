@@ -18,7 +18,7 @@ import 'package:fluffychat/utils/scheduled/scheduled_messages.dart';
 import 'package:fluffychat/utils/sms/map_linkifier.dart';
 import 'package:fluffychat/utils/sms/sms_bridge.dart';
 import 'package:fluffychat/widgets/cyber/animated_emoji_text.dart';
-import 'package:fluffychat/widgets/cyber/aurora_background.dart';
+import 'package:fluffychat/widgets/cyber/cyber_backdrop.dart';
 import 'package:fluffychat/widgets/cyber/chat_bubble_skin.dart';
 import 'package:fluffychat/widgets/cyber/cyber_fx.dart';
 import 'package:fluffychat/widgets/cyber/cyber_widgets.dart';
@@ -158,7 +158,8 @@ class _SmsChatPageState extends State<SmsChatPage> with WidgetsBindingObserver {
 
   /// Effets plein écran (pluie/cœurs/confettis…) — même contrôleur que le chat
   /// Matrix (chat.dart). Throttle 3s, reduce-motion et anti-doublon intégrés.
-  final ScreenEffectController _screenEffectController = ScreenEffectController();
+  final ScreenEffectController _screenEffectController =
+      ScreenEffectController();
 
   /// Joue l'effet plein écran correspondant au [body] si le réglage est actif.
   void _maybePlayEffect(String body) {
@@ -246,8 +247,8 @@ class _SmsChatPageState extends State<SmsChatPage> with WidgetsBindingObserver {
   void _onScroll() {
     if (!_scroll.hasClients) return;
     // > 240px above the bottom → show the jump-to-bottom button.
-    final show = _scroll.position.maxScrollExtent - _scroll.position.pixels >
-        240;
+    final show =
+        _scroll.position.maxScrollExtent - _scroll.position.pixels > 240;
     if (show != _showScrollDown) setState(() => _showScrollDown = show);
     // Proche du HAUT (messages anciens) → charger la page précédente.
     if (_scroll.position.pixels <= 80 && _hasMore && !_loadingMore) {
@@ -484,8 +485,9 @@ class _SmsChatPageState extends State<SmsChatPage> with WidgetsBindingObserver {
     });
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
-        content:
-            Text('Message programmé pour ${ScheduledSend.formatWhen(when)}'),
+        content: Text(
+          'Message programmé pour ${ScheduledSend.formatWhen(when)}',
+        ),
       ),
     );
   }
@@ -500,10 +502,7 @@ class _SmsChatPageState extends State<SmsChatPage> with WidgetsBindingObserver {
 
   Future<void> _pickFrom(ImageSource source) async {
     try {
-      final file = await _picker.pickImage(
-        source: source,
-        imageQuality: 85,
-      );
+      final file = await _picker.pickImage(source: source, imageQuality: 85);
       if (!mounted || file == null) return;
       setState(() => _pendingImagePath = file.path);
     } catch (_) {
@@ -656,9 +655,9 @@ class _SmsChatPageState extends State<SmsChatPage> with WidgetsBindingObserver {
       case _MessageAction.copy:
         await Clipboard.setData(ClipboardData(text: message.body));
         if (!mounted) return;
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Texte copié')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text('Texte copié')));
       case _MessageAction.forward:
         await _forwardMessage(message);
       case _MessageAction.resend:
@@ -685,13 +684,16 @@ class _SmsChatPageState extends State<SmsChatPage> with WidgetsBindingObserver {
   /// text back through the normal send path.
   Future<void> _resendMessage(SmsMessage message) async {
     setState(() => _messages.removeWhere((m) => m.id == message.id));
-    final rowId = await SmsBridge.instance.sendSms(widget.address, message.body);
+    final rowId = await SmsBridge.instance.sendSms(
+      widget.address,
+      message.body,
+    );
     if (!mounted) return;
     if (rowId == null) {
       HapticFeedback.mediumImpact();
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Échec du renvoi')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('Échec du renvoi')));
     }
     await _load();
   }
@@ -701,7 +703,8 @@ class _SmsChatPageState extends State<SmsChatPage> with WidgetsBindingObserver {
   /// from the local list. Local-only bubbles are simply removed.
   Future<void> _deleteMessage(SmsMessage message) async {
     final realId = int.tryParse(message.id);
-    final isSynthetic = message.id.startsWith(_optimisticPrefix) ||
+    final isSynthetic =
+        message.id.startsWith(_optimisticPrefix) ||
         message.id.startsWith(_incomingPrefix);
     if (realId != null && !isSynthetic) {
       await SmsBridge.instance.deleteMessage(realId, isMms: message.isMms);
@@ -719,8 +722,7 @@ class _SmsChatPageState extends State<SmsChatPage> with WidgetsBindingObserver {
       builder: (context) => _ConfirmDeleteSheet(
         cyber: CyberColors.of(context),
         title: 'Supprimer la conversation ?',
-        message:
-            'Tous les messages de ce fil seront définitivement supprimés.',
+        message: 'Tous les messages de ce fil seront définitivement supprimés.',
       ),
     );
     if (confirmed != true || !mounted) return;
@@ -789,8 +791,7 @@ class _SmsChatPageState extends State<SmsChatPage> with WidgetsBindingObserver {
 
   /// Strips spaces/punctuation so `+33 6 12` and `0612` compare loosely. Cheap
   /// best-effort match for the incoming-stream fallback only.
-  String _normalize(String address) =>
-      address.replaceAll(_normalizeRe, '');
+  String _normalize(String address) => address.replaceAll(_normalizeRe, '');
 
   String get _title {
     final name = widget.displayName;
@@ -846,7 +847,7 @@ class _SmsChatPageState extends State<SmsChatPage> with WidgetsBindingObserver {
           // Same animated aurora backdrop as the Matrix timeline — painted once
           // and animated by transform (no per-pixel shader). Static under
           // reduce-motion.
-          const Positioned.fill(child: AuroraBackground()),
+          const Positioned.fill(child: CyberScreenBackdrop()),
           SafeArea(
             top: false,
             child: Column(
@@ -962,8 +963,7 @@ class _SmsChatPageState extends State<SmsChatPage> with WidgetsBindingObserver {
         }
         final message = _messages[index];
         final previous = index > 0 ? _messages[index - 1] : null;
-        final next =
-            index < _messages.length - 1 ? _messages[index + 1] : null;
+        final next = index < _messages.length - 1 ? _messages[index + 1] : null;
         // New calendar day → inline date separator above the bubble.
         final showDateSeparator =
             previous == null || !_sameDay(previous.date, message.date);
@@ -978,11 +978,13 @@ class _SmsChatPageState extends State<SmsChatPage> with WidgetsBindingObserver {
         // break that drives [showTimestamp], mirroring Matrix's `displayTime`
         // controlling `nextEventSameSender`.
         const groupGapMs = 5 * 60 * 1000;
-        final previousSameSender = previous != null &&
+        final previousSameSender =
+            previous != null &&
             previous.isFromMe == message.isFromMe &&
             !showDateSeparator &&
             (message.date - previous.date).abs() <= groupGapMs;
-        final nextSameSender = next != null &&
+        final nextSameSender =
+            next != null &&
             next.isFromMe == message.isFromMe &&
             _sameDay(message.date, next.date) &&
             (next.date - message.date).abs() <= groupGapMs;
@@ -1042,9 +1044,7 @@ class _SmsChatPageState extends State<SmsChatPage> with WidgetsBindingObserver {
               alpha: _pendingEphemeralOverride != null ? 0.30 : 0.18,
             ),
             borderRadius: BorderRadius.circular(999),
-            border: Border.all(
-              color: theme.bubbleColor.withValues(alpha: 0.5),
-            ),
+            border: Border.all(color: theme.bubbleColor.withValues(alpha: 0.5)),
           ),
           child: Row(
             mainAxisSize: MainAxisSize.min,
@@ -1068,7 +1068,8 @@ class _SmsChatPageState extends State<SmsChatPage> with WidgetsBindingObserver {
 
   Future<void> _editEphemeralOverride() async {
     final convId = EphemeralMessages.smsConvId(widget.threadId);
-    final current = _pendingEphemeralOverride ??
+    final current =
+        _pendingEphemeralOverride ??
         EphemeralMessages.instance.policyFor(convId);
     final chosen = await EphemeralPicker.show(
       context,
@@ -1076,8 +1077,11 @@ class _SmsChatPageState extends State<SmsChatPage> with WidgetsBindingObserver {
       perMessage: true,
     );
     if (chosen == null || !mounted) return;
-    setState(() => _pendingEphemeralOverride =
-        chosen == EphemeralDuration.off ? null : chosen);
+    setState(
+      () => _pendingEphemeralOverride = chosen == EphemeralDuration.off
+          ? null
+          : chosen,
+    );
   }
 
   Widget _buildComposer(ThemeData theme, CyberpunkTheme cyber) {
@@ -1192,9 +1196,7 @@ class _SmsChatPageState extends State<SmsChatPage> with WidgetsBindingObserver {
                     tooltip: L10n.of(context).emojis,
                     color: theme.colorScheme.onPrimaryContainer,
                     icon: Icon(
-                      _showEmoji
-                          ? Icons.keyboard
-                          : Icons.add_reaction_outlined,
+                      _showEmoji ? Icons.keyboard : Icons.add_reaction_outlined,
                       key: ValueKey(_showEmoji),
                     ),
                     onPressed: _toggleEmoji,
@@ -1211,17 +1213,17 @@ class _SmsChatPageState extends State<SmsChatPage> with WidgetsBindingObserver {
                       keyboardType: TextInputType.multiline,
                       // Honour the same "Enter to send" setting as the Matrix
                       // composer instead of always inserting a newline.
-                      textInputAction:
-                          AppSettings.sendOnEnter.value == true
-                              ? TextInputAction.send
-                              : TextInputAction.newline,
+                      textInputAction: AppSettings.sendOnEnter.value == true
+                          ? TextInputAction.send
+                          : TextInputAction.newline,
                       onSubmitted: (_) {
                         if (AppSettings.sendOnEnter.value == true) _send();
                       },
                       cursorColor: cyber.cyan,
                       style: TextStyle(
                         fontFamily: FluffyTypography.inter,
-                        fontSize: AppConfig.messageFontSize *
+                        fontSize:
+                            AppConfig.messageFontSize *
                             AppSettings.fontSizeFactor.value,
                         color: theme.colorScheme.onSurface,
                       ),
@@ -1247,16 +1249,16 @@ class _SmsChatPageState extends State<SmsChatPage> with WidgetsBindingObserver {
                   width: _composerRowHeight,
                   child: Center(
                     child: GestureDetector(
-                      onLongPress:
-                          _hasText && !_sending ? _schedule : null,
+                      onLongPress: _hasText && !_sending ? _schedule : null,
                       child: IconButton(
                         tooltip: 'Envoyer',
                         onPressed: canSend ? _send : null,
                         style: IconButton.styleFrom(
                           backgroundColor: theme.bubbleColor,
                           foregroundColor: theme.onBubbleColor,
-                          disabledBackgroundColor:
-                              theme.bubbleColor.withValues(alpha: 0.4),
+                          disabledBackgroundColor: theme.bubbleColor.withValues(
+                            alpha: 0.4,
+                          ),
                         ),
                         icon: _sending
                             ? SizedBox(
@@ -1293,12 +1295,12 @@ class _SmsChatPageState extends State<SmsChatPage> with WidgetsBindingObserver {
                         emojiViewConfig: EmojiViewConfig(
                           backgroundColor: theme.colorScheme.onInverseSurface,
                         ),
-                        bottomActionBarConfig:
-                            const BottomActionBarConfig(enabled: false),
+                        bottomActionBarConfig: const BottomActionBarConfig(
+                          enabled: false,
+                        ),
                         categoryViewConfig: CategoryViewConfig(
                           backspaceColor: theme.colorScheme.primary,
-                          iconColor:
-                              theme.colorScheme.primary.withAlpha(128),
+                          iconColor: theme.colorScheme.primary.withAlpha(128),
                           iconColorSelected: theme.colorScheme.primary,
                           indicatorColor: theme.colorScheme.primary,
                           backgroundColor: theme.colorScheme.surface,
@@ -1440,10 +1442,7 @@ class _SmsBubble extends StatelessWidget {
               // inbound left-to-right, matching the Matrix timeline convention.
               reverse: own,
               onReply: onReply,
-              child: GestureDetector(
-                onLongPress: onLongPress,
-                child: bubble,
-              ),
+              child: GestureDetector(onLongPress: onLongPress, child: bubble),
             ),
           ),
           if (showTimestamp || own) ...[
@@ -1467,13 +1466,11 @@ class _SmsBubble extends StatelessWidget {
   /// hairline-violet glass inbound, same tail geometry). Only the *content* and
   /// text colours differ per channel.
   Widget _bubble(BuildContext context, bool own) {
-    final textColor = own
-        ? theme.onBubbleColor
-        : theme.colorScheme.onSurface;
+    final textColor = own ? theme.onBubbleColor : theme.colorScheme.onSurface;
     final linkColor = own
         ? (theme.brightness == Brightness.light
-            ? theme.colorScheme.primaryFixed
-            : theme.colorScheme.onTertiaryContainer)
+              ? theme.colorScheme.primaryFixed
+              : theme.colorScheme.onTertiaryContainer)
         : theme.colorScheme.primary;
     return Opacity(
       opacity: _pending ? 0.75 : 1,
@@ -1516,7 +1513,9 @@ class _SmsBubble extends StatelessWidget {
         for (var i = 0; i < media.length; i++)
           Padding(
             padding: EdgeInsets.only(
-              bottom: hasTrailing || i < media.length - 1 ? FluffySpacing.xs : 0,
+              bottom: hasTrailing || i < media.length - 1
+                  ? FluffySpacing.xs
+                  : 0,
             ),
             child: media[i].isVideo
                 ? _MmsVideo(
@@ -1563,7 +1562,8 @@ class _SmsBubble extends StatelessWidget {
             ),
             child: AnimatedEmojiText(
               text: message.body,
-              size: AppConfig.messageFontSize *
+              size:
+                  AppConfig.messageFontSize *
                   AppSettings.fontSizeFactor.value *
                   5,
             ),
@@ -1600,7 +1600,8 @@ class _SmsBubble extends StatelessWidget {
                   AppSettings.messageFontFamily.value,
                 ),
                 height: 1.25,
-                fontSize: AppConfig.messageFontSize *
+                fontSize:
+                    AppConfig.messageFontSize *
                     AppSettings.fontSizeFactor.value,
                 color: textColor,
                 fontWeight: textWeight,
@@ -1609,7 +1610,8 @@ class _SmsBubble extends StatelessWidget {
                 fontFamily: FluffyTypography.resolveMessageFont(
                   AppSettings.messageFontFamily.value,
                 ),
-                fontSize: AppConfig.messageFontSize *
+                fontSize:
+                    AppConfig.messageFontSize *
                     AppSettings.fontSizeFactor.value,
                 color: linkColor,
                 fontWeight: textWeight,
@@ -1632,9 +1634,7 @@ class _SmsBubble extends StatelessWidget {
             child: LinkPreviewCard(
               key: ValueKey('preview_$url'),
               url: url,
-              onOpen: () => onOpenLink(
-                LinkableElement(url, url),
-              ),
+              onOpen: () => onOpenLink(LinkableElement(url, url)),
             ),
           ),
       ],
@@ -1683,8 +1683,8 @@ class _SmsBubble extends StatelessWidget {
           _failed
               ? Icons.error_outline_rounded
               : _pending
-                  ? Icons.schedule_rounded
-                  : Icons.check_rounded,
+              ? Icons.schedule_rounded
+              : Icons.check_rounded,
           size: 12,
           color: statusColor,
         ),
@@ -1822,10 +1822,7 @@ class _SmsAvatarWithRing extends StatelessWidget {
         shape: BoxShape.circle,
         border: Border.all(color: cyber.violet, width: 1.5),
         boxShadow: [
-          BoxShadow(
-            color: cyber.violet.withValues(alpha: 0.30),
-            blurRadius: 6,
-          ),
+          BoxShadow(color: cyber.violet.withValues(alpha: 0.30), blurRadius: 6),
         ],
       ),
       child: inner,
@@ -1853,7 +1850,6 @@ class _SmsAvatarWithRing extends StatelessWidget {
     );
   }
 }
-
 
 /// CYBERCORE long-press action sheet for a message (resend / copy / delete).
 class _MessageActionSheet extends StatelessWidget {
@@ -1887,16 +1883,14 @@ class _MessageActionSheet extends StatelessWidget {
                   icon: Icons.refresh_rounded,
                   label: 'Réessayer l\'envoi',
                   color: cyber.success,
-                  onTap: () =>
-                      Navigator.of(context).pop(_MessageAction.resend),
+                  onTap: () => Navigator.of(context).pop(_MessageAction.resend),
                 ),
               if (canCopy)
                 _SheetTile(
                   icon: Icons.copy_rounded,
                   label: 'Copier le texte',
                   color: cyber.cyan,
-                  onTap: () =>
-                      Navigator.of(context).pop(_MessageAction.copy),
+                  onTap: () => Navigator.of(context).pop(_MessageAction.copy),
                 ),
               if (canForward)
                 _SheetTile(
@@ -2107,8 +2101,9 @@ class _SmsLiquidGlassAppBar extends StatelessWidget
     final mediaPadding = MediaQuery.paddingOf(context);
     final blurSigma = cyber.blurSigmaAppBar;
     final surfaceColor = theme.colorScheme.surface.withValues(alpha: 0.65);
-    final borderColor =
-        theme.colorScheme.outlineVariant.withValues(alpha: 0.45);
+    final borderColor = theme.colorScheme.outlineVariant.withValues(
+      alpha: 0.45,
+    );
 
     return RepaintBoundary(
       child: SizedBox(
@@ -2133,8 +2128,9 @@ class _SmsLiquidGlassAppBar extends StatelessWidget
                       IconButton(
                         icon: const Icon(Icons.arrow_back),
                         onPressed: onBack,
-                        tooltip: MaterialLocalizations.of(context)
-                            .backButtonTooltip,
+                        tooltip: MaterialLocalizations.of(
+                          context,
+                        ).backButtonTooltip,
                       ),
                       // Contact photo (or gradient initial fallback) in a 40dp
                       // ring — parity with the Matrix room app-bar avatar.
@@ -2172,10 +2168,7 @@ class _SmsLiquidGlassAppBar extends StatelessWidget
                         ),
                       ),
                       IconButton(
-                        icon: Icon(
-                          Icons.call_outlined,
-                          color: cyber.cyan,
-                        ),
+                        icon: Icon(Icons.call_outlined, color: cyber.cyan),
                         onPressed: onCall,
                         tooltip: 'Appeler',
                       ),
@@ -2284,8 +2277,8 @@ class _PendingImagePreview extends StatelessWidget {
                   height: 84,
                   fit: BoxFit.cover,
                   // 84dp thumbnail — never decode the full-res source.
-                  cacheWidth:
-                      (MediaQuery.devicePixelRatioOf(context) * 84).round(),
+                  cacheWidth: (MediaQuery.devicePixelRatioOf(context) * 84)
+                      .round(),
                   errorBuilder: (context, _, _) => Container(
                     width: 84,
                     height: 84,
@@ -2462,8 +2455,9 @@ class _MmsImageState extends State<_MmsImage> {
         opaque: false,
         barrierColor: Colors.black,
         transitionDuration: reduce ? Duration.zero : FluffyDurations.medium,
-        reverseTransitionDuration:
-            reduce ? Duration.zero : FluffyDurations.fast,
+        reverseTransitionDuration: reduce
+            ? Duration.zero
+            : FluffyDurations.fast,
         pageBuilder: (_, _, _) =>
             _MmsImageViewer(path: path, cyber: widget.cyber),
       ),
@@ -2517,8 +2511,7 @@ class _SmsMediaGalleryPage extends StatelessWidget {
             )
           : GridView.builder(
               padding: const EdgeInsets.all(FluffySpacing.xs),
-              gridDelegate:
-                  const SliverGridDelegateWithFixedCrossAxisCount(
+              gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
                 crossAxisCount: 3,
                 crossAxisSpacing: FluffySpacing.xs,
                 mainAxisSpacing: FluffySpacing.xs,
@@ -2610,8 +2603,9 @@ class _SmsGalleryTileState extends State<_SmsGalleryTile> {
         opaque: false,
         barrierColor: Colors.black,
         transitionDuration: reduce ? Duration.zero : FluffyDurations.medium,
-        reverseTransitionDuration:
-            reduce ? Duration.zero : FluffyDurations.fast,
+        reverseTransitionDuration: reduce
+            ? Duration.zero
+            : FluffyDurations.fast,
         pageBuilder: (_, _, _) =>
             _MmsImageViewer(path: path, cyber: widget.cyber),
       ),
@@ -2663,8 +2657,8 @@ class _SmsGalleryTileState extends State<_SmsGalleryTile> {
                 File(_path!),
                 fit: BoxFit.cover,
                 gaplessPlayback: true,
-                cacheWidth:
-                    (MediaQuery.devicePixelRatioOf(context) * 300).round(),
+                cacheWidth: (MediaQuery.devicePixelRatioOf(context) * 300)
+                    .round(),
                 errorBuilder: (context, _, _) => Container(
                   color: cyber.glassFillLight,
                   alignment: Alignment.center,
@@ -2918,8 +2912,8 @@ class _MmsVideoPlayerState extends State<_MmsVideoPlayer> {
                       size: 64,
                     )
                   : _chewie != null
-                      ? Chewie(controller: _chewie!)
-                      : CircularProgressIndicator(color: widget.cyber.cyan),
+                  ? Chewie(controller: _chewie!)
+                  : CircularProgressIndicator(color: widget.cyber.cyan),
             ),
           ),
           Positioned(
@@ -3073,8 +3067,9 @@ class _MmsImageViewer extends StatelessWidget {
                     const SizedBox(width: FluffySpacing.sm),
                     _viewerButton(
                       icon: Icons.close_rounded,
-                      tooltip: MaterialLocalizations.of(context)
-                          .closeButtonTooltip,
+                      tooltip: MaterialLocalizations.of(
+                        context,
+                      ).closeButtonTooltip,
                       color: cyber.cyan,
                       onTap: () => Navigator.of(context).maybePop(),
                     ),
@@ -3117,8 +3112,9 @@ class _MmsImageViewer extends StatelessWidget {
     await SharePlus.instance.share(
       ShareParams(
         files: [XFile(path)],
-        sharePositionOrigin:
-            box == null ? null : box.localToGlobal(Offset.zero) & box.size,
+        sharePositionOrigin: box == null
+            ? null
+            : box.localToGlobal(Offset.zero) & box.size,
       ),
     );
   }

@@ -21,6 +21,9 @@ enum CyberThemeId {
 
   /// Premium — minimal monochrome with a single cool accent.
   monochrome,
+
+  /// The net plus ultra — electric-blue satellite mesh, moving particles.
+  starlink,
 }
 
 class CyberThemePreset {
@@ -156,6 +159,28 @@ class CyberThemes {
         emphasizedDeceleratedCurve: Curves.easeInOutCubicEmphasized,
       ),
     ),
+    CyberThemePreset(
+      id: CyberThemeId.starlink,
+      label: 'STARLINK',
+      description: 'Bleu électrique · particules mouvantes — le net plus ultra',
+      seed: Color(0xFF2E7BFF),
+      tokens: CyberpunkTheme(
+        cyan: Color(0xFF38B6FF),
+        magenta: Color(0xFF2E7BFF),
+        violet: Color(0xFF9FD4FF),
+        warn: Color(0xFF9FD4FF),
+        success: Color(0xFF5EE6FF),
+        neonGlow: [BoxShadow(color: Color(0x5938B6FF), blurRadius: 12)],
+        glassFillLight: Color(0x1FFFFFFF),
+        glassFillStrong: Color(0x2EFFFFFF),
+        glassBorder: Color(0x2E5FA8FF),
+        blurSigmaChip: 8.0,
+        blurSigmaSheet: 24.0,
+        blurSigmaOverlay: 36.0,
+        blurSigmaAppBar: 20.0,
+        emphasizedDeceleratedCurve: Curves.easeInOutCubicEmphasized,
+      ),
+    ),
   ];
 
   static CyberThemePreset byId(CyberThemeId id) =>
@@ -163,9 +188,6 @@ class CyberThemes {
 
   static CyberThemePreset byName(String? name) {
     if (name == null) return all.first;
-    return all.firstWhere(
-      (p) => p.id.name == name,
-      orElse: () => all.first,
-    );
+    return all.firstWhere((p) => p.id.name == name, orElse: () => all.first);
   }
 }
