@@ -541,7 +541,7 @@ object SmsBridge {
                 while (c.moveToNext()) {
                     val partId = c.getLong(idxId)
                     val msgId = c.getLong(idxMsg)
-                    val mime = c.getString(idxCt) ?: ""
+                    val mime = (c.getString(idxCt) ?: "").substringBefore(';').trim()
                     when {
                         mime == "application/smil" -> { /* présentation, ignorée */ }
                         mime == "text/plain" -> {
@@ -554,12 +554,13 @@ object SmsBridge {
                             }
                         }
                         else -> {
-                            val fileName = c.getString(idxName)
-                                ?: c.getString(idxFile)
-                                ?: "part_$partId"
+                            val fileName = MmsRetrieveParser.sanitizeName(
+                                c.getString(idxName) ?: c.getString(idxFile),
+                                "part_$partId",
+                            )
                             attachByMms.getOrPut(msgId) { ArrayList() } += mapOf(
                                 "partId" to partId,
-                                "mimeType" to mime,
+                                "mimeType" to resolveMime(mime, fileName),
                                 "fileName" to fileName,
                             )
                         }
@@ -627,12 +628,13 @@ object SmsBridge {
                             if (!trimmed.isNullOrEmpty()) textParts.add(trimmed)
                         }
                         else -> {
-                            val fileName = c.getString(idxName)
-                                ?: c.getString(idxFile)
-                                ?: "part_$partId"
+                            val fileName = MmsRetrieveParser.sanitizeName(
+                                c.getString(idxName) ?: c.getString(idxFile),
+                                "part_$partId",
+                            )
                             attachments += mapOf(
                                 "partId" to partId,
-                                "mimeType" to mime,
+                                "mimeType" to resolveMime(mime, fileName),
                                 "fileName" to fileName,
                             )
                         }
@@ -884,7 +886,15 @@ object SmsBridge {
         withContext(Dispatchers.IO) {
             if (partId <= 0L) return@withContext null
             try {
-                val mime = mmsPartMime(context, partId)
+                var mime = mmsPartMime(context, partId)
+                // Certains MMSC stockent une image en `application/octet-stream`
+                // (ou `*/*`) : le provider ne dit alors pas que c'est une image,
+                // et Flutter la reçoit comme fichier opaque. On sniffe les octets
+                // pour retrouver le vrai type, sinon HEIC/HEIF iPhone resterait
+                // non décodable par Skia sans passer par le transcode.
+                if (isGenericMime(mime)) {
+                    mime = sniffPartMime(context, partId) ?: mime
+                }
                 // HEIC/HEIF (typical from iPhones) are not decodable by Flutter's
                 // Skia. Android *can* decode them, so transcode to JPEG here and
                 // hand Flutter a .jpg it can render. Same for any image format
@@ -931,6 +941,58 @@ object SmsBridge {
             m.startsWith("image/bmp") ||
             m.startsWith("image/tiff") ||
             m.startsWith("image/x-")
+    }
+
+    /** True si le MIME ne dit rien d'exploitable (ni le type ni le sous-type). */
+    private fun isGenericMime(mime: String?): Boolean {
+        val m = (mime ?: "").substringBefore(';').trim().lowercase()
+        return m.isEmpty() || m == "*/*" || m == "application/octet-stream" ||
+            m == "application/*" || m == "image/*" || m == "video/*" ||
+            m == "audio/*" || m == "multipart/*"
+    }
+
+    /**
+     * Devine le type d'une part à partir de ses premiers octets (magic numbers).
+     * Évite de se fier au seul content-type déclaré, souvent trop vague côté MMSC.
+     */
+    private fun sniffPartMime(context: Context, partId: Long): String? = try {
+        val uri = ContentUris.withAppendedId(MMS_PART_URI, partId)
+        val header = context.contentResolver.openInputStream(uri)?.use { input ->
+            val buf = ByteArray(12)
+            val n = input.read(buf)
+            if (n > 0) buf.copyOf(n) else null
+        }
+        when {
+            header == null -> null
+            header.size >= 3 && header[0] == 0xFF.toByte() && header[1] == 0xD8.toByte() &&
+                header[2] == 0xFF.toByte() -> "image/jpeg"
+            header.size >= 8 && header[0] == 0x89.toByte() && header[1] == 0x50.toByte() &&
+                header[2] == 0x4E.toByte() && header[3] == 0x47.toByte() -> "image/png"
+            header.size >= 6 && header[0] == 0x47.toByte() && header[1] == 0x49.toByte() &&
+                header[2] == 0x46.toByte() -> "image/gif"
+            header.size >= 12 && header[8] == 0x57.toByte() && header[9] == 0x45.toByte() &&
+                header[10] == 0x42.toByte() && header[11] == 0x50.toByte() -> "image/webp"
+            header.size >= 8 && header[4] == 0x66.toByte() && header[5] == 0x74.toByte() &&
+                header[6] == 0x79.toByte() && header[7] == 0x70.toByte() -> {
+                // ISO-BMFF : la marque (offset 8) départage HEIC / 3GP / MP4.
+                val brand = if (header.size >= 12) {
+                    String(header, 8, 4, Charsets.US_ASCII).lowercase()
+                } else {
+                    ""
+                }
+                when (brand) {
+                    "heic", "heix", "hevc", "hevx", "heim", "heis", "mif1", "msf1" ->
+                        "image/heic"
+                    "3gp4", "3gp5", "3gp6", "3ggp", "3g2a", "3g2b" -> "video/3gpp"
+                    else -> "video/mp4"
+                }
+            }
+            header.size >= 6 && header[0] == 0x23.toByte() && header[1] == 0x21.toByte() &&
+                header[2] == 0x41.toByte() && header[3] == 0x4D.toByte() -> "audio/amr"
+            else -> null
+        }
+    } catch (e: Exception) {
+        null
     }
 
     /**
@@ -1010,6 +1072,44 @@ object SmsBridge {
             m.startsWith("audio/") -> ".m4a"
             m.contains("vcard") || m.contains("x-vcard") -> ".vcf"
             else -> ".bin"
+        }
+    }
+
+    /**
+     * Corrige un MIME trop vague pour que l'UI sache le rendre.
+     *
+     * Certains carrier MMSC stockent une image JPEG en `application/octet-stream`
+     * (ou `image/*`, `*/*`), ce qui faisait afficher une simple tuile fichier au
+     * lieu de l'image. On récupère le vrai type en sniffant les octets de la part,
+     * puis via l'extension du nom. Le content-type renvoyé à Dart est ce MIME
+     * corrigé, donc `isImage` devient vrai et `loadMmsPart` sait décoder.
+     */
+    private fun resolveMime(contentType: String, fileName: String?): String {
+        val ct = contentType.substringBefore(';').trim().lowercase()
+        val generic = ct.isEmpty() || ct == "*/*" || ct == "application/octet-stream" ||
+            ct == "application/*" || ct == "image/*" || ct == "video/*" || ct == "audio/*"
+        if (!generic) return ct
+        val sniffed = sniffMimeFromFileName(fileName) ?: return ct
+        return sniffed
+    }
+
+    /** Devine un MIME depuis l'extension du nom de part (fallback du sniff binaire). */
+    private fun sniffMimeFromFileName(fileName: String?): String? {
+        val ext = (fileName ?: "").substringAfterLast('.', "").lowercase()
+        return when (ext) {
+            "jpg", "jpeg" -> "image/jpeg"
+            "png" -> "image/png"
+            "gif" -> "image/gif"
+            "webp" -> "image/webp"
+            "bmp" -> "image/bmp"
+            "heic" -> "image/heic"
+            "heif" -> "image/heif"
+            "3gp" -> "video/3gpp"
+            "mp4" -> "video/mp4"
+            "amr" -> "audio/amr"
+            "m4a", "mp3" -> "audio/mpeg"
+            "vcf" -> "text/x-vcard"
+            else -> null
         }
     }
 

@@ -44,6 +44,60 @@ object MmsRetrieveParser {
     // contre un `count` multipart forgé (uintvar) qui ferait exploser l'alloc.
     private const val MAX_PARTS = 1024
 
+    // Longueur maximale d'un nom de part conservé pour l'affichage.
+    private const val MAX_NAME_LEN = 64
+
+    /**
+     * Nettoie un nom de part MMS brut. Les en-têtes PDU bruts (Content-Location,
+     * paramètres name/filename, Content-ID) sont souvent pollués : URL avec
+     * `%20`, préfixes de chemin, chevrons `<…>`, guillemets et — quand un
+     * Content-Disposition structuré est décodé à tort comme du texte — des
+     * caractères de contrôle. On décode les %XX, on ne garde que le basename,
+     * on retire ces caractères, on borne la longueur, et on retombe sur
+     * [fallback] (ex. « part_3 ») si le résultat est vide.
+     */
+    fun sanitizeName(raw: String?, fallback: String): String {
+        if (raw.isNullOrBlank()) return fallback
+        var s = percentDecode(raw).trim()
+        if (s.startsWith("cid:", ignoreCase = true)) s = s.substring(4)
+        // Anti path-traversal résiduel : ne conserve que le nom de base.
+        s = s.substringAfterLast('/').substringAfterLast('\\')
+        val sb = StringBuilder(s.length)
+        for (ch in s) {
+            val code = ch.code
+            if (code < 0x20 || code == 0x7F) continue
+            when (ch) {
+                '<', '>', '"', '\'', '|' -> Unit
+                else -> sb.append(ch)
+            }
+        }
+        s = sb.toString().trim().trim('.')
+        if (s.isEmpty()) return fallback
+        return if (s.length > MAX_NAME_LEN) s.substring(0, MAX_NAME_LEN) else s
+    }
+
+    /** Décodage trivial des séquences %XX (UTF-8), sans dépendance URLDecoder. */
+    private fun percentDecode(s: String): String {
+        if (!s.contains('%')) return s
+        val out = ByteArrayOutputStream(s.length)
+        var i = 0
+        while (i < s.length) {
+            val ch = s[i]
+            if (ch == '%' && i + 2 < s.length) {
+                val hi = Character.digit(s[i + 1], 16)
+                val lo = Character.digit(s[i + 2], 16)
+                if (hi >= 0 && lo >= 0) {
+                    out.write((hi shl 4) or lo)
+                    i += 3
+                    continue
+                }
+            }
+            out.write(ch.toString().toByteArray(Charsets.UTF_8))
+            i++
+        }
+        return out.toString("UTF-8")
+    }
+
     fun parse(pdu: ByteArray): Retrieved? {
         return try {
             val c = Cursor(pdu)
@@ -93,15 +147,26 @@ object MmsRetrieveParser {
             val headersLen = c.readUintvar()
             val dataLen = c.readUintvar()
             val headerStart = c.position()
-            // First in the part headers is the content-type.
-            val contentType = c.readContentType()
-            var name = "part_$i"
-            // Walk remaining part headers for Content-Location / name.
-            while (c.position() < headerStart + headersLen && c.hasRemaining()) {
+            val headerEnd = headerStart + headersLen
+            // First in the part headers is the content-type. Its parameters may
+            // carry the part name (0x85/0x97) / filename (0x98).
+            val ctParams = HashMap<Int, String>()
+            val contentType = c.readContentType(ctParams)
+            var name: String? = ctParams[0x85] ?: ctParams[0x97]
+            var fileName: String? = ctParams[0x98]
+            var contentLocation: String? = null
+            var contentId: String? = null
+            // Walk remaining part headers. The name parameter is normally consumed
+            // by readContentType, but some carriers emit it (or Content-Disposition)
+            // as standalone headers — collect every candidate and sanitize at the end.
+            while (c.position() < headerEnd && c.hasRemaining()) {
                 val h = c.readByte()
                 when (h) {
-                    0x8E, 0xAE -> name = c.readText() // Content-Location / name param
-                    0x85, 0x97 -> name = c.readText() // Content-ID variants
+                    0x8E -> contentLocation = c.readText() // Content-Location
+                    0x85, 0x97 -> name = c.readText() // name / filename parameter
+                    0x98 -> fileName = c.readText() // Content-Disposition: filename
+                    0xC0 -> contentId = c.readText() // Content-ID (quoted-string)
+                    0xAE, 0xC5 -> readContentDisposition(c, headerEnd)?.let { fileName = it }
                     else -> {
                         // Skip an unknown part-header value, best-effort.
                         if (!c.tryConsumeUnknownValue()) break
@@ -109,11 +174,37 @@ object MmsRetrieveParser {
                 }
             }
             // Realign to the declared end of headers.
-            c.seek(headerStart + headersLen)
+            c.seek(headerEnd)
             val data = c.readBytes(dataLen)
-            out.add(Part(contentType.ifEmpty { "application/octet-stream" }, name, data))
+            // Priorité AOSP : name > filename > Content-Location > Content-ID.
+            val rawName = name ?: fileName ?: contentLocation ?: contentId
+            val partName = sanitizeName(rawName, "part_$i")
+            out.add(Part(contentType.ifEmpty { "application/octet-stream" }, partName, data))
         }
         return out
+    }
+
+    /**
+     * Consomme un Content-Disposition = Value-length Disposition *(Parameter) et
+     * renvoie le paramètre `filename` (0x98) s'il est présent. Borné par [partEnd] :
+     * un PDU malformé ne peut pas déborder de la part. Un misstep éventuel est
+     * rattrapé par le realign `seek(headerEnd)` de l'appelant.
+     */
+    private fun readContentDisposition(c: Cursor, partEnd: Int): String? {
+        val len = c.readValueLength()
+        if (len <= 0) return null
+        val end = (c.position() + len).coerceAtMost(partEnd)
+        if (!c.hasRemaining()) return null
+        // Disposition = Form-data(0x80) | Attachment(0x81) | Inline(0x82) | Token-text
+        val disp = c.peekByte()
+        if (disp in 0x80..0x82) c.readByte() else c.readText()
+        var filename: String? = null
+        while (c.position() < end && c.hasRemaining()) {
+            val param = c.readByte()
+            if (param == 0x98) filename = c.readText() else c.readText()
+        }
+        c.seek(end)
+        return filename
     }
 
     private class Cursor(private val data: ByteArray) {
@@ -183,7 +274,7 @@ object MmsRetrieveParser {
             return value
         }
 
-        private fun readValueLength(): Int {
+        fun readValueLength(): Int {
             val first = peekByte()
             return when {
                 first < 0x1F -> { pos++; first }
@@ -203,7 +294,7 @@ object MmsRetrieveParser {
         }
 
         /** Content-Type as a string, handling short well-known and text forms. */
-        fun readContentType(): String {
+        fun readContentType(params: MutableMap<Int, String>? = null): String {
             if (!hasRemaining()) return ""
             val first = peekByte()
             return when {
@@ -212,16 +303,28 @@ object MmsRetrieveParser {
                 // Well-known short integer media type.
                 first >= 0x80 -> { pos++; wellKnownContentType(first and 0x7F) }
                 // Value-length prefixed (general form) — read length then the
-                // media type (well-known byte or text), skip the rest (params).
+                // media type (well-known byte or text) and any parameters
+                // (name 0x85/0x97, filename…) so the multipart walk can use them.
                 else -> {
                     val len = readValueLength()
-                    val end = pos + len
+                    val end = (pos + len).coerceAtMost(data.size)
                     val mt = if (hasRemaining()) {
                         val b = peekByte()
                         if (b >= 0x80) { pos++; wellKnownContentType(b and 0x7F) }
                         else readText()
                     } else ""
-                    seek(end)
+                    if (params == null) {
+                        seek(end)
+                    } else {
+                        while (pos < end && hasRemaining()) {
+                            val param = readByte()
+                            when (param) {
+                                0x85, 0x97, 0x98 -> params[param] = readText()
+                                else -> readText()
+                            }
+                        }
+                        seek(end)
+                    }
                     mt
                 }
             }
@@ -249,13 +352,34 @@ object MmsRetrieveParser {
         }
 
         private fun wellKnownContentType(code: Int): String = when (code) {
+            0x00 -> "*/*"
+            0x01 -> "text/*"
+            0x02 -> "text/html"
             0x03 -> "text/plain"
+            0x06 -> "text/x-vCalendar"
+            0x07 -> "text/x-vCard"
+            0x0B -> "multipart/*"
+            0x0C -> "multipart/mixed"
+            0x0D -> "multipart/form-data"
+            0x0F -> "multipart/alternative"
+            0x10 -> "application/*"
+            0x1C -> "image/*"
             0x1D -> "image/gif"
             0x1E -> "image/jpeg"
+            0x1F -> "image/tiff"
             0x20 -> "image/png"
-            0x21 -> "application/vnd.wap.multipart.related"
+            0x21 -> "image/vnd.wap.wbmp"
+            0x22 -> "application/vnd.wap.multipart.*"
             0x23 -> "application/vnd.wap.multipart.mixed"
-            0x33 -> "audio/amr"
+            0x24 -> "application/vnd.wap.multipart.form-data"
+            0x25 -> "application/vnd.wap.multipart.byteranges"
+            0x26 -> "application/vnd.wap.multipart.alternative"
+            0x27 -> "application/xml"
+            0x28 -> "text/xml"
+            0x33 -> "application/vnd.wap.multipart.related"
+            0x3E -> "application/vnd.wap.mms-message"
+            0x4F -> "audio/*"
+            0x50 -> "video/*"
             else -> "application/octet-stream"
         }
     }
