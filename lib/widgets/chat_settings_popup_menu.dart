@@ -9,13 +9,30 @@ import 'package:matrix/matrix.dart';
 
 import 'matrix.dart';
 
-enum ChatPopupMenuActions { details, mute, unmute, emote, leave, search }
+enum ChatPopupMenuActions {
+  details,
+  mute,
+  unmute,
+  emote,
+  leave,
+  search,
+  summary,
+}
 
 class ChatSettingsPopupMenu extends StatefulWidget {
   final Room room;
   final bool displayChatDetails;
 
-  const ChatSettingsPopupMenu(this.room, this.displayChatDetails, {super.key});
+  /// Optional « Résumé IA » handler. When null the entry is hidden (e.g. the
+  /// chat-details column popup, which has no timeline controller).
+  final VoidCallback? onLlmSummary;
+
+  const ChatSettingsPopupMenu(
+    this.room,
+    this.displayChatDetails, {
+    this.onLlmSummary,
+    super.key,
+  });
 
   @override
   ChatSettingsPopupMenuState createState() => ChatSettingsPopupMenuState();
@@ -92,6 +109,9 @@ class ChatSettingsPopupMenuState extends State<ChatSettingsPopupMenu> {
               case ChatPopupMenuActions.search:
                 context.go('/rooms/${widget.room.id}/search');
                 break;
+              case ChatPopupMenuActions.summary:
+                widget.onLlmSummary?.call();
+                break;
               case ChatPopupMenuActions.emote:
                 goToEmoteSettings();
             }
@@ -140,6 +160,17 @@ class ChatSettingsPopupMenuState extends State<ChatSettingsPopupMenu> {
                 ],
               ),
             ),
+            if (widget.onLlmSummary != null)
+              PopupMenuItem<ChatPopupMenuActions>(
+                value: ChatPopupMenuActions.summary,
+                child: Row(
+                  children: [
+                    const Icon(Icons.auto_awesome_outlined),
+                    const SizedBox(width: 12),
+                    const Text('Résumé IA'),
+                  ],
+                ),
+              ),
             PopupMenuItem<ChatPopupMenuActions>(
               value: ChatPopupMenuActions.emote,
               child: Row(

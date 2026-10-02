@@ -123,6 +123,17 @@ class SettingsView extends StatelessWidget {
             onTap: () => context.go('/rooms/settings/sms'),
           ),
 
+          // Assistance IA — résumé de conversation via serveur compatible
+          // OpenAI.
+          SettingsSectionTile(
+            icon: Icons.psychology_outlined,
+            color: appearanceColor,
+            title: 'Assistance IA',
+            subtitle: _iaSubtitle(),
+            selected: activeRoute.startsWith('/rooms/settings/ia'),
+            onTap: () => context.go('/rooms/settings/ia'),
+          ),
+
           // Appearance.
           SettingsSectionTile(
             icon: Icons.palette_outlined,
@@ -353,6 +364,16 @@ class SettingsView extends StatelessWidget {
     try {
       // Computing real cache size is async + heavy → keep it cheap here.
       return 'Cache, media & cleanup';
+    } catch (_) {
+      return null;
+    }
+  }
+
+  String? _iaSubtitle() {
+    try {
+      if (!AppSettings.llmEnabled.value) return 'Désactivée';
+      final model = AppSettings.llmModel.value.trim();
+      return model.isEmpty ? 'Activée' : 'Activée · $model';
     } catch (_) {
       return null;
     }

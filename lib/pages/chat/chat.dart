@@ -17,6 +17,8 @@ import 'package:fluffychat/utils/adaptive_bottom_sheet.dart';
 import 'package:fluffychat/utils/ephemeral/ephemeral_messages.dart';
 import 'package:fluffychat/utils/error_reporter.dart';
 import 'package:fluffychat/utils/file_selector.dart';
+import 'package:fluffychat/utils/llm/llm_summary.dart';
+import 'package:fluffychat/utils/llm/llm_summary_dialog.dart';
 import 'package:fluffychat/utils/matrix_sdk_extensions/event_extension.dart';
 import 'package:fluffychat/utils/matrix_sdk_extensions/filtered_timeline_extension.dart';
 import 'package:fluffychat/utils/matrix_sdk_extensions/matrix_locals.dart';
@@ -584,6 +586,21 @@ class ChatController extends State<ChatPageWithRoom>
     if (eventId == null || eventId == timeline.room.lastEvent?.eventId) {
       Matrix.of(context).backgroundPush?.cancelNotification(roomId);
     }
+  }
+
+  /// « Résumé IA » — collecte les derniers événements textuels du fil Matrix et
+  /// ouvre le dialogue de résumé. Ne bloque jamais l'UI : toute la partie réseau
+  /// vit dans le dialogue.
+  Future<void> onLlmSummary() async {
+    final events =
+        timeline?.events.filterByVisibleInGui(threadId: activeThreadId) ??
+        const <Event>[];
+    final recent = events.length > kLlmSummaryWindow
+        ? events.sublist(events.length - kLlmSummaryWindow)
+        : events;
+    final transcript = buildMatrixTranscript(recent);
+    if (!mounted) return;
+    await showLlmSummary(context: context, transcript: transcript);
   }
 
   @override

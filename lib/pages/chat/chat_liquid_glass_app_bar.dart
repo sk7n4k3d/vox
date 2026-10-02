@@ -238,7 +238,11 @@ class ChatLiquidGlassAppBar extends StatelessWidget
           else if (AppSettings.jitsiFeature.value)
             JitsiPopupButton(controller.room),
           EncryptionButton(controller.room),
-          ChatSettingsPopupMenu(controller.room, true),
+          ChatSettingsPopupMenu(
+            controller.room,
+            true,
+            onLlmSummary: controller.onLlmSummary,
+          ),
         ],
         const SizedBox(width: 4),
       ],

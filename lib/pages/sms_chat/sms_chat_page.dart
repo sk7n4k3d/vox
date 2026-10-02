@@ -13,6 +13,8 @@ import 'package:fluffychat/pages/chat/chat_date_separator.dart';
 import 'package:fluffychat/pages/chat/events/swipe_to_reply.dart';
 import 'package:fluffychat/pages/sms_chat/sms_effects.dart';
 import 'package:fluffychat/utils/ephemeral/ephemeral_messages.dart';
+import 'package:fluffychat/utils/llm/llm_summary.dart';
+import 'package:fluffychat/utils/llm/llm_summary_dialog.dart';
 import 'package:fluffychat/utils/scheduled/scheduled_messages.dart';
 import 'package:fluffychat/utils/sms/map_linkifier.dart';
 import 'package:fluffychat/utils/sms/sms_bridge.dart';
@@ -730,6 +732,17 @@ class _SmsChatPageState extends State<SmsChatPage> with WidgetsBindingObserver {
     Navigator.of(context).pop();
   }
 
+  /// « Résumé IA » — collecte les derniers messages textuels du fil SMS et
+  /// ouvre le dialogue de résumé. Asynchrone côté réseau (aucun blocage UI).
+  Future<void> _openSmsSummary() async {
+    final recent = _messages.length > kLlmSummaryWindow
+        ? _messages.sublist(_messages.length - kLlmSummaryWindow)
+        : _messages;
+    final transcript = buildSmsTranscript(recent, _title);
+    if (!mounted) return;
+    await showLlmSummary(context: context, transcript: transcript);
+  }
+
   void _sortMessages() {
     // Dart's List.sort isn't stable; break date ties by id so two messages with
     // the same millisecond timestamp keep a deterministic order (no flicker).
@@ -886,6 +899,7 @@ class _SmsChatPageState extends State<SmsChatPage> with WidgetsBindingObserver {
       onDelete: _deleteConversation,
       onGallery: _openSmsMediaGallery,
       onCall: _callContact,
+      onSummary: _openSmsSummary,
     );
   }
 
@@ -2077,6 +2091,7 @@ class _SmsLiquidGlassAppBar extends StatelessWidget
   final VoidCallback onDelete;
   final VoidCallback onGallery;
   final VoidCallback onCall;
+  final VoidCallback onSummary;
 
   const _SmsLiquidGlassAppBar({
     required this.height,
@@ -2089,6 +2104,7 @@ class _SmsLiquidGlassAppBar extends StatelessWidget
     required this.onDelete,
     required this.onGallery,
     required this.onCall,
+    required this.onSummary,
   });
 
   @override
@@ -2176,9 +2192,29 @@ class _SmsLiquidGlassAppBar extends StatelessWidget
                     ),
                     onSelected: (value) {
                       if (value == 'gallery') onGallery();
+                      if (value == 'summary') onSummary();
                       if (value == 'delete') onDelete();
                     },
                     itemBuilder: (context) => [
+                      PopupMenuItem<String>(
+                        value: 'summary',
+                        child: Row(
+                          children: [
+                            Icon(
+                              Icons.auto_awesome_outlined,
+                              color: cyber.violet,
+                              size: 20,
+                            ),
+                            const SizedBox(width: FluffySpacing.md),
+                            Text(
+                              'Résumé IA',
+                              style: FluffyTypography.bodyM.copyWith(
+                                color: theme.colorScheme.onSurface,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
                       PopupMenuItem<String>(
                         value: 'gallery',
                         child: Row(

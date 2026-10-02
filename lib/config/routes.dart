@@ -24,6 +24,7 @@ import 'package:fluffychat/pages/settings_3pid/settings_3pid.dart';
 import 'package:fluffychat/pages/settings_chat/settings_chat.dart';
 import 'package:fluffychat/pages/settings_emotes/settings_emotes.dart';
 import 'package:fluffychat/pages/settings_homeserver/settings_homeserver.dart';
+import 'package:fluffychat/pages/settings_ia/settings_ia.dart';
 import 'package:fluffychat/pages/settings_ignore_list/settings_ignore_list.dart';
 import 'package:fluffychat/pages/settings_notifications/settings_notifications.dart';
 import 'package:fluffychat/pages/settings_password/settings_password.dart';
@@ -240,6 +241,15 @@ abstract class AppRoutes {
                         context,
                         state,
                         const SmsTestPage(),
+                      ),
+                      redirect: loggedOutRedirect,
+                    ),
+                    GoRoute(
+                      path: 'ia',
+                      pageBuilder: (context, state) => defaultPageBuilder(
+                        context,
+                        state,
+                        const SettingsIa(),
                       ),
                       redirect: loggedOutRedirect,
                     ),
