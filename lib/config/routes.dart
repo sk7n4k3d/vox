@@ -138,7 +138,13 @@ abstract class AppRoutes {
       routes: [
         GoRoute(
           path: '/rooms',
-          redirect: loggedOutRedirect,
+          // Settings stay reachable without a Matrix account: VOX also runs
+          // as a pure SMS client, and locked-out users must be able to
+          // configure the app (IA, style, notifications...).
+          redirect: (context, state) =>
+              state.uri.path.startsWith('/rooms/settings')
+              ? null
+              : AppRoutes.loggedOutRedirect(context, state),
           pageBuilder: (context, state) => defaultPageBuilder(
             context,
             state,
@@ -251,7 +257,6 @@ abstract class AppRoutes {
                         state,
                         const SettingsIa(),
                       ),
-                      redirect: loggedOutRedirect,
                     ),
                     GoRoute(
                       path: 'style',
