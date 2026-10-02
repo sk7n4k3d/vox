@@ -339,7 +339,12 @@ object SmsBridge {
                 val smsSel = StringBuilder("${Telephony.Sms.THREAD_ID}=?")
                 val smsArgs = arrayListOf(threadId.toString())
                 if (beforeMs > 0L) {
-                    smsSel.append(" AND ${Telephony.Sms.DATE}<?")
+                    // `<=` (et non `<`) : plusieurs messages peuvent partager le même
+                    // timestamp à la frontière de page (très courant pour les MMS, DATE
+                    // en secondes). En strict, celui qui n'était pas dans la page courante
+                    // n'était jamais retourné. Les doublons éventuels sont dédupliqués
+                    // côté Dart par id (sms_chat_page.dart `_loadMore`).
+                    smsSel.append(" AND ${Telephony.Sms.DATE}<=?")
                     smsArgs.add(beforeMs.toString())
                 }
                 val smsOrder = "${Telephony.Sms.DATE} DESC" +
@@ -414,7 +419,10 @@ object SmsBridge {
             val sel = StringBuilder("${Telephony.Mms.THREAD_ID}=?")
             val args = arrayListOf(threadId.toString())
             if (beforeMs > 0L) {
-                sel.append(" AND ${Telephony.Mms.DATE}<?")
+                // `<=` (et non `<`) : cf. listMessages — les MMS partageant la seconde
+                // frontière (DATE en secondes, donc grossière) étaient perdus. Dart
+                // déduplique par id les éventuels recouvrements de page.
+                sel.append(" AND ${Telephony.Mms.DATE}<=?")
                 args.add((beforeMs / 1000L).toString())
             }
             val order = "${Telephony.Mms.DATE} DESC" +
@@ -748,13 +756,14 @@ object SmsBridge {
      */
     suspend fun sendSms(context: Context, address: String, body: String): Long? =
         withContext(Dispatchers.IO) {
+            var rowId = 0L
             try {
                 val sms = obtainSmsManager(context)
                 val parts = sms.divideMessage(body)
 
                 // 1. Persister dans le provider (boîte d'envoi). C'est notre responsabilité
                 //    en tant qu'app par défaut. La ligne passe ensuite SENT/FAILED via le receiver.
-                val rowId = insertOutbox(context, address, body)
+                rowId = insertOutbox(context, address, body)
 
                 // 2. PendingIntents par part. requestCode unique par (rowId, index) pour
                 //    éviter l'écrasement de PendingIntents distincts.
@@ -770,12 +779,35 @@ object SmsBridge {
                 rowId.takeIf { it > 0 }
             } catch (e: SecurityException) {
                 Log.e(TAG, "sendSms → ${redact(address)}: SEND_SMS denied: ${e.message}")
+                markSmsFailed(context, rowId, e)
                 null
             } catch (e: Exception) {
                 Log.e(TAG, "sendSms → ${redact(address)} failed: ${e.message}")
+                markSmsFailed(context, rowId, e)
                 null
             }
         }
+
+    /**
+     * Passe une ligne SMS outbox en FAILED quand l'envoi échoue avant même que le
+     * receiver SENT ne soit appelé (SecurityException, service SMS indisponible,
+     * divideMessage…). Sans ça la bulle reste « en cours d'envoi » à vie.
+     */
+    private fun markSmsFailed(context: Context, rowId: Long, cause: Throwable) {
+        if (rowId <= 0L) return
+        runCatching {
+            val values = ContentValues().apply {
+                put(Telephony.Sms.TYPE, Telephony.Sms.MESSAGE_TYPE_FAILED)
+                put(Telephony.Sms.ERROR_CODE, -1)
+            }
+            context.contentResolver.update(
+                ContentUris.withAppendedId(Telephony.Sms.CONTENT_URI, rowId),
+                values, null, null,
+            )
+        }.onFailure {
+            Log.w(TAG, "markSmsFailed(row=$rowId) failed: ${cause.message}: ${it.message}")
+        }
+    }
 
     private fun insertOutbox(context: Context, address: String, body: String): Long {
         return try {
@@ -1108,6 +1140,7 @@ object SmsBridge {
             val (mmscUrl, proxyHost, proxyPort) = readMmsApn(app)
             if (mmscUrl.isNullOrBlank()) {
                 Log.e(TAG, "sendPduOnMmsNetwork: pas de MMSC dans l'APN")
+                markMmsFailed(app, mmsId)
                 onMmsSendResult?.invoke(mapOf("mmsId" to mmsId, "ok" to false))
                 return@execute
             }
@@ -1124,7 +1157,7 @@ object SmsBridge {
                 resp != null
             } ?: false
             Log.i(TAG, "MMS POST result ok=$ok (mmsId=$mmsId)")
-            if (ok) markMmsSent(app, mmsId)
+            if (ok) markMmsSent(app, mmsId) else markMmsFailed(app, mmsId)
             onMmsSendResult?.invoke(mapOf("mmsId" to mmsId, "ok" to ok))
         }
     }
@@ -1241,6 +1274,26 @@ object SmsBridge {
             "20815" ->
                 Triple("http://mms.free.fr", null, 80)
             else -> null
+        }
+    }
+
+    /**
+     * Passe une ligne MMS outbox en FAILED (MESSAGE_BOX_FAILED) quand le POST au
+     * MMSC échoue ou que l'APN n'expose pas de MMSC. Sans ça la bulle reste
+     * « en cours d'envoi » à vie.
+     */
+    private fun markMmsFailed(context: Context, mmsId: Long) {
+        if (mmsId <= 0) return
+        runCatching {
+            val values = ContentValues().apply {
+                put(Telephony.Mms.MESSAGE_BOX, Telephony.Mms.MESSAGE_BOX_FAILED)
+            }
+            context.contentResolver.update(
+                ContentUris.withAppendedId(Uri.parse("content://mms"), mmsId),
+                values, null, null,
+            )
+        }.onFailure {
+            Log.w(TAG, "markMmsFailed(mmsId=$mmsId) failed: ${it.message}")
         }
     }
 
@@ -1774,8 +1827,9 @@ object SmsBridge {
      * [MmsDownloadedReceiver] pour insérer la ligne + les parts dans
      * content://mms, puis on notifie Dart.
      *
-     * [onDone] est invoqué quand la requête a été soumise (pas quand le download
-     * finit) — il sert juste à libérer le goAsync() du receiver.
+     * [onDone] est invoqué une seule fois, à la fin de [downloadIncomingMms]
+     * (succès ou erreur) — il sert à libérer le goAsync() du receiver. Sur ces
+     * chemins d'erreur le `finally` s'en charge, pas d'appel explicite.
      */
     fun downloadIncomingMms(
         context: Context,
@@ -1786,7 +1840,6 @@ object SmsBridge {
             val location = notif.contentLocation
             if (location.isNullOrBlank()) {
                 Log.e(TAG, "downloadIncomingMms: pas de content-location, abandon")
-                onDone()
                 return
             }
             // Defense-in-depth : ne déclenche le download que sur un scheme
@@ -1796,7 +1849,6 @@ object SmsBridge {
             val locScheme = android.net.Uri.parse(location).scheme?.lowercase()
             if (locScheme != "http" && locScheme != "https") {
                 Log.e(TAG, "downloadIncomingMms: scheme content-location non autorisé, abandon")
-                onDone()
                 return
             }
             val dir = File(context.cacheDir, "mms_in").apply { mkdirs() }
@@ -1981,11 +2033,14 @@ object SmsBridge {
             0L
         }
 
-        // 1. Ligne MMS dans l'inbox.
+        // 1. Ligne MMS dans l'inbox. DATE = date d'envoi du PDU (X-Mms-Date, en
+        // secondes) si présente, sinon heure d'ingestion — un MMS téléchargé
+        // plus tard ne doit pas être daté au moment du download.
+        val sentAtSec = msg.date?.takeIf { it > 0 } ?: (System.currentTimeMillis() / 1000)
         val values = ContentValues().apply {
             put(Telephony.Mms.MESSAGE_TYPE, 132) // m-retrieve-conf
             put(Telephony.Mms.MESSAGE_BOX, Telephony.Mms.MESSAGE_BOX_INBOX)
-            put(Telephony.Mms.DATE, System.currentTimeMillis() / 1000)
+            put(Telephony.Mms.DATE, sentAtSec)
             put(Telephony.Mms.READ, 0)
             put(Telephony.Mms.SEEN, 0)
             put(Telephony.Mms.SUBSCRIPTION_ID, defaultSubId(context))

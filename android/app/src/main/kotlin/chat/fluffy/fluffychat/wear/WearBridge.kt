@@ -38,6 +38,10 @@ object WearBridge {
     // forgé/volumineux). 8 Mo = très large pour un message vocal Opus.
     private const val MAX_VOICE_BYTES = 8 * 1024 * 1024
 
+    // Forme d'un uuid watch acceptable comme composant de nom de fichier / de
+    // chemin : alphanumérique + tirets uniquement, longueur bornée. Bloque `../`.
+    private val UUID_RE = Regex("""^[A-Za-z0-9-]{8,64}$""")
+
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
     /**
@@ -149,6 +153,12 @@ object WearBridge {
         mimeType: String,
         asset: Asset
     ) {
+        // Ceinture + bretelles : le service valide déjà, mais un appel direct
+        // (autre chemin) ne doit pas pouvoir injecter un uuid de traversée.
+        if (!UUID_RE.matches(uuid)) {
+            Log.w(TAG, "handleIncomingVoice: uuid invalide, rejeté")
+            return
+        }
         scope.launch {
             try {
                 // wear-002 — GetFdForAssetResponse détient un ParcelFileDescriptor
@@ -280,6 +290,12 @@ object WearBridge {
      *  - DataItem `/wear/voice/ack/{uuid}` = filet de sécu (buffered si watch offline)
      */
     fun ackVoice(context: Context, uuid: String, success: Boolean) {
+        // uuid arbitraire côté Dart → même whitelist que l'ingestion : il est
+        // concaténé au path DataItem, on refuse un uuid malformé.
+        if (!UUID_RE.matches(uuid)) {
+            Log.w(TAG, "ackVoice: uuid invalide, ignoré")
+            return
+        }
         scope.launch {
             // 1. RPC rapide via MessageClient — pas de coalescing, livraison directe
             try {

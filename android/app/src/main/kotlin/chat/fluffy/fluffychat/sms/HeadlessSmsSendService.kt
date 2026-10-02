@@ -39,9 +39,12 @@ class HeadlessSmsSendService : Service() {
             val text = intent.getStringExtra(Intent.EXTRA_TEXT)
             if (recipients.isEmpty() || text.isNullOrBlank()) {
                 Log.w(SmsBridge.TAG, "RESPOND_VIA_MESSAGE : destinataire ou texte manquant")
-            } else {
-                val appContext = applicationContext
-                scope.launch {
+                stopSelf(startId)
+                return START_NOT_STICKY
+            }
+            val appContext = applicationContext
+            scope.launch {
+                try {
                     for (recipient in recipients) {
                         try {
                             SmsBridge.sendSms(appContext, recipient, text)
@@ -49,10 +52,15 @@ class HeadlessSmsSendService : Service() {
                             Log.e(SmsBridge.TAG, "RESPOND_VIA_MESSAGE send failed: ${e.message}")
                         }
                     }
+                } finally {
+                    // On n'arrête le service qu'une fois l'envoi terminé : sinon
+                    // onDestroy annule le scope et la réponse rapide est perdue.
+                    stopSelf(startId)
                 }
             }
+        } else {
+            stopSelf(startId)
         }
-        stopSelf(startId)
         return START_NOT_STICKY
     }
 

@@ -333,12 +333,12 @@ class ChatController extends State<ChatPageWithRoom>
       }
       return KeyEventResult.handled;
     } else if (evt.logicalKey.keyLabel == 'Enter' && evt is KeyDownEvent) {
+      final selection = sendController.selection;
+      final offset = selection.isValid
+          ? selection.baseOffset.clamp(0, sendController.text.length)
+          : sendController.text.length;
       final currentLineNum =
-          sendController.text
-              .substring(0, sendController.selection.baseOffset)
-              .split('\n')
-              .length -
-          1;
+          sendController.text.substring(0, offset).split('\n').length - 1;
       final currentLine = sendController.text.split('\n')[currentLineNum];
 
       for (final pattern in [
@@ -588,6 +588,7 @@ class ChatController extends State<ChatPageWithRoom>
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     screenEffectController.dispose();
     timeline?.cancelSubscriptions();
     timeline = null;
@@ -601,6 +602,10 @@ class ChatController extends State<ChatPageWithRoom>
     _storeInputTimeoutTimer?.cancel();
     _storeInputTimeoutTimer = null;
     scrollController.removeListener(_updateScrollController);
+    scrollController.dispose();
+    inputFocus.dispose();
+    sendController.dispose();
+    _displayChatDetailsColumn.dispose();
     if (currentlyTyping) room.setTyping(false);
     super.dispose();
   }

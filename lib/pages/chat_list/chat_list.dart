@@ -5,6 +5,7 @@ import 'package:cross_file/cross_file.dart';
 import 'package:fluffychat/config/app_config.dart';
 import 'package:fluffychat/l10n/l10n.dart';
 import 'package:fluffychat/pages/chat_list/chat_list_view.dart';
+import 'package:fluffychat/pages/chat_list/liquid_glass_app_bar.dart';
 import 'package:fluffychat/pages/sms_chat/sms_chat_page.dart';
 import 'package:fluffychat/utils/conversation_lock.dart';
 import 'package:fluffychat/utils/ephemeral/ephemeral_messages.dart';
@@ -458,6 +459,7 @@ class ChatListController extends State<ChatList>
   final FocusNode searchFocusNode = FocusNode();
 
   Future<void> _search() async {
+    if (!mounted) return;
     final client = Matrix.of(context).client;
     if (!isSearching) {
       setState(() {
@@ -704,8 +706,14 @@ class ChatListController extends State<ChatList>
     _smsSub?.cancel();
     _smsOpenSub?.cancel();
     _smsReloadDebounce?.cancel();
+    _coolDown?.cancel();
     ConversationLock.instance.removeListener(_onConversationLockChanged);
     scrollController.removeListener(_onScroll);
+    scrollController.dispose();
+    searchController.dispose();
+    searchFocusNode.dispose();
+    scrolledToTop.dispose();
+    _clientStream.close();
     super.dispose();
   }
 
@@ -1196,6 +1204,8 @@ class ChatListController extends State<ChatList>
 
   void setActiveClient(Client client) {
     context.go('/rooms');
+    // Le profil mémorisé par l'AppBar appartient au compte précédent.
+    resetOwnProfileCache();
     setState(() {
       activeFilter = ActiveFilter.allChats;
       _activeSpaceId = null;
@@ -1206,6 +1216,8 @@ class ChatListController extends State<ChatList>
 
   void setActiveBundle(String bundle) {
     context.go('/rooms');
+    // Le bundle peut changer le client actif : même invalidation de profil.
+    resetOwnProfileCache();
     setState(() {
       _activeSpaceId = null;
       Matrix.of(context).activeBundle = bundle;

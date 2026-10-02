@@ -26,6 +26,7 @@ object MmsRetrieveParser {
         val from: String?,
         val transactionId: String?,
         val messageId: String?,
+        val date: Long?,
         val parts: List<Part>,
     )
 
@@ -49,6 +50,7 @@ object MmsRetrieveParser {
             var from: String? = null
             var transactionId: String? = null
             var messageId: String? = null
+            var date: Long? = null
             var parts: List<Part> = emptyList()
 
             while (c.hasRemaining()) {
@@ -66,14 +68,16 @@ object MmsRetrieveParser {
                     FIELD_TRANSACTION_ID -> transactionId = c.readText()
                     FIELD_MESSAGE_ID -> messageId = c.readText()
                     FIELD_MESSAGE_TYPE, FIELD_MMS_VERSION -> c.readByte()
-                    FIELD_DATE -> c.skipLongInteger()
+                    // FIELD_DATE = X-Mms-Date (0x85), epoch SECONDES. On le conserve
+                    // pour ne pas dater un MMS entrant à l'heure du download.
+                    FIELD_DATE -> date = c.readLongInteger()
                     FIELD_SUBJECT -> c.readText()
                     else -> {
                         if (!c.tryConsumeUnknownValue()) break
                     }
                 }
             }
-            Retrieved(from, transactionId, messageId, parts)
+            Retrieved(from, transactionId, messageId, date, parts)
         } catch (e: Exception) {
             Log.e(SmsBridge.TAG, "MmsRetrieveParser.parse failed: ${e.message}")
             null
@@ -166,11 +170,17 @@ object MmsRetrieveParser {
             return value
         }
 
-        fun skipLongInteger() {
+        /** Short integer (high bit set) or long integer (length-prefixed) → Long. */
+        fun readLongInteger(): Long {
             val first = peekByte()
-            if (first >= 0x80) { pos++; return }
+            if (first >= 0x80) { pos++; return (first and 0x7F).toLong() }
             val len = readByte()
-            pos = (pos + len).coerceAtMost(data.size)
+            var value = 0L
+            for (i in 0 until len) {
+                if (pos >= data.size) break
+                value = (value shl 8) or (readByte().toLong() and 0xFF)
+            }
+            return value
         }
 
         private fun readValueLength(): Int {

@@ -4,6 +4,7 @@ import 'dart:convert';
 import 'package:collection/collection.dart';
 import 'package:desktop_notifications/desktop_notifications.dart';
 import 'package:fluffychat/l10n/l10n.dart';
+import 'package:fluffychat/pages/chat_list/liquid_glass_app_bar.dart';
 import 'package:fluffychat/utils/audio_playback_controller.dart';
 import 'package:fluffychat/utils/client_manager.dart';
 import 'package:fluffychat/utils/init_with_restore.dart';
@@ -263,6 +264,7 @@ class MatrixState extends State<Matrix> with WidgetsBindingObserver {
         .listen((_) {
           final loggedInWithMultipleClients = widget.clients.length > 1;
 
+          resetOwnProfileCache();
           _cancelSubs(c.clientName);
           widget.clients.remove(c);
           ClientManager.removeClientNameFromStore(c.clientName, store);

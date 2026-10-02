@@ -22,6 +22,7 @@ import com.google.mlkit.nl.smartreply.SmartReplySuggestionResult
 import com.google.mlkit.nl.smartreply.TextMessage
 import org.json.JSONArray
 import org.json.JSONObject
+import java.util.concurrent.ConcurrentHashMap
 
 /**
  * Notifications SMS riches (MessagingStyle) avec actions Répondre (texte inline
@@ -56,8 +57,15 @@ object SmsNotifier {
     private const val KEY_SOUND = "flutter.chat.fluffy.sms_notifications_sound"
     private const val KEY_LOCKED = "flutter.chat.fluffy.locked_conversations"
 
-    /** Historique court par thread pour reconstruire le MessagingStyle. */
-    private val history = HashMap<Long, MutableList<Pair<Long, String>>>() // threadId -> [(ts, body)]
+    /**
+     * Historique court par thread pour reconstruire le MessagingStyle.
+     *
+     * Muté depuis le main thread ([SmsDeliverReceiver]) ET depuis Dispatchers.IO
+     * ([SmsBridge.ingestDownloadedMms]) → map concurrente + synchronisation sur la
+     * liste interne (add/trim concurrents corrompaient l'entrée HashMap).
+     */
+    private val history =
+        ConcurrentHashMap<Long, MutableList<Pair<Long, String>>>() // threadId -> [(ts, body)]
 
     /**
      * Thread actuellement affiché au premier plan (posé par Dart via
@@ -118,10 +126,14 @@ object SmsNotifier {
         val showPreview = prefBool(context, KEY_PREVIEW, true) && !locked
         val shownBody = if (showPreview) body else "Nouveau message"
 
-        // Historique du thread (MessagingStyle), borné à 8 messages.
+        // Historique du thread (MessagingStyle), borné à 8 messages. La liste est
+        // partagée main/IO → on la mute et la snapshotte sous le verrou de la liste.
         val msgs = history.getOrPut(threadId) { mutableListOf() }
-        msgs.add(timestamp to shownBody)
-        while (msgs.size > 8) msgs.removeAt(0)
+        val recentMsgs = synchronized(msgs) {
+            msgs.add(timestamp to shownBody)
+            while (msgs.size > 8) msgs.removeAt(0)
+            msgs.toList()
+        }
 
         val person = Person.Builder()
             .setName(senderName)
@@ -158,10 +170,10 @@ object SmsNotifier {
                 if (locked) "Conversation verrouillée" else senderName,
             )
             .setGroupConversation(false)
-        msgs.forEachIndexed { index, (ts, text) ->
+        recentMsgs.forEachIndexed { index, (ts, text) ->
             val message = NotificationCompat.MessagingStyle.Message(text, ts, person)
             // Attach the image only to the most recent message (this MMS).
-            if (index == msgs.lastIndex && imageUri != null) {
+            if (index == recentMsgs.lastIndex && imageUri != null) {
                 message.setData(imageMime ?: "image/jpeg", imageUri)
             }
             style.addMessage(message)
@@ -266,9 +278,11 @@ object SmsNotifier {
             onSuggestions(emptyList())
             return
         }
+        // Snapshot sous verrou : la liste peut être mutée en parallèle (main/IO).
+        val snapshot = synchronized(msgs) { msgs.toList() }
         // Construit la conversation ML Kit : tous les messages du thread sont
         // des messages distants (l'utilisateur local n'a pas encore répondu).
-        val conversation = msgs.map { (ts, body) ->
+        val conversation = snapshot.map { (ts, body) ->
             TextMessage.createForRemoteUser(body, ts, senderId)
         }
         SmartReply.getClient().suggestReplies(conversation)

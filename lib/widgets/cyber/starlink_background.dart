@@ -18,7 +18,7 @@ class StarlinkBackground extends StatefulWidget {
   final Duration period;
 
   const StarlinkBackground({
-    this.opacity = 0.30,
+    this.opacity = 0.55,
     this.period = const Duration(seconds: 48),
     super.key,
   });
@@ -121,20 +121,20 @@ class StarlinkPainter extends CustomPainter {
   @override
   void paint(Canvas canvas, Size size) {
     if (size.isEmpty) return;
-    const count = 30;
-    final linkDist = size.shortestSide * 0.16;
+    const count = 42;
+    final linkDist = size.shortestSide * 0.19;
     final pts = List.generate(count, (i) => _particle(i, size, t));
 
     // Luminous filaments between close particles.
     final linkPaint = Paint()
       ..color = cyan.withValues(alpha: 0.35)
-      ..strokeWidth = 1.0
+      ..strokeWidth = 1.4
       ..strokeCap = StrokeCap.round;
     for (var i = 0; i < count; i++) {
       for (var j = i + 1; j < count; j++) {
         final d = (pts[i] - pts[j]).distance;
         if (d >= linkDist) continue;
-        final a = (1 - d / linkDist) * 0.35;
+        final a = (1 - d / linkDist) * 0.60;
         canvas.drawLine(
           pts[i],
           pts[j],
@@ -146,14 +146,14 @@ class StarlinkPainter extends CustomPainter {
     // Particles: a few bright 'satellites', the rest dim stars.
     for (var i = 0; i < count; i++) {
       final bright = _rand(i, 7) > 0.7;
-      final r = bright ? 2.2 : 1.1;
+      final r = bright ? 2.8 : 1.5;
       final glow = Paint()
-        ..color = cyan.withValues(alpha: bright ? 0.22 : 0.10)
-        ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 5);
+        ..color = cyan.withValues(alpha: bright ? 0.38 : 0.18)
+        ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 7);
       canvas.drawCircle(pts[i], r * 3, glow);
       final core = Paint()
         ..color = (bright ? violet : cyan).withValues(
-          alpha: bright ? 0.95 : 0.55,
+          alpha: bright ? 1.0 : 0.75,
         );
       canvas.drawCircle(pts[i], r, core);
     }

@@ -37,6 +37,10 @@ class ChatEventList extends StatelessWidget {
       threadId: controller.activeThreadId,
     );
 
+    if (events.isEmpty) {
+      return const Center(child: CupertinoActivityIndicator());
+    }
+
     // create a map of eventId --> index to greatly improve performance of
     // ListView's findChildIndexCallback
     final thisEventsKeyMap = <String, int>{};

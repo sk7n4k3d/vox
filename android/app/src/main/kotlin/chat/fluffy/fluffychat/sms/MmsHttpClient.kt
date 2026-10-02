@@ -31,40 +31,127 @@ object MmsHttpClient {
     /**
      * Extracts X-Mms-Response-Status (field 0x92) from an m-send-conf PDU.
      * 0x80 = Ok; anything else is a carrier-side rejection (the MMS won't be
-     * delivered even though the HTTP POST returned 200). Returns a human label.
+     * delivered even though the HTTP POST returned 200).
      */
+    private const val FIELD_RESPONSE_STATUS = 0x92
+
+    /** X-Mms-Response-Text (field 0x93), e.g. "1000:OK" or "2511:Message too large". */
+    private const val FIELD_RESPONSE_TEXT = 0x93
+
+    private data class Response(val status: Int?, val text: String?)
+
     /**
      * Reads the human-readable Response-Text (field 0x93) from an m-send-conf —
-     * e.g. "1000:OK" (accepted) or "2511:Message too large" (rejected). This is
-     * the most reliable signal across carriers; the binary Response-Status field
-     * encoding varies. Returns the text, or "unknown".
+     * e.g. "1000:OK" (accepted) or "2511:Message too large" (rejected). Returns
+     * the text, or "unknown".
      */
-    fun parseResponseStatus(pdu: ByteArray): String {
-        // Field 0x93 = X-Mms-Response-Text, a null-terminated text-string.
+    fun parseResponseStatus(pdu: ByteArray): String = parseResponse(pdu).text ?: "unknown"
+
+    /**
+     * Walks the m-send-conf as a sequence of WSP header fields (instead of
+     * scanning raw bytes for 0x93, which matched that byte inside other values
+     * and read garbage as the response-text → false "MMS failed").
+     *
+     * We only recognise 0x92 (short-integer) in field position and 0x93
+     * (text-string). Every other field is skipped by its encoded length. If the
+     * walk gets confused the signal stays null and [isAccepted] falls back to
+     * the HTTP result.
+     */
+    private fun parseResponse(pdu: ByteArray): Response {
+        var status: Int? = null
+        var text: String? = null
         var i = 0
-        while (i < pdu.size - 1) {
-            if ((pdu[i].toInt() and 0xFF) == 0x93) {
-                val sb = StringBuilder()
-                var j = i + 1
-                while (j < pdu.size) {
-                    val ch = pdu[j].toInt() and 0xFF
-                    if (ch == 0) break
-                    if (ch in 0x20..0x7E) sb.append(ch.toChar())
-                    j++
-                }
-                if (sb.isNotEmpty()) return sb.toString()
-            }
+        while (i < pdu.size) {
+            val field = pdu[i].toInt() and 0xFF
             i++
+            when (field) {
+                FIELD_RESPONSE_STATUS -> {
+                    // Short-integer only (high bit set); anything else is not a
+                    // trustworthy status — leave it to the text/HTTP fallback.
+                    if (i < pdu.size) {
+                        val v = pdu[i].toInt() and 0xFF
+                        if (v >= 0x80) {
+                            status = v and 0x7F
+                            i++
+                        }
+                    }
+                }
+                FIELD_RESPONSE_TEXT -> {
+                    val read = readResponseText(pdu, i)
+                    if (read.first != null) text = read.first
+                    i = read.second
+                }
+                else -> i = skipFieldValue(pdu, i)
+            }
         }
-        return "unknown"
+        return Response(status, text)
     }
 
-    /** True if the m-send-conf indicates the MMSC ACCEPTED the message. */
+    /** Reads a text-string value; some carriers prefix it with a value-length. */
+    private fun readResponseText(pdu: ByteArray, start: Int): Pair<String?, Int> {
+        var j = start
+        if (j >= pdu.size) return null to j
+        if ((pdu[j].toInt() and 0xFF) < 0x20) {
+            // Value-length prefixed: skip the length bytes, best-effort.
+            j = skipFieldValue(pdu, j)
+            return null to j
+        }
+        val sb = StringBuilder()
+        while (j < pdu.size) {
+            val ch = pdu[j].toInt() and 0xFF
+            j++
+            if (ch == 0) break
+            if (ch in 0x20..0x7E) sb.append(ch.toChar())
+        }
+        return (sb.toString().ifEmpty { null }) to j
+    }
+
+    /** Advances past one WSP field value given its first byte. */
+    private fun skipFieldValue(pdu: ByteArray, start: Int): Int {
+        if (start >= pdu.size) return pdu.size
+        val first = pdu[start].toInt() and 0xFF
+        return when {
+            first >= 0x80 -> start + 1 // short-integer
+            first == 0x1F -> { // value-length = uintvar (max 5 octets)
+                var i = start + 1
+                var len = 0
+                var n = 0
+                while (i < pdu.size && n < 5) {
+                    val b = pdu[i].toInt() and 0xFF
+                    len = (len shl 7) or (b and 0x7F)
+                    i++
+                    n++
+                    if (b and 0x80 == 0) break
+                }
+                (i + len).coerceAtMost(pdu.size)
+            }
+            first < 0x1F -> (start + 1 + first).coerceAtMost(pdu.size) // length byte
+            else -> { // null-terminated text-string
+                var i = start
+                while (i < pdu.size && pdu[i].toInt() != 0) i++
+                if (i < pdu.size) i + 1 else i
+            }
+        }
+    }
+
+    /**
+     * True if the m-send-conf indicates the MMSC ACCEPTED the message.
+     *
+     * Authoritative binary status (0x92) wins when present. Otherwise the text
+     * is checked. If neither yields a readable signal we accept: the HTTP POST
+     * already returned 2xx, so a missing status must not be turned into a false
+     * "MMS failed". We only reject on an explicit negative signal.
+     */
     fun isAccepted(pdu: ByteArray): Boolean {
-        val text = parseResponseStatus(pdu).lowercase()
-        // Accepted responses are "1000:OK" / "Ok"; anything else (2xxx error
-        // codes, "too large", "denied"…) is a rejection even on HTTP 200.
-        return text.contains("1000") || text == "ok" || text.endsWith(":ok")
+        val resp = parseResponse(pdu)
+        resp.status?.let { return it == 0x80 }
+        val text = resp.text?.trim()?.lowercase()
+        if (!text.isNullOrEmpty()) {
+            // Accepted responses are "1000:OK" / "Ok"; anything else (2xxx error
+            // codes, "too large", "denied"…) is a rejection even on HTTP 200.
+            return text.contains("1000") || text == "ok" || text.endsWith(":ok")
+        }
+        return true
     }
 
     /**

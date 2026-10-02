@@ -1,4 +1,3 @@
-import 'dart:ui';
 
 import 'package:collection/collection.dart' show IterableExtension;
 import 'package:fluffychat/widgets/avatar.dart';
@@ -15,7 +14,6 @@ import 'package:matrix/matrix.dart';
 const int _kMaxVisibleReactions = 3;
 
 /// Backdrop blur sigma for reaction pills (matches [CyberpunkTheme.blurSigmaChip]).
-const double _kBlurChip = 8;
 
 class MessageReactions extends StatelessWidget {
   final Event event;
@@ -52,7 +50,7 @@ class MessageReactions extends StatelessWidget {
     }
 
     final reactionList = reactionMap.values.toList();
-    reactionList.sort((a, b) => b.count - a.count > 0 ? 1 : -1);
+    reactionList.sort((a, b) => b.count.compareTo(a.count));
     final ownMessage = event.senderId == event.room.client.userID;
 
     final visible = reactionList.take(_kMaxVisibleReactions).toList();
@@ -304,26 +302,20 @@ class _ReactionState extends State<_Reaction>
           onTap: widget.onTap,
           onLongPress: widget.onLongPress,
           borderRadius: BorderRadius.circular(16),
-          child: ClipRRect(
-            borderRadius: BorderRadius.circular(16),
-            child: BackdropFilter(
-              filter: ImageFilter.blur(sigmaX: _kBlurChip, sigmaY: _kBlurChip),
-              child: Container(
-                decoration: BoxDecoration(
-                  color: bgColor,
-                  border: Border.all(
-                    color: borderColor,
-                    width: borderWidth,
-                  ),
-                  borderRadius: BorderRadius.circular(16),
-                ),
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 8,
-                  vertical: 4,
-                ),
-                child: content,
+          child: Container(
+            decoration: BoxDecoration(
+              color: bgColor,
+              border: Border.all(
+                color: borderColor,
+                width: borderWidth,
               ),
+              borderRadius: BorderRadius.circular(16),
             ),
+            padding: const EdgeInsets.symmetric(
+              horizontal: 8,
+              vertical: 4,
+            ),
+            child: content,
           ),
         ),
       ),
@@ -347,35 +339,29 @@ class _OverflowChip extends StatelessWidget {
       child: InkWell(
         onTap: onTap,
         borderRadius: BorderRadius.circular(16),
-        child: ClipRRect(
-          borderRadius: BorderRadius.circular(16),
-          child: BackdropFilter(
-            filter: ImageFilter.blur(sigmaX: _kBlurChip, sigmaY: _kBlurChip),
-            child: Container(
-              decoration: BoxDecoration(
-                color: theme.colorScheme.surfaceContainerHighest.withValues(
-                  alpha: 0.6,
-                ),
-                border: Border.all(
-                  color: theme.colorScheme.outlineVariant.withValues(
-                    alpha: 0.3,
-                  ),
-                  width: 0.5,
-                ),
-                borderRadius: BorderRadius.circular(16),
+        child: Container(
+          decoration: BoxDecoration(
+            color: theme.colorScheme.surfaceContainerHighest.withValues(
+              alpha: 0.6,
+            ),
+            border: Border.all(
+              color: theme.colorScheme.outlineVariant.withValues(
+                alpha: 0.3,
               ),
-              padding: const EdgeInsets.symmetric(
-                horizontal: 8,
-                vertical: 4,
-              ),
-              child: Text(
-                '+$count',
-                style: TextStyle(
-                  color: theme.colorScheme.onSurfaceVariant,
-                  fontSize: 12,
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
+              width: 0.5,
+            ),
+            borderRadius: BorderRadius.circular(16),
+          ),
+          padding: const EdgeInsets.symmetric(
+            horizontal: 8,
+            vertical: 4,
+          ),
+          child: Text(
+            '+$count',
+            style: TextStyle(
+              color: theme.colorScheme.onSurfaceVariant,
+              fontSize: 12,
+              fontWeight: FontWeight.w600,
             ),
           ),
         ),
@@ -427,7 +413,7 @@ class _AdaptableReactorsDialog extends StatelessWidget {
                 client: client,
                 presenceUserId: reactor.stateKey,
               ),
-              label: Text(reactor.displayName!),
+              label: Text(reactor.calcDisplayname()),
             ),
         ],
       ),

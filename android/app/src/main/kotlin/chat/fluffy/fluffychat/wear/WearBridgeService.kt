@@ -80,6 +80,13 @@ class WearBridgeService : WearableListenerService() {
                     Log.w(TAG, "voice DataItem roomId invalide, skip")
                     continue
                 }
+                // uuid est concaténé à un nom de fichier (WearBridge) et à un
+                // chemin DataItem → un `../` écrit hors du dossier pending. On
+                // n'accepte qu'une forme UUID/opaque alphanumérique stricte.
+                if (!UUID_RE.matches(uuid)) {
+                    Log.w(TAG, "voice DataItem uuid invalide, skip")
+                    continue
+                }
                 // Whitelist du MIME (sinon Content-Type Matrix arbitraire) +
                 // clamp de la durée (metadata MSC1767).
                 val safeMime = if (mimeType in ALLOWED_VOICE_MIME) mimeType else "audio/ogg"
@@ -122,6 +129,11 @@ class WearBridgeService : WearableListenerService() {
         // Forme d'un room id Matrix `!opaque:server[:port]`. Exclut `/` et `..`
         // → empêche l'injection de path dans le DataItem `/wear/rooms/{id}/messages`.
         private val ROOM_ID_RE = Regex("""^![A-Za-z0-9._=+-]+:[A-Za-z0-9.\-]+(:\d+)?$""")
+
+        // Forme d'un uuid de vocal watch : UUID canonique ou identifiant opaque
+        // court alphanumérique (majuscules/minuscules/chiffres/tirets). Exclut
+        // `/`, `..` et tout séparateur de chemin.
+        private val UUID_RE = Regex("""^[A-Za-z0-9-]{8,64}$""")
 
         // MIME audio autorisés pour un vocal watch → Content-Type Matrix.
         private val ALLOWED_VOICE_MIME =

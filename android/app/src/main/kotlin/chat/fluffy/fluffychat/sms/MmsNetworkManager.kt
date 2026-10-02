@@ -25,6 +25,14 @@ object MmsNetworkManager {
     private var network: Network? = null
     private var callback: ConnectivityManager.NetworkCallback? = null
     private var refCount = 0
+
+    /**
+     * Vrai pendant qu'un thread est dans `requestNetwork` + attente du callback.
+     * Le monitor est relâché par `lock.wait()`, donc un 2e thread pouvait entrer,
+     * voir `network == null` et lancer une 2e acquisition en écrasant `callback`
+     * (fuite de NetworkCallback). Ce flag l'en empêche.
+     */
+    private var acquiring = false
     private val lock = Object()
 
     /**
@@ -53,6 +61,16 @@ object MmsNetworkManager {
     private fun acquire(context: Context): Network? {
         synchronized(lock) {
             refCount += 1
+            // Réseau déjà up, ou acquisition en cours par un autre thread : on
+            // attend la fin de l'acquisition (le monitor est relâché par wait(),
+            // d'où la boucle de garde) au lieu de lancer un 2e requestNetwork.
+            while (network == null && acquiring) {
+                try {
+                    lock.wait(ACQUIRE_TIMEOUT_MS)
+                } catch (e: InterruptedException) {
+                    break
+                }
+            }
             network?.let {
                 Log.i(SmsBridge.TAG, "MmsNetworkManager: réseau déjà acquis")
                 return it
@@ -67,6 +85,7 @@ object MmsNetworkManager {
                 override fun onAvailable(n: Network) {
                     synchronized(lock) {
                         network = n
+                        acquiring = false
                         lock.notifyAll()
                     }
                 }
@@ -74,6 +93,7 @@ object MmsNetworkManager {
                 override fun onUnavailable() {
                     synchronized(lock) {
                         network = null
+                        acquiring = false
                         lock.notifyAll()
                     }
                 }
@@ -85,11 +105,13 @@ object MmsNetworkManager {
                 }
             }
             callback = cb
+            acquiring = true
             runCatching { cm.requestNetwork(request, cb) }
                 .onFailure {
                     Log.e(SmsBridge.TAG, "requestNetwork(MMS) failed: ${it.message}")
                     refCount -= 1
                     callback = null
+                    acquiring = false
                     return null
                 }
             // Wait for onAvailable (up to the acquire timeout).
@@ -108,6 +130,7 @@ object MmsNetworkManager {
                 refCount -= 1
                 runCatching { cm.unregisterNetworkCallback(cb) }
                 callback = null
+                acquiring = false
             }
             return network
         }
