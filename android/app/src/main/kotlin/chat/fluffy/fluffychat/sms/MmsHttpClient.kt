@@ -91,10 +91,20 @@ object MmsHttpClient {
     private fun readResponseText(pdu: ByteArray, start: Int): Pair<String?, Int> {
         var j = start
         if (j >= pdu.size) return null to j
-        if ((pdu[j].toInt() and 0xFF) < 0x20) {
-            // Value-length prefixed: skip the length bytes, best-effort.
-            j = skipFieldValue(pdu, j)
-            return null to j
+        // Value-length prefix (0x1F + uintvar, or a short length 0x01..0x1E):
+        // skip it, then the text-string follows.
+        val first = pdu[j].toInt() and 0xFF
+        if (first == 0x1F) {
+            j++
+            var n = 0
+            while (j < pdu.size && n < 5) {
+                val b = pdu[j].toInt() and 0xFF
+                j++
+                n++
+                if (b and 0x80 == 0) break
+            }
+        } else if (first < 0x1F) {
+            j++
         }
         val sb = StringBuilder()
         while (j < pdu.size) {
