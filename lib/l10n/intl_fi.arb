@@ -1,7 +1,7 @@
 {
     "repeatPassword": "Salasana uudelleen",
     "@repeatPassword": {},
-    "about": "Tietoa FluffyChatista",
+    "about": "Tietoa VOXista",
     "@about": {
         "type": "String",
         "placeholders": {}
@@ -729,7 +729,7 @@
         "type": "String",
         "placeholders": {}
     },
-    "inviteText": "{username} kutsui sinut FluffyChattiin.\n1. Viereaile sivulla: https://fluffychat.im ja asenna sovellus\n2. Rekisteröidy tai kirjaudu sisään\n3. Avaa kutsulinkki:\n{link}",
+    "inviteText": "{username} kutsui sinut VOXtiin.\n1. Viereaile sivulla: https://fluffychat.im ja asenna sovellus\n2. Rekisteröidy tai kirjaudu sisään\n3. Avaa kutsulinkki:\n{link}",
     "@inviteText": {
         "type": "String",
         "placeholders": {
@@ -1143,7 +1143,7 @@
         "type": "String",
         "placeholders": {}
     },
-    "fluffychat": "FluffyChat",
+    "fluffychat": "VOX",
     "@fluffychat": {
         "type": "String",
         "placeholders": {}
@@ -1485,7 +1485,7 @@
         "type": "String",
         "placeholders": {}
     },
-    "title": "FluffyChat",
+    "title": "VOX",
     "@title": {
         "description": "Title for the application",
         "type": "String",
@@ -2121,7 +2121,7 @@
     "@screenSharingTitle": {},
     "newGroup": "Uusi ryhmä",
     "@newGroup": {},
-    "screenSharingDetail": "Jaat ruutuasi FluffyChatissä",
+    "screenSharingDetail": "Jaat ruutuasi VOXissä",
     "@screenSharingDetail": {},
     "hugContent": "{senderName} halaa sinua",
     "@hugContent": {
@@ -2339,7 +2339,7 @@
     "@changelog": {},
     "continueText": "Jatka",
     "@continueText": {},
-    "welcomeText": "Hei 👋, Tämä on FluffyChat. Voit kirjautua sisään mihin tahansa kotipalvelimeen, joka on yhteensopiva https:/matrix.org:in kanssa. Sitten jutellaan kenen kanssa tahansa. Se on hajautettu viestiverkosto!",
+    "welcomeText": "Hei 👋, Tämä on VOX. Voit kirjautua sisään mihin tahansa kotipalvelimeen, joka on yhteensopiva https:/matrix.org:in kanssa. Sitten jutellaan kenen kanssa tahansa. Se on hajautettu viestiverkosto!",
     "@welcomeText": {},
     "serverInformation": "Palvelimen tiedot:",
     "@serverInformation": {},

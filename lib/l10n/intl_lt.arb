@@ -29,7 +29,7 @@
         "type": "String",
         "placeholders": {}
     },
-    "fluffychat": "FluffyChat",
+    "fluffychat": "VOX",
     "@fluffychat": {
         "type": "String",
         "placeholders": {}
@@ -813,7 +813,7 @@
         "type": "String",
         "placeholders": {}
     },
-    "newMessageInFluffyChat": "💬 Nauja žinutė FluffyChat'e",
+    "newMessageInFluffyChat": "💬 Nauja žinutė VOX'e",
     "@newMessageInFluffyChat": {
         "type": "String",
         "placeholders": {}
@@ -1171,7 +1171,7 @@
         "type": "String",
         "placeholders": {}
     },
-    "title": "FluffyChat",
+    "title": "VOX",
     "@title": {
         "description": "Title for the application",
         "type": "String",
@@ -1207,7 +1207,7 @@
         "type": "String",
         "placeholders": {}
     },
-    "noGoogleServicesWarning": "Atrodo, kad jūsų telefone nėra Google Services. Tai geras sprendimas jūsų privatumui! Norėdami gauti tiesioginius pranešimus FluffyChat, rekomenduojame naudoti https://microg.org/ arba https://unifiedpush.org/.",
+    "noGoogleServicesWarning": "Atrodo, kad jūsų telefone nėra Google Services. Tai geras sprendimas jūsų privatumui! Norėdami gauti tiesioginius pranešimus VOX, rekomenduojame naudoti https://microg.org/ arba https://unifiedpush.org/.",
     "@noGoogleServicesWarning": {
         "type": "String",
         "placeholders": {}
@@ -1674,7 +1674,7 @@
             }
         }
     },
-    "inviteText": "{username} pakvietė jus prisijungti prie FluffyChat. \n1. Įdiekite FluffyChat: https://fluffychat.im \n2. Prisiregistruokite arba prisijunkite \n3. Atidarykite pakvietimo nuorodą: {link}",
+    "inviteText": "{username} pakvietė jus prisijungti prie VOX. \n1. Įdiekite VOX: https://fluffychat.im \n2. Prisiregistruokite arba prisijunkite \n3. Atidarykite pakvietimo nuorodą: {link}",
     "@inviteText": {
         "type": "String",
         "placeholders": {

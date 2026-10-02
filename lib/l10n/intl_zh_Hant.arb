@@ -617,7 +617,7 @@
         "type": "String",
         "placeholders": {}
     },
-    "fluffychat": "FluffyChat",
+    "fluffychat": "VOX",
     "@fluffychat": {
         "type": "String",
         "placeholders": {}
@@ -774,7 +774,7 @@
         "type": "String",
         "placeholders": {}
     },
-    "inviteText": "{username} 邀請您使用 FluffyChat\n1. 安裝 FluffyChat：https://fluffychat.im\n2. 登入或註冊\n3. 打開該邀請網址：\n{link}",
+    "inviteText": "{username} 邀請您使用 VOX\n1. 安裝 VOX：https://fluffychat.im\n2. 登入或註冊\n3. 打開該邀請網址：\n{link}",
     "@inviteText": {
         "type": "String",
         "placeholders": {
@@ -926,7 +926,7 @@
         "type": "String",
         "placeholders": {}
     },
-    "newMessageInFluffyChat": "💬 來自 FluffyChat 的新訊息",
+    "newMessageInFluffyChat": "💬 來自 VOX 的新訊息",
     "@newMessageInFluffyChat": {
         "type": "String",
         "placeholders": {}
@@ -1398,7 +1398,7 @@
         "type": "String",
         "placeholders": {}
     },
-    "title": "FluffyChat",
+    "title": "VOX",
     "@title": {
         "description": "Title for the application",
         "type": "String",
@@ -2727,7 +2727,7 @@
             }
         }
     },
-    "welcomeText": "嘿，嘿👋這是FluffyChat。 您可以登入任何與https://matrix.org相容的歸屬伺服器後和任何人聊天。 這是一個巨大的去中心化訊息網路！",
+    "welcomeText": "嘿，嘿👋這是VOX。 您可以登入任何與https://matrix.org相容的歸屬伺服器後和任何人聊天。 這是一個巨大的去中心化訊息網路！",
     "@welcomeText": {},
     "setWallpaper": "設定背景樣式",
     "@setWallpaper": {},

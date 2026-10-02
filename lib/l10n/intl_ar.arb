@@ -598,7 +598,7 @@
         "type": "String",
         "placeholders": {}
     },
-    "inviteText": "دعاك {username} إلى FluffyChat.\n1. قم بزيارة موقع fluffychat.im وقم بتثبيت التطبيق\n2. قم بإنشاءحساب أو تسجيل الدخول\n3. افتح رابط الدعوة:\n {link}",
+    "inviteText": "دعاك {username} إلى VOX.\n1. قم بزيارة موقع fluffychat.im وقم بتثبيت التطبيق\n2. قم بإنشاءحساب أو تسجيل الدخول\n3. افتح رابط الدعوة:\n {link}",
     "@inviteText": {
         "type": "String",
         "placeholders": {
@@ -735,7 +735,7 @@
         "type": "String",
         "placeholders": {}
     },
-    "newMessageInFluffyChat": "💬 رسالة جديدة في FluffyChat",
+    "newMessageInFluffyChat": "💬 رسالة جديدة في VOX",
     "@newMessageInFluffyChat": {
         "type": "String",
         "placeholders": {}
@@ -2708,7 +2708,7 @@
     "@noticeChatBackupDeviceVerification": {},
     "continueText": "استمرار",
     "@continueText": {},
-    "welcomeText": "مرحبًا، 👋 معك FluffyChat. يمكنك تسجيل الدخول إلى أي خادم منزلي، وهو متوافق مع https://matrix.org. ثم دردش مع أي شخص. إنها شبكة مراسلة لا مركزية ضخمة!",
+    "welcomeText": "مرحبًا، 👋 معك VOX. يمكنك تسجيل الدخول إلى أي خادم منزلي، وهو متوافق مع https://matrix.org. ثم دردش مع أي شخص. إنها شبكة مراسلة لا مركزية ضخمة!",
     "@welcomeText": {},
     "blur": "الضبابية:",
     "@blur": {},

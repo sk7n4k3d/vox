@@ -1,136 +1,100 @@
-![Screenshot](https://github.com/krille-chan/fluffychat/blob/main/assets/banner_transparent.png?raw=true)
+# VOX
 
-[FluffyChat](https://fluffy.chat) is an open source, nonprofit and cute [[matrix](https://matrix.org)] client written in [Flutter](https://flutter.dev). The goal of the app is to create an easy to use instant messenger which is open source and accessible for everyone.
+### Ta messagerie, ton réseau.
 
-### Links:
+> Fork de [FluffyChat](https://github.com/krille-chan/fluffychat) — client Matrix natif Android, augmenté d'une couche SMS/MMS, d'un thème cyberpunk et d'une assistance IA configurable.
 
-- 🌐 [[Weblate] Translate FluffyChat into your language](https://hosted.weblate.org/projects/fluffychat/)
-- 🌍 [[m] Join the community](https://matrix.to/#/#fluffy-space:matrix.org)
-- 📰 [[Mastodon] Get updates on social media](https://troet.cafe/@krille)
-- 🖥️ [[Famedly] Server hosting and professional support](https://famedly.com/kontakt)
-- 💝 [[Liberapay] Support FluffyChat development](https://de.liberapay.com/KrilleChritzelius)
+![Matrix](https://img.shields.io/badge/Matrix-décentralisé-black?logo=matrix)
+![Android](https://img.shields.io/badge/Android-API%2021%2B-3DDC84?logo=android&logoColor=white)
+![Flutter](https://img.shields.io/badge/Flutter-3.x-02569B?logo=flutter&logoColor=white)
+![Licence](https://img.shields.io/badge/Licence-AGPL--3.0-blue)
+![Statut](https://img.shields.io/badge/statut-projet%20perso-orange)
 
-<a href='https://ko-fi.com/C1C86VN53' target='_blank'><img height='36' style='border:0px;height:36px;' src='https://storage.ko-fi.com/cdn/kofi5.png?v=3' border='0' alt='Buy Me a Coffee at ko-fi.com' /></a>
+---
 
-### Screenshots:
+## Présentation
 
-<img src="https://github.com/krille-chan/fluffychat-website/blob/main/src/assets/screenshots/mobile.png?raw=true" height="300">
-<img src="https://github.com/krille-chan/fluffychat-website/blob/main/src/assets/screenshots/desktop.png?raw=true" height="300">
+VOX est un client de messagerie **Matrix** décentralisé, bâti sur le travail de FluffyChat, auquel il ajoute une couche Android native et une identité visuelle propre.
 
-# Features
+Ce qu'il apporte par rapport à l'amont :
 
-- 📩 Send all kinds of messages, images and files
-- 🎙️ Voice messages
-- 📍 Location sharing
-- 🔔 Push notifications
-- 💬 Unlimited private and public group chats
-- 📣 Public channels with thousands of participants
-- 🛠️ Feature rich group moderation including all matrix features
-- 🔍 Discover and join public groups
-- 🌙 Dark mode
-- 🎨 Material You design
-- 📟 Hides complexity of Matrix IDs behind simple QR codes
-- 😄 Custom emotes and stickers
-- 🌌 Spaces
-- 🔄 Compatible with Element, Nheko, NeoChat and all other Matrix apps
-- 🔐 End to end encryption
-- 🔒 Encrypted chat backup
-- 😀 Emoji verification & cross signing
+- **SMS / MMS natifs** — l'app peut devenir ton application SMS par défaut. Les MMS sont durcis, avec gestion des OTP et identification de l'appelant (caller-ID).
+- **Thème cyberpunk `CYBERCORE`** — 6 presets, dont `STARLINK` avec un fond en particules animées.
+- **Assistance IA** — un backend compatible OpenAI configurable : résumés de conversations, suggestions de réponses dans les notifications.
+- **Réponses rapides Wear OS** — répondre depuis la montre.
+- **Effets plein écran** — animations d'envoi et de réaction.
 
-... and much more.
+Le reste (chiffrement de bout en bout, espaces, appels, sauvegarde chiffrée, stickers…) vient directement de Matrix et de FluffyChat.
 
+## Captures d'écran
 
-# Installation
+> 📸 Placeholders — à compléter dans `docs/screenshots/` :
+>
+> - `01-chat.png` — liste des conversations
+> - `02-theme-cybercore.png` — thème CYBERCORE / STARLINK
+> - `03-sms.png` — fil SMS/MMS natif
+> - `04-ia.png` — assistance IA
 
-Please visit the website for installation instructions:
+## Fonctionnalités phares
 
-- https://fluffy.chat
+- 💬 **Matrix décentralisé** — compte sur n'importe quel homeserver compatible.
+- 📲 **App SMS/MMS par défaut** — un seul fil pour Matrix et les SMS.
+- 🔐 **Chiffrement de bout en bout** — via la pile Matrix (vodozemac / Olm-Megolm).
+- 🤖 **Assistance IA** — résumés, suggestions de réponses, backend configurable.
+- 🎨 **Thème cyberpunk CYBERCORE** — 6 presets, mode sombre, Material You.
+- ⌚ **Réponses rapides Wear OS**.
+- 📎 **Tout type de contenu** — images, fichiers, messages vocaux, localisation.
+- 🔔 **Notifications enrichies**, y compris suggestions de réponse.
+- 🌌 **Espaces, salons publics, modération de groupe**.
+- ✅ **Compatible Element, Nheko, NeoChat** et tout client Matrix.
 
-# How to build
+… et bien plus.
 
-1. To build FluffyChat you need [Flutter](https://flutter.dev) and [Rust](https://www.rust-lang.org/tools/install)
+## Build depuis les sources
 
-2. Clone the repo:
-```
-git clone https://github.com/krille-chan/fluffychat.git
-cd fluffychat
-```
-3. Choose your target platform below and enable support for it.
-3.1 If you want, enable Googles Firebase Cloud Messaging:
+Prérequis :
 
-`./scripts/add-firebase-messaging.sh`
-
-4. Debug with: `flutter run`
-
-### Android
-
-* Build with: `flutter build apk`
-
-### iOS / iPadOS
-
-* Have a Mac with Xcode installed, and set up for Xcode-managed app signing
-* If you want automatic app installation to connected devices, make sure you have Apple Configurator installed, with the Automation Tools (`cfgutil`) enabled
-* Set a few environment variables
-    * FLUFFYCHAT_NEW_TEAM: the Apple Developer team that your certificates should live under
-    * FLUFFYCHAT_NEW_GROUP: the group you want App IDs and such to live under (ie: com.example.fluffychat)
-    * FLUFFYCHAT_INSTALL_IPA: set to `1` if you want the IPA to be deployed to connected devices after building, otherwise unset
-* Run `./scripts/build-ios.sh`
-
-### Web
-
-* Build with:
-```bash
-./scripts/prepare-web.sh # To install Vodozemac
-flutter build web --release
-```
-
-* Optionally configure by serving a `config.json` at the same path as fluffychat.
-  An example can be found at `config.sample.json`. All values there are optional.
-  **Please only the values, you really need**. If you e.g. only want
-  to change the default homeserver, then only modify the `defaultHomeserver` key.
-
-### Desktop (Linux, Windows, macOS)
-
-* Enable Desktop support in Flutter: https://flutter.dev/desktop
-
-#### Install custom dependencies (Linux)
+- [Flutter](https://flutter.dev) (géré via [fvm](https://fvm.app) de préférence)
+- [Rust](https://www.rust-lang.org/tools/install) (pour la crypto Matrix)
+- Android SDK / NDK pour cibler Android
 
 ```bash
-sudo apt install libjsoncpp1 libsecret-1-dev libsecret-1-0 librhash0 libwebkit2gtk-4.0-dev lld
+# Récupérer le code
+git clone https://github.com/sk7n4k3d/vox.git
+cd vox
+
+# Flutter
+export PATH="$HOME/fvm/versions/stable/bin:$PATH"
+fvm flutter pub get
+
+# Build Android release
+fvm flutter build apk --release
 ```
 
-* Build with one of these:
-```bash
-flutter build linux --release
-flutter build windows --release
-flutter build macos --release
-```
+Le binaire est généré dans `build/app/outputs/flutter-apk/app-release.apk`.
 
-## How to run integration tests
+## Statut
 
-You need to have docker installed locally! Run the preparation script before every test run:
+Projet **personnel**, non publié sur les stores. Sauvegarde sur un Gitea privé, avec un miroir GitHub public :
 
-```sh
-./scripts/prepare_integration_test.sh
-```
+- Miroir : https://github.com/sk7n4k3d/vox
+- Dépôt amont : https://github.com/krille-chan/fluffychat
 
-Then run all tests with:
+Aucun support commercial, aucune garantie.
 
-```sh
-flutter test integration_test/mobile_test.dart
-```
+## Crédits
 
+VOX n'existerait pas sans **FluffyChat**, créé et maintenu par [krille-chan](https://github.com/krille-chan) et une large communauté de contributeurs, traducteurs et testeurs. Le logo, le design, la structure du projet et la quasi-totalité du code Matrix viennent de là. Merci.
 
-# Special thanks
+- 🧩 **FluffyChat** — https://github.com/krille-chan/fluffychat (AGPL-3.0)
+- 🎨 **Design / logo FluffyChat** — [Fabiyamada](https://github.com/fabiyamada)
+- 🌍 **Traductions** — toutes les personnes ayant contribué via Weblate
+- 📣 **Emoji de vérification** — [Matrix Foundation](https://github.com/matrix-org/matrix-spec) (Apache 2.0)
 
-* <a href="https://github.com/fabiyamada">Fabiyamada</a> is a graphics designer and has made the fluffychat logo and the banner. Big thanks for her great designs.
+Le thème cyberpunk, la couche SMS/MMS, l'assistance IA et les réponses Wear OS sont des ajouts propres à ce fork.
 
-* <a href="https://github.com/advocatux">Advocatux</a> has made the Spanish translation with great love and care. He always stands by my side and supports my work with great commitment.
+## Licence
 
-* Thanks to MTRNord and Sorunome for developing.
+**AGPL-3.0** — héritée de FluffyChat. Obligatoire pour tout fork distribué ou exposé en réseau : le code source complet reste disponible.
 
-* Also thanks to all translators and testers! With your help, fluffychat is now available in more than 12 languages.
-
-* <a href="https://github.com/madsrh/WoodenBeaver">WoodenBeaver</a> sound theme for the notification sound.
-
-* The Matrix Foundation for making and maintaining the [emoji translations](https://github.com/matrix-org/matrix-spec/blob/main/data-definitions/sas-emoji.json) used for emoji verification, licensed Apache 2.0
+Voir le fichier [LICENSE](LICENSE).

@@ -774,7 +774,7 @@
         "type": "String",
         "placeholders": {}
     },
-    "fluffychat": "FluffyChat",
+    "fluffychat": "VOX",
     "@fluffychat": {
         "type": "String",
         "placeholders": {}
@@ -930,7 +930,7 @@
         "type": "String",
         "placeholders": {}
     },
-    "inviteText": "{username} sizni FluffyChat’ga taklif qildi.\n1. fluffychat.im saytiga tashrif buyuring va ilovani oʻrnating.\n2. Roʻyxatdan oʻting yoki tizimga kiring.\n3. Taklif havolasini oching:\n{link}",
+    "inviteText": "{username} sizni VOX’ga taklif qildi.\n1. fluffychat.im saytiga tashrif buyuring va ilovani oʻrnating.\n2. Roʻyxatdan oʻting yoki tizimga kiring.\n3. Taklif havolasini oching:\n{link}",
     "@inviteText": {
         "type": "String",
         "placeholders": {
@@ -1191,7 +1191,7 @@
         "type": "String",
         "placeholders": {}
     },
-    "newMessageInFluffyChat": "💬 FluffyChat yangi xabarlar",
+    "newMessageInFluffyChat": "💬 VOX yangi xabarlar",
     "@newMessageInFluffyChat": {
         "type": "String",
         "placeholders": {}
@@ -1805,7 +1805,7 @@
         "type": "String",
         "placeholders": {}
     },
-    "title": "FluffyChat",
+    "title": "VOX",
     "@title": {
         "description": "Title for the application",
         "type": "String",
@@ -2169,7 +2169,7 @@
     "changeTheDescriptionOfTheGroup": "Suhbat tavsifini oʻzgartirish",
     "chatPermissionsDescription": "Ushbu suhbatda muayyan harakatlar uchun qaysi quvvat darajasi zarurligini aniqlang. 0, 50 va 100 quvvat darajalari odatda foydalanuvchilar, moderatorlar va administratorlarni ifodalaydi, ammo har qanday gradatsiya mumkin.",
     "noticeChatBackupDeviceVerification": "Eslatma: Barcha qurilmalaringizni suhbat zaxira nusxasiga ulaganingizda, ular avtomatik ravishda tasdiqlanadi.",
-    "welcomeText": "Hey Hey 👋 Bu FluffyChat. Siz https://matrix.org bilan mos keladigan istalgan uy serveriga kirishingiz mumkin. Va keyin istalgan kishi bilan suhbatlashishingiz mumkin. Bu ulkan markazlashtirilmagan xabar almashish tarmog'i!",
+    "welcomeText": "Hey Hey 👋 Bu VOX. Siz https://matrix.org bilan mos keladigan istalgan uy serveriga kirishingiz mumkin. Va keyin istalgan kishi bilan suhbatlashishingiz mumkin. Bu ulkan markazlashtirilmagan xabar almashish tarmog'i!",
     "unableToJoinChat": "Chatga qoʻshilib boʻlmadi. Ehtimol, boshqa tomon suhbatni allaqachon yopib qoʻygan.",
     "newChatRequest": "📩 Yangi suhbat uchun soʻrov",
     "shareKeysWithDescription": "Shifrlangan suhbatlarda xabarlaringizni oʻqishlari uchun qaysi qurilmalarga ishonish kerak?",

@@ -471,7 +471,7 @@
         "type": "String",
         "placeholders": {}
     },
-    "fluffychat": "FluffyChat",
+    "fluffychat": "VOX",
     "@fluffychat": {
         "type": "String",
         "placeholders": {}
@@ -583,7 +583,7 @@
         "type": "String",
         "placeholders": {}
     },
-    "inviteText": "{username} запрошує вас у FluffyChat. \n1. Перейдіть на fluffychat.im й установіть застосунок \n2. Зареєструйтесь або ввійдіть \n3. Відкрийте запрошувальне посилання:\n {link}",
+    "inviteText": "{username} запрошує вас у VOX. \n1. Перейдіть на fluffychat.im й установіть застосунок \n2. Зареєструйтесь або ввійдіть \n3. Відкрийте запрошувальне посилання:\n {link}",
     "@inviteText": {
         "type": "String",
         "placeholders": {
@@ -715,7 +715,7 @@
         "type": "String",
         "placeholders": {}
     },
-    "newMessageInFluffyChat": "💬 Нове повідомлення у FluffyChat",
+    "newMessageInFluffyChat": "💬 Нове повідомлення у VOX",
     "@newMessageInFluffyChat": {
         "type": "String",
         "placeholders": {}
@@ -1005,7 +1005,7 @@
         "type": "String",
         "placeholders": {}
     },
-    "title": "FluffyChat",
+    "title": "VOX",
     "@title": {
         "description": "Title for the application",
         "type": "String",
@@ -2496,7 +2496,7 @@
     "noticeChatBackupDeviceVerification": "Примітка: Коли ви під'єднуєте всі свої пристрої до резервної копії бесіди, вони автоматично верифікуються.",
     "continueText": "Продовжити",
     "manageAccount": "Керувати обліковим записом",
-    "welcomeText": "Привіт-привіт 👋 Це FluffyChat. Ви можете увійти на будь-який сервер, сумісний із https://matrix.org. А потім спілкуватися з будь-ким. Це величезна децентралізована мережа для обміну повідомленнями!",
+    "welcomeText": "Привіт-привіт 👋 Це VOX. Ви можете увійти на будь-який сервер, сумісний із https://matrix.org. А потім спілкуватися з будь-ким. Це величезна децентралізована мережа для обміну повідомленнями!",
     "blur": "Розмиття:",
     "opacity": "Прозорість:",
     "setWallpaper": "Встановити шпалери",
@@ -2772,8 +2772,8 @@
     "baseUrl": "Основний URL",
     "signIn": "Увійти",
     "createNewAccount": "Створити новий обліковий запис",
-    "signUpGreeting": "FluffyChat децентралізований! Виберіть сервер, на якому ви хочете створити свій обліковий запис, і почнімо!",
+    "signUpGreeting": "VOX децентралізований! Виберіть сервер, на якому ви хочете створити свій обліковий запис, і почнімо!",
     "signInGreeting": "Ви вже маєте обліковий запис у Matrix? Ласкаво просимо! Виберіть свій домашній сервер і ввійдіть.",
-    "appIntro": "За допомогою FluffyChat ви можете спілкуватися зі своїми друзями. Це безпечний децентралізований месенджер [matrix]! Дізнайтеся більше на сайті https://matrix.org або просто зареєструйтеся.",
+    "appIntro": "За допомогою VOX ви можете спілкуватися зі своїми друзями. Це безпечний децентралізований месенджер [matrix]! Дізнайтеся більше на сайті https://matrix.org або просто зареєструйтеся.",
     "theProcessWasCanceled": "Процес скасовано."
 }

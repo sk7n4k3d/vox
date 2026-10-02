@@ -453,7 +453,7 @@
         "type": "String",
         "placeholders": {}
     },
-    "fluffychat": "FluffyChat",
+    "fluffychat": "VOX",
     "@fluffychat": {
         "type": "String",
         "placeholders": {}
@@ -565,7 +565,7 @@
         "type": "String",
         "placeholders": {}
     },
-    "inviteText": "{username} vás pozval na FluffyChat.\n1. Nainštalujte si FluffyChat: https://fluffychat.im\n2. Zaregistrujte sa alebo sa prihláste\n3. Otvorte odkaz na pozvánku: {link}",
+    "inviteText": "{username} vás pozval na VOX.\n1. Nainštalujte si VOX: https://fluffychat.im\n2. Zaregistrujte sa alebo sa prihláste\n3. Otvorte odkaz na pozvánku: {link}",
     "@inviteText": {
         "type": "String",
         "placeholders": {
@@ -697,7 +697,7 @@
         "type": "String",
         "placeholders": {}
     },
-    "newMessageInFluffyChat": "Nová správa v FluffyChate",
+    "newMessageInFluffyChat": "Nová správa v VOXe",
     "@newMessageInFluffyChat": {
         "type": "String",
         "placeholders": {}
@@ -712,7 +712,7 @@
         "type": "String",
         "placeholders": {}
     },
-    "noGoogleServicesWarning": "Zdá sa, že nemáte žiadne služby Googlu v telefóne. To je dobré rozhodnutie pre vaše súkromie! Ak chcete dostávať push notifikácie vo FluffyChat, odporúčame používať microG: https://microg.org/.",
+    "noGoogleServicesWarning": "Zdá sa, že nemáte žiadne služby Googlu v telefóne. To je dobré rozhodnutie pre vaše súkromie! Ak chcete dostávať push notifikácie vo VOX, odporúčame používať microG: https://microg.org/.",
     "@noGoogleServicesWarning": {
         "type": "String",
         "placeholders": {}
@@ -987,7 +987,7 @@
         "type": "String",
         "placeholders": {}
     },
-    "title": "FluffyChat",
+    "title": "VOX",
     "@title": {
         "description": "Title for the application",
         "type": "String",

@@ -1,5 +1,5 @@
 name: fluffychat
-description: Chat with your friends.
+description: VOX — messagerie Matrix + SMS/MMS native, thème cyberpunk.
 publish_to: none
 # On version bump please also increase:
 # 1. The build number (for F-Droid)

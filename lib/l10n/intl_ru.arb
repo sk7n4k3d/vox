@@ -751,7 +751,7 @@
         "type": "String",
         "placeholders": {}
     },
-    "fluffychat": "FluffyChat",
+    "fluffychat": "VOX",
     "@fluffychat": {
         "type": "String",
         "placeholders": {}
@@ -908,7 +908,7 @@
         "type": "String",
         "placeholders": {}
     },
-    "inviteText": "{username} пригласил(а) вас в FluffyChat. \n1. Посетите https://fluffychat.im и установите приложение \n2. Зарегистрируйтесь или войдите \n3. Откройте ссылку приглашения: \n {link}",
+    "inviteText": "{username} пригласил(а) вас в VOX. \n1. Посетите https://fluffychat.im и установите приложение \n2. Зарегистрируйтесь или войдите \n3. Откройте ссылку приглашения: \n {link}",
     "@inviteText": {
         "type": "String",
         "placeholders": {
@@ -1061,7 +1061,7 @@
         "type": "String",
         "placeholders": {}
     },
-    "newMessageInFluffyChat": "💬 Новое сообщение во FluffyChat",
+    "newMessageInFluffyChat": "💬 Новое сообщение во VOX",
     "@newMessageInFluffyChat": {
         "type": "String",
         "placeholders": {}
@@ -1096,7 +1096,7 @@
         "type": "String",
         "placeholders": {}
     },
-    "noGoogleServicesWarning": "Похоже, у вас нет служб Google на вашем телефоне. Это хорошее решение для вашей конфиденциальности! Для получения push-уведомлений во FluffyChat мы рекомендуем использовать ntfy. С ntfy или другим провайдером единых уведомлений вы можете получать push-уведомления безопасным способом передачи данных. Скачать ntfy можно из F-Droid или из Play Маркета.",
+    "noGoogleServicesWarning": "Похоже, у вас нет служб Google на вашем телефоне. Это хорошее решение для вашей конфиденциальности! Для получения push-уведомлений во VOX мы рекомендуем использовать ntfy. С ntfy или другим провайдером единых уведомлений вы можете получать push-уведомления безопасным способом передачи данных. Скачать ntfy можно из F-Droid или из Play Маркета.",
     "@noGoogleServicesWarning": {
         "type": "String",
         "placeholders": {}
@@ -1619,7 +1619,7 @@
         "type": "String",
         "placeholders": {}
     },
-    "title": "FluffyChat",
+    "title": "VOX",
     "@title": {
         "description": "Title for the application",
         "type": "String",
@@ -2452,7 +2452,7 @@
             }
         }
     },
-    "welcomeText": "Привет. Это FluffyChat. Вы можете подписаться на любой сервер, который совместим с https://matrix.org. А потом поболтать с кем нибудь. Это огромная децентрализованная сеть обмена сообщениями!",
+    "welcomeText": "Привет. Это VOX. Вы можете подписаться на любой сервер, который совместим с https://matrix.org. А потом поболтать с кем нибудь. Это огромная децентрализованная сеть обмена сообщениями!",
     "noContactInformationProvided": "Сервер не предоставляет никакой правдивой контактной информации",
     "aboutHomeserver": "О сервере {homeserver}",
     "@aboutHomeserver": {

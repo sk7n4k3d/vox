@@ -133,7 +133,7 @@
         "type": "String",
         "placeholders": {}
     },
-    "fluffychat": "FluffyChat",
+    "fluffychat": "VOX",
     "@fluffychat": {
         "type": "String",
         "placeholders": {}
@@ -1193,7 +1193,7 @@
         "type": "String",
         "placeholders": {}
     },
-    "newMessageInFluffyChat": "💬 FluffyChat에서 새로운 메시지",
+    "newMessageInFluffyChat": "💬 VOX에서 새로운 메시지",
     "@newMessageInFluffyChat": {
         "type": "String",
         "placeholders": {}
@@ -1316,7 +1316,7 @@
         "type": "String",
         "placeholders": {}
     },
-    "title": "FluffyChat",
+    "title": "VOX",
     "@title": {
         "description": "Title for the application",
         "type": "String",
@@ -1463,7 +1463,7 @@
         "type": "String",
         "placeholders": {}
     },
-    "noGoogleServicesWarning": "이 휴대폰에 Firebase Cloud Messaging 서비스가 없는 것 같습니다. FluffyChat에서 푸시 알림을 받으려면 ntfy 사용을 추천합니다. ntfy 혹은 다른 푸시 알림 제공자를 사용하면 알림을 보안적인 방법으로 받을 수 있습니다. ntfy는 PlayStore와 F-Droid에서 설치 가능합니다.",
+    "noGoogleServicesWarning": "이 휴대폰에 Firebase Cloud Messaging 서비스가 없는 것 같습니다. VOX에서 푸시 알림을 받으려면 ntfy 사용을 추천합니다. ntfy 혹은 다른 푸시 알림 제공자를 사용하면 알림을 보안적인 방법으로 받을 수 있습니다. ntfy는 PlayStore와 F-Droid에서 설치 가능합니다.",
     "@noGoogleServicesWarning": {
         "type": "String",
         "placeholders": {}
@@ -1693,7 +1693,7 @@
         "type": "String",
         "placeholders": {}
     },
-    "inviteText": "{username}님이 당신을 FluffyChat에 초대했습니다.\n1. FluffyChat 설치: https://fluffychat.im \n2. 가입하거나 로그인 \n3. 초대 링크 열기: \n {link}",
+    "inviteText": "{username}님이 당신을 VOX에 초대했습니다.\n1. VOX 설치: https://fluffychat.im \n2. 가입하거나 로그인 \n3. 초대 링크 열기: \n {link}",
     "@inviteText": {
         "type": "String",
         "placeholders": {
@@ -2316,7 +2316,7 @@
     "@invite": {},
     "storeSecurlyOnThisDevice": "이 기기에 안전하게 저장",
     "@storeSecurlyOnThisDevice": {},
-    "screenSharingDetail": "FluffyChat에 당신의 화면을 공유하는중",
+    "screenSharingDetail": "VOX에 당신의 화면을 공유하는중",
     "@screenSharingDetail": {},
     "blockUsername": "유저 이름 무시",
     "@blockUsername": {},
@@ -2666,7 +2666,7 @@
     },
     "noContactInformationProvided": "서버가 유효한 연락처 정보를 제공하지 않음",
     "@noContactInformationProvided": {},
-    "welcomeText": "안녕하세요 👋 FluffyChat이에요. 당신은 htpps://matrix.org와 호환되는 모든 홈서버를 사용할 수 있어요. 그리고 모두와 대화해보세요. 거대한 분산 대화망이니까요!",
+    "welcomeText": "안녕하세요 👋 VOX이에요. 당신은 htpps://matrix.org와 호환되는 모든 홈서버를 사용할 수 있어요. 그리고 모두와 대화해보세요. 거대한 분산 대화망이니까요!",
     "@welcomeText": {},
     "changeGeneralChatSettings": "일반 채팅 설정 번경하기",
     "@changeGeneralChatSettings": {},

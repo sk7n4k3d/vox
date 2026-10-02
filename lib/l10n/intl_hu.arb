@@ -501,7 +501,7 @@
         "type": "String",
         "placeholders": {}
     },
-    "fluffychat": "FluffyChat",
+    "fluffychat": "VOX",
     "@fluffychat": {
         "type": "String",
         "placeholders": {}
@@ -628,7 +628,7 @@
         "type": "String",
         "placeholders": {}
     },
-    "inviteText": "{username} meghívta a FluffyChat-be.\n1. Keresse fel a fluffychat.im oldalt, és telepítse az alkalmazást \n2. Regisztráljon vagy jelentkezzen be \n3. Nyissa meg a meghívó linket: \n {link}",
+    "inviteText": "{username} meghívta a VOX-be.\n1. Keresse fel a fluffychat.im oldalt, és telepítse az alkalmazást \n2. Regisztráljon vagy jelentkezzen be \n3. Nyissa meg a meghívó linket: \n {link}",
     "@inviteText": {
         "type": "String",
         "placeholders": {
@@ -770,7 +770,7 @@
         "type": "String",
         "placeholders": {}
     },
-    "newMessageInFluffyChat": "💬 Új FluffyChat üzenet",
+    "newMessageInFluffyChat": "💬 Új VOX üzenet",
     "@newMessageInFluffyChat": {
         "type": "String",
         "placeholders": {}
@@ -1118,7 +1118,7 @@
         "type": "String",
         "placeholders": {}
     },
-    "title": "FluffyChat",
+    "title": "VOX",
     "@title": {
         "description": "Title for the application",
         "type": "String",
@@ -2315,7 +2315,7 @@
     "@unsupportedAndroidVersionLong": {},
     "storeSecurlyOnThisDevice": "Biztonságos tárolás az eszközön",
     "@storeSecurlyOnThisDevice": {},
-    "screenSharingDetail": "Megosztja a képernyőjét a FluffyChat-ben",
+    "screenSharingDetail": "Megosztja a képernyőjét a VOX-ben",
     "@screenSharingDetail": {},
     "placeCall": "Tér hívás",
     "@placeCall": {},
@@ -2896,7 +2896,7 @@
     "@continueText": {},
     "opacity": "Átlátszóság:",
     "@opacity": {},
-    "welcomeText": "Üdv 👋 Ez a FluffyChat. Bejelentkezhet bármely matrix-kiszolgálóhoz amely kompatibilis a https://matrix.org címmel. Ezután cseveghet bárkivel. Így képez egy óriási decentralizált üzenetküldő hálózatot!",
+    "welcomeText": "Üdv 👋 Ez a VOX. Bejelentkezhet bármely matrix-kiszolgálóhoz amely kompatibilis a https://matrix.org címmel. Ezután cseveghet bárkivel. Így képez egy óriási decentralizált üzenetküldő hálózatot!",
     "@welcomeText": {},
     "addLink": "Hivatkozás hozzáadása",
     "@addLink": {},

@@ -622,7 +622,7 @@
         "type": "String",
         "placeholders": {}
     },
-    "fluffychat": "FluffyChat",
+    "fluffychat": "VOX",
     "@fluffychat": {
         "type": "String",
         "placeholders": {}
@@ -779,7 +779,7 @@
         "type": "String",
         "placeholders": {}
     },
-    "inviteText": "{username} ti ha invitato/a a FluffyChat.\n1. Visita fluffychat.im e installa l'applicazione\n2. Iscriviti o accedi\n3. Apri il collegamento di invito: \n {link}",
+    "inviteText": "{username} ti ha invitato/a a VOX.\n1. Visita fluffychat.im e installa l'applicazione\n2. Iscriviti o accedi\n3. Apri il collegamento di invito: \n {link}",
     "@inviteText": {
         "type": "String",
         "placeholders": {
@@ -931,7 +931,7 @@
         "type": "String",
         "placeholders": {}
     },
-    "newMessageInFluffyChat": "💬 Nuovo messaggio in FluffyChat",
+    "newMessageInFluffyChat": "💬 Nuovo messaggio in VOX",
     "@newMessageInFluffyChat": {
         "type": "String",
         "placeholders": {}
@@ -1408,7 +1408,7 @@
         "type": "String",
         "placeholders": {}
     },
-    "title": "FluffyChat",
+    "title": "VOX",
     "@title": {
         "description": "Title for the application",
         "type": "String",
@@ -2716,7 +2716,7 @@
     },
     "continueText": "Continua",
     "@continueText": {},
-    "welcomeText": "Hey Hey 👋 Questa è FluffyChat. Puoi accedere a qualsiasi homeserver compatibile con https://matrix.org. E poi chattare con chiunque. È un'enorme rete di messaggistica decentralizzata!",
+    "welcomeText": "Hey Hey 👋 Questa è VOX. Puoi accedere a qualsiasi homeserver compatibile con https://matrix.org. E poi chattare con chiunque. È un'enorme rete di messaggistica decentralizzata!",
     "@welcomeText": {},
     "blur": "Sfocatura:",
     "@blur": {},

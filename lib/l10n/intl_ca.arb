@@ -562,7 +562,7 @@
         "type": "String",
         "placeholders": {}
     },
-    "fluffychat": "FluffyChat",
+    "fluffychat": "VOX",
     "@fluffychat": {
         "type": "String",
         "placeholders": {}
@@ -694,7 +694,7 @@
         "type": "String",
         "placeholders": {}
     },
-    "inviteText": "{username} t'ha convidat a FluffyChat.\n1. Visita fluffychat.im i instaŀla l'app\n2. Registra't o inicia sessió\n3. Obre l'enllaç d'invitació:\n{link}",
+    "inviteText": "{username} t'ha convidat a VOX.\n1. Visita fluffychat.im i instaŀla l'app\n2. Registra't o inicia sessió\n3. Obre l'enllaç d'invitació:\n{link}",
     "@inviteText": {
         "type": "String",
         "placeholders": {
@@ -846,7 +846,7 @@
         "type": "String",
         "placeholders": {}
     },
-    "newMessageInFluffyChat": "💬 Missatge nou al FluffyChat",
+    "newMessageInFluffyChat": "💬 Missatge nou al VOX",
     "@newMessageInFluffyChat": {
         "type": "String",
         "placeholders": {}
@@ -871,7 +871,7 @@
         "type": "String",
         "placeholders": {}
     },
-    "noGoogleServicesWarning": "Sembla que no teniu els Serveis de Google al telèfon. Això és una bona decisió respecte a la vostra privadesa! Per a rebre notificacions automàtiques del FluffyChat, us recomanem instaŀlar ntfy. Amb ntfy o qualsevol altre proveïdor de Unified Push, pots rebre notificacions de forma segura i lliure. Pots instaŀlar ntfy des de la PlayStore o des de F-Droid.",
+    "noGoogleServicesWarning": "Sembla que no teniu els Serveis de Google al telèfon. Això és una bona decisió respecte a la vostra privadesa! Per a rebre notificacions automàtiques del VOX, us recomanem instaŀlar ntfy. Amb ntfy o qualsevol altre proveïdor de Unified Push, pots rebre notificacions de forma segura i lliure. Pots instaŀlar ntfy des de la PlayStore o des de F-Droid.",
     "@noGoogleServicesWarning": {
         "type": "String",
         "placeholders": {}
@@ -1262,7 +1262,7 @@
         "type": "String",
         "placeholders": {}
     },
-    "title": "FluffyChat",
+    "title": "VOX",
     "@title": {
         "description": "Title for the application",
         "type": "String",
@@ -2197,7 +2197,7 @@
     "enableMultiAccounts": "(Beta) Activa multi-compte en aquest dispositiu",
     "unsupportedAndroidVersionLong": "Aquesta funcionalitat només funciona amb versions d'Android més noves.",
     "storeSecurlyOnThisDevice": "Desa de forma segura en aquest dispositiu",
-    "screenSharingDetail": "Estàs compartint la teva pantalla a FluffyChat",
+    "screenSharingDetail": "Estàs compartint la teva pantalla a VOX",
     "placeCall": "Truca",
     "block": "Bloca",
     "blockUsername": "Ignora aquesti usuàrïi",
@@ -2507,7 +2507,7 @@
         }
     },
     "oneOfYourDevicesIsNotVerified": "Un dels teus dispositius no està verificat",
-    "welcomeText": "Hola hola! 👋 Això és FluffyChat. Pots iniciar sessió en qualsevol servidor compatible amb https://matrix.org. I llavors xatejar amb qualsevol. És una xarxa enorme de missatgeria descentralitzada !",
+    "welcomeText": "Hola hola! 👋 Això és VOX. Pots iniciar sessió en qualsevol servidor compatible amb https://matrix.org. I llavors xatejar amb qualsevol. És una xarxa enorme de missatgeria descentralitzada !",
     "blur": "Difumina:",
     "opacity": "Opacitat:",
     "manageAccount": "Gestiona el compte",
@@ -2771,7 +2771,7 @@
     "advancedConfigurations": "Configuracions avançades",
     "signIn": "Obre sessió",
     "createNewAccount": "Crea un compte nou",
-    "signUpGreeting": "El FluffyChat és descentralitzat! Tria un servidor on vulguis crear-t'hi un compte, i som-hi!",
+    "signUpGreeting": "El VOX és descentralitzat! Tria un servidor on vulguis crear-t'hi un compte, i som-hi!",
     "signInGreeting": "Si ja tens un compte a Matrix, benvingudi! Tria el teu servidor i inicia-hi sessió.",
     "appIntro": "Pots xatejar amb lis tevis amiguis amb Fluffychat. És una app de missatgeria [matrix] descentralitzada! Llegeix-ne més a https://matrix.org si vols, o inicia sessió.",
     "theProcessWasCanceled": "S'ha canceŀlat el procés."

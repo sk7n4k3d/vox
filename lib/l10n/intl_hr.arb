@@ -732,7 +732,7 @@
         "type": "String",
         "placeholders": {}
     },
-    "fluffychat": "FluffyChat",
+    "fluffychat": "VOX",
     "@fluffychat": {
         "type": "String",
         "placeholders": {}
@@ -889,7 +889,7 @@
         "type": "String",
         "placeholders": {}
     },
-    "inviteText": "{username} te je pozvao/la u FluffyChat. \n1. Posjeti strnicu fluffychat.im i instaliraj aplikaciju \n2. Registriraj ili prijavi se \n3. Otvori poveznicu poziva: \n {link}",
+    "inviteText": "{username} te je pozvao/la u VOX. \n1. Posjeti strnicu fluffychat.im i instaliraj aplikaciju \n2. Registriraj ili prijavi se \n3. Otvori poveznicu poziva: \n {link}",
     "@inviteText": {
         "type": "String",
         "placeholders": {
@@ -1041,7 +1041,7 @@
         "type": "String",
         "placeholders": {}
     },
-    "newMessageInFluffyChat": "💬 Nova poruka u FluffyChatu",
+    "newMessageInFluffyChat": "💬 Nova poruka u VOXu",
     "@newMessageInFluffyChat": {
         "type": "String",
         "placeholders": {}
@@ -1567,7 +1567,7 @@
         "type": "String",
         "placeholders": {}
     },
-    "title": "FluffyChat",
+    "title": "VOX",
     "@title": {
         "description": "Title for the application",
         "type": "String",
@@ -2536,7 +2536,7 @@
     "oneOfYourDevicesIsNotVerified": "Jedan od tvojih uređaja nije potvrđen",
     "noticeChatBackupDeviceVerification": "Napomena: Kada spojiš sve svoje uređaje na sigurnosnu kopiju chata, oni se automatski potvrđuju.",
     "continueText": "Nastavi",
-    "welcomeText": "Hej, hej 👋, ovdje FluffyChat. Možeš se prijaviti na bilo koji homeserver koji je kompatibilan s https://matrix.org. I onda razgovaraj s bilo kim. To je ogromna decentralizirana mreža za razmjenu poruka!",
+    "welcomeText": "Hej, hej 👋, ovdje VOX. Možeš se prijaviti na bilo koji homeserver koji je kompatibilan s https://matrix.org. I onda razgovaraj s bilo kim. To je ogromna decentralizirana mreža za razmjenu poruka!",
     "blur": "Zamućenost:",
     "opacity": "Neprozirnost:",
     "setWallpaper": "Postavi sliku pozadine",

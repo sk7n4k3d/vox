@@ -911,7 +911,7 @@
         "type": "String",
         "placeholders": {}
     },
-    "fluffychat": "FluffyChat",
+    "fluffychat": "VOX",
     "@fluffychat": {
         "type": "String",
         "placeholders": {}
@@ -1081,7 +1081,7 @@
         "type": "String",
         "placeholders": {}
     },
-    "inviteText": "{username} запрасіў вас у FluffyChat.\n1. Перайдзіце на fluffychat.im і ўстанавіце праграму\n2. Зарэгестрыруйцесь альбо ўвайдзіце\n3. Перайдзіце па запрашальнай спасылцы:\n{link}",
+    "inviteText": "{username} запрасіў вас у VOX.\n1. Перайдзіце на fluffychat.im і ўстанавіце праграму\n2. Зарэгестрыруйцесь альбо ўвайдзіце\n3. Перайдзіце па запрашальнай спасылцы:\n{link}",
     "@inviteText": {
         "type": "String",
         "placeholders": {
@@ -1251,7 +1251,7 @@
         "type": "String",
         "placeholders": {}
     },
-    "newMessageInFluffyChat": "💬 Новае паведамленне ў FluffyChat",
+    "newMessageInFluffyChat": "💬 Новае паведамленне ў VOX",
     "@newMessageInFluffyChat": {
         "type": "String",
         "placeholders": {}
@@ -1446,7 +1446,7 @@
         "type": "String",
         "placeholders": {}
     },
-    "title": "FluffyChat",
+    "title": "VOX",
     "@title": {
         "description": "Title for the application",
         "type": "String",
@@ -1710,7 +1710,7 @@
     "@foregroundServiceRunning": {},
     "screenSharingTitle": "падзяліцца экранам",
     "@screenSharingTitle": {},
-    "screenSharingDetail": "Вы дзеліцеся экранам у FluffyChat",
+    "screenSharingDetail": "Вы дзеліцеся экранам у VOX",
     "@screenSharingDetail": {},
     "whyIsThisMessageEncrypted": "Чаму гэта паведамленне нельга прачытаць?",
     "@whyIsThisMessageEncrypted": {},
@@ -2867,7 +2867,7 @@
     "@oneOfYourDevicesIsNotVerified": {},
     "noticeChatBackupDeviceVerification": "Заўвага: Калі вы падключыце ўсе свае прылады да рэзервовага капіравання, яны аўтаматычна спраўдзяцца.",
     "@noticeChatBackupDeviceVerification": {},
-    "welcomeText": "Вітаначкі 👋 Гэта FluffyChat. Вы можаце ўвайсці на любы дамашні сервер, што сумяшчальны з https://matrix.org, а потым паразмаўляць з кім-небудзь. Гэта вялізная дэцэнтралізаваная сетка абмену паведамленнямі!",
+    "welcomeText": "Вітаначкі 👋 Гэта VOX. Вы можаце ўвайсці на любы дамашні сервер, што сумяшчальны з https://matrix.org, а потым паразмаўляць з кім-небудзь. Гэта вялізная дэцэнтралізаваная сетка абмену паведамленнямі!",
     "@welcomeText": {},
     "blur": "Размыццё:",
     "@blur": {},

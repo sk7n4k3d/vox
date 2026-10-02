@@ -88,7 +88,7 @@
         "type": "String",
         "placeholders": {}
     },
-    "inviteText": "{username} mengundang kamu ke FluffyChat. \n1. Kunjungi fluffychat.im dan instal aplikasi\n2. Daftar atau masuk \n3. Buka tautan undangan: \n {link}",
+    "inviteText": "{username} mengundang kamu ke VOX. \n1. Kunjungi fluffychat.im dan instal aplikasi\n2. Daftar atau masuk \n3. Buka tautan undangan: \n {link}",
     "@inviteText": {
         "type": "String",
         "placeholders": {
@@ -227,7 +227,7 @@
         "type": "String",
         "placeholders": {}
     },
-    "fluffychat": "FluffyChat",
+    "fluffychat": "VOX",
     "@fluffychat": {
         "type": "String",
         "placeholders": {}
@@ -889,7 +889,7 @@
         "type": "String",
         "placeholders": {}
     },
-    "newMessageInFluffyChat": "💬 Pesan baru di FluffyChat",
+    "newMessageInFluffyChat": "💬 Pesan baru di VOX",
     "@newMessageInFluffyChat": {
         "type": "String",
         "placeholders": {}
@@ -1253,7 +1253,7 @@
         "type": "String",
         "placeholders": {}
     },
-    "title": "FluffyChat",
+    "title": "VOX",
     "@title": {
         "description": "Title for the application",
         "type": "String",
@@ -2057,7 +2057,7 @@
     "newGroup": "Grup baru",
     "newSpace": "Space baru",
     "allSpaces": "Semua space",
-    "screenSharingDetail": "Kamu membagikan layarmu di FluffyChat",
+    "screenSharingDetail": "Kamu membagikan layarmu di VOX",
     "doNotShowAgain": "Jangan tampilkan lagi",
     "hugContent": "{senderName} memeluk kamu",
     "@hugContent": {
@@ -2493,7 +2493,7 @@
     "chatPermissionsDescription": "Tentukan tingkat kekuasaan yang diperlukan untuk tindakan tertentu dalam chat ini. Tingkat kekuasaan 0, 50 dan 100 biasanya mewakili pengguna, moderator dan admin, tetapi gradasi apa pun dimungkinkan.",
     "oneOfYourDevicesIsNotVerified": "Salah satu perangkat Anda tidak terverifikasi",
     "noticeChatBackupDeviceVerification": "Catatan: Ketika Anda menghubungkan semua perangkat Anda ke cadangan chat, mereka akan diverifikasi secara otomatis.",
-    "welcomeText": "Halo 👋 Ini FluffyChat. Kamu bisa masuk ke homeserver mana pun, yang kompatibel dengan https://matrix.org. Lalu, chat dengan siapa pun. Ini merupakan jaringan perpesanan besar yang terdesentralisasi!",
+    "welcomeText": "Halo 👋 Ini VOX. Kamu bisa masuk ke homeserver mana pun, yang kompatibel dengan https://matrix.org. Lalu, chat dengan siapa pun. Ini merupakan jaringan perpesanan besar yang terdesentralisasi!",
     "continueText": "Lanjutkan",
     "aboutHomeserver": "Tentang {homeserver}",
     "@aboutHomeserver": {
@@ -2771,8 +2771,8 @@
     "advancedConfigurations": "Konfigurasi lanjutan",
     "signIn": "Masuk",
     "createNewAccount": "Buat akun baru",
-    "signUpGreeting": "FluffyChat terdesentralisasi! Pilih server tempat Anda ingin membuat akun dan mari kita mulai!",
+    "signUpGreeting": "VOX terdesentralisasi! Pilih server tempat Anda ingin membuat akun dan mari kita mulai!",
     "signInGreeting": "Anda sudah memiliki akun di Matrix? Selamat datang kembali! Pilih homeserver Anda dan masuk.",
-    "appIntro": "Dengan FluffyChat Anda dapat mengobrol dengan teman-teman Anda. Ini adalah messenger [matrix] terdesentralisasi yang aman! Pelajari lebih lanjut di https://matrix.org jika Anda suka atau cukup daftar.",
+    "appIntro": "Dengan VOX Anda dapat mengobrol dengan teman-teman Anda. Ini adalah messenger [matrix] terdesentralisasi yang aman! Pelajari lebih lanjut di https://matrix.org jika Anda suka atau cukup daftar.",
     "theProcessWasCanceled": "Proses dibatalkan."
 }

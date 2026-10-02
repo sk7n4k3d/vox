@@ -754,7 +754,7 @@
         "type": "String",
         "placeholders": {}
     },
-    "fluffychat": "FluffyChat",
+    "fluffychat": "VOX",
     "@fluffychat": {
         "type": "String",
         "placeholders": {}
@@ -911,7 +911,7 @@
         "type": "String",
         "placeholders": {}
     },
-    "inviteText": "{username} sizi FluffyChat'e davet etti.\n1. fluffychat.im adresini ziyaret edin ve uygulamayı kurun \n2. Kaydolun veya oturum açın \n3. Davet bağlantısını açın: \n {link}",
+    "inviteText": "{username} sizi VOX'e davet etti.\n1. fluffychat.im adresini ziyaret edin ve uygulamayı kurun \n2. Kaydolun veya oturum açın \n3. Davet bağlantısını açın: \n {link}",
     "@inviteText": {
         "type": "String",
         "placeholders": {
@@ -1073,7 +1073,7 @@
         "type": "String",
         "placeholders": {}
     },
-    "newMessageInFluffyChat": "💬 FluffyChat'te yeni mesaj",
+    "newMessageInFluffyChat": "💬 VOX'te yeni mesaj",
     "@newMessageInFluffyChat": {
         "type": "String",
         "placeholders": {}
@@ -1631,7 +1631,7 @@
         "type": "String",
         "placeholders": {}
     },
-    "title": "FluffyChat",
+    "title": "VOX",
     "@title": {
         "description": "Title for the application",
         "type": "String",
@@ -2766,7 +2766,7 @@
             }
         }
     },
-    "welcomeText": "Hey Hey 👋 Karşınızda FluffyChat. https://matrix.org ile uyumlu herhangi bir homeserver'a giriş yapabilirsiniz. Ve herkesle konuşabilirsiniz. Bu koca bir merkeziyetsiz mesajlaşma ağı!",
+    "welcomeText": "Hey Hey 👋 Karşınızda VOX. https://matrix.org ile uyumlu herhangi bir homeserver'a giriş yapabilirsiniz. Ve herkesle konuşabilirsiniz. Bu koca bir merkeziyetsiz mesajlaşma ağı!",
     "@welcomeText": {},
     "ignoreUser": "Kullanıcıyı yok say",
     "@ignoreUser": {},

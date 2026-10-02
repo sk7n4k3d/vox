@@ -751,7 +751,7 @@
         "type": "String",
         "placeholders": {}
     },
-    "fluffychat": "FluffyChat",
+    "fluffychat": "VOX",
     "@fluffychat": {
         "type": "String",
         "placeholders": {}
@@ -908,7 +908,7 @@
         "type": "String",
         "placeholders": {}
     },
-    "inviteText": "{username} vás pozval/a na FluffyChat.\n1. Navštivte fluffychat.im a nainstalujte si aplikaci.\n2. Zaregistrujte se nebo se přihlaste.\n3. Otevřte pozvánku: \n {link}",
+    "inviteText": "{username} vás pozval/a na VOX.\n1. Navštivte fluffychat.im a nainstalujte si aplikaci.\n2. Zaregistrujte se nebo se přihlaste.\n3. Otevřte pozvánku: \n {link}",
     "@inviteText": {
         "type": "String",
         "placeholders": {
@@ -1070,7 +1070,7 @@
         "type": "String",
         "placeholders": {}
     },
-    "newMessageInFluffyChat": "💬 Nová zpráva ve FluffyChatu",
+    "newMessageInFluffyChat": "💬 Nová zpráva ve VOXu",
     "@newMessageInFluffyChat": {
         "type": "String",
         "placeholders": {}
@@ -1628,7 +1628,7 @@
         "type": "String",
         "placeholders": {}
     },
-    "title": "FluffyChat",
+    "title": "VOX",
     "@title": {
         "description": "Title for the application",
         "type": "String",
@@ -2118,7 +2118,7 @@
     "recoveryKeyLost": "Ztracený klíč k obnovení?",
     "unlockOldMessages": "Odemknout staré zprávy",
     "foregroundServiceRunning": "Toto oznámení se zobrazuje když běží služba na pozadí.",
-    "screenSharingDetail": "Sdílíte svou obrazovku přes FluffyChat",
+    "screenSharingDetail": "Sdílíte svou obrazovku přes VOX",
     "encryptThisChat": "Zašifrovat tuto konverzaci",
     "sorryThatsNotPossible": "Omlouváme se… to není možné",
     "deviceKeys": "Klíče zařízení:",
@@ -2433,7 +2433,7 @@
     },
     "oneOfYourDevicesIsNotVerified": "Jedno z vašich zařízení není ověřeno",
     "continueText": "Pokračovat",
-    "welcomeText": "Ahoj, ahoj 👋 Tohle je FluffyChat. Můžete se přihlásit k jakémukoliv domácímu serveru, který je kompatibilní s https://matrix.org, a začít s kýmkoliv chatovat. Je to obří decentralizovaná chatovací síť!",
+    "welcomeText": "Ahoj, ahoj 👋 Tohle je VOX. Můžete se přihlásit k jakémukoliv domácímu serveru, který je kompatibilní s https://matrix.org, a začít s kýmkoliv chatovat. Je to obří decentralizovaná chatovací síť!",
     "setWallpaper": "Nastavit tapetu",
     "manageAccount": "Spravovat účet",
     "noContactInformationProvided": "Server neposkytl žádné platné kontaktní informace",
@@ -2619,9 +2619,9 @@
     "advancedConfigs": "Pokročilá nastavení",
     "signIn": "Přihlásit se",
     "createNewAccount": "Vytvořit nový účet",
-    "signUpGreeting": "FluffyChat je decentralizovaný! Vyberte server, kde si chcete vytvořit účet, a jdeme na věc!",
+    "signUpGreeting": "VOX je decentralizovaný! Vyberte server, kde si chcete vytvořit účet, a jdeme na věc!",
     "signInGreeting": "Již máte účet na Matrixu? Vítejte zpět! Vyberte svůj domácí server a přihlaste se.",
-    "appIntro": "S FluffyChatem můžeme chatovat s přáteli. Je to decentralizovaná chatovací aplikace pro [matrix]! Zjistěte více na https://matrix.org nebo se zaregistrujte.",
+    "appIntro": "S VOXem můžeme chatovat s přáteli. Je to decentralizovaná chatovací aplikace pro [matrix]! Zjistěte více na https://matrix.org nebo se zaregistrujte.",
     "theProcessWasCanceled": "Proces byl zrušen.",
     "sendImages": "Poslat {count} obrazků",
     "@sendImages": {
