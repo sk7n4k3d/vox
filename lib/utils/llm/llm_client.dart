@@ -89,6 +89,9 @@ class LlmClient {
           'messages': messages,
           'max_tokens': maxTokens,
           'temperature': temperature,
+          // Modeles hybrides (Qwen3.5) : couper le raisonnement intermediaire,
+          // sinon content revient vide et la reponse part dans reasoning_content.
+          'chat_template_kwargs': {'enable_thinking': false},
         }),
       ),
     );
@@ -101,6 +104,13 @@ class LlmClient {
         final content = message['content'];
         if (content is String && content.trim().isNotEmpty) {
           return content.trim();
+        }
+        // Filet de securite si le serveur ignore enable_thinking :
+        // la reponse utile est alors dans reasoning_content.
+        final reasoning = message['reasoning_content'] ??
+            message['reasoning'];
+        if (reasoning is String && reasoning.trim().isNotEmpty) {
+          return reasoning.trim();
         }
       }
     }

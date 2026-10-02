@@ -122,6 +122,9 @@ object LlmSuggestions {
             )
             put("max_tokens", MAX_TOKENS)
             put("temperature", TEMPERATURE)
+            // Modeles hybrides (Qwen3.5) : sans ce flag, content revient vide
+            // et la reponse part dans reasoning_content.
+            put("chat_template_kwargs", JSONObject().put("enable_thinking", false))
         }.toString().toByteArray(Charsets.UTF_8)
 
         var connection: HttpURLConnection? = null
