@@ -26,8 +26,10 @@ class SettingsIaView extends StatelessWidget {
         title: const CyberGlitchText('Assistance IA'),
       ),
       body: MaxWidthBody(
-        child: ListView(
-          padding: const EdgeInsets.only(bottom: FluffySpacing.xxl),
+        // MaxWidthBody fournit deja le SingleChildScrollView : un ListView
+        // imbrique recoit une hauteur infinie et ne rend rien (ecran vide).
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             Padding(
               padding: const EdgeInsets.symmetric(
