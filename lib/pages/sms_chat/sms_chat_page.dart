@@ -1,6 +1,5 @@
 import 'dart:async';
 import 'dart:io';
-import 'dart:ui' as ui;
 
 import 'package:chewie/chewie.dart';
 import 'package:emoji_picker_flutter/emoji_picker_flutter.dart';
@@ -2099,7 +2098,6 @@ class _SmsLiquidGlassAppBar extends StatelessWidget
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final mediaPadding = MediaQuery.paddingOf(context);
-    final blurSigma = cyber.blurSigmaAppBar;
     final surfaceColor = theme.colorScheme.surface.withValues(alpha: 0.65);
     final borderColor = theme.colorScheme.outlineVariant.withValues(
       alpha: 0.45,
@@ -2108,128 +2106,121 @@ class _SmsLiquidGlassAppBar extends StatelessWidget
     return RepaintBoundary(
       child: SizedBox(
         height: height + mediaPadding.top,
-        child: ClipRect(
-          child: BackdropFilter(
-            filter: ui.ImageFilter.blur(sigmaX: blurSigma, sigmaY: blurSigma),
-            child: DecoratedBox(
-              decoration: BoxDecoration(
-                color: surfaceColor,
-                border: Border(
-                  bottom: BorderSide(color: borderColor, width: 0.5),
-                ),
-              ),
-              child: Padding(
-                padding: EdgeInsets.only(top: mediaPadding.top),
-                child: SizedBox(
-                  height: height,
-                  child: Row(
-                    children: [
-                      const SizedBox(width: 4),
-                      IconButton(
-                        icon: const Icon(Icons.arrow_back),
-                        onPressed: onBack,
-                        tooltip: MaterialLocalizations.of(
-                          context,
-                        ).backButtonTooltip,
-                      ),
-                      // Contact photo (or gradient initial fallback) in a 40dp
-                      // ring — parity with the Matrix room app-bar avatar.
-                      _SmsAvatarWithRing(
-                        initial: initial,
-                        photoPath: photoPath,
-                        cyber: cyber,
-                      ),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: Column(
-                          mainAxisSize: MainAxisSize.min,
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          crossAxisAlignment: CrossAxisAlignment.start,
+        child: DecoratedBox(
+          decoration: BoxDecoration(
+            color: surfaceColor,
+            border: Border(bottom: BorderSide(color: borderColor, width: 0.5)),
+          ),
+          child: Padding(
+            padding: EdgeInsets.only(top: mediaPadding.top),
+            child: SizedBox(
+              height: height,
+              child: Row(
+                children: [
+                  const SizedBox(width: 4),
+                  IconButton(
+                    icon: const Icon(Icons.arrow_back),
+                    onPressed: onBack,
+                    tooltip: MaterialLocalizations.of(
+                      context,
+                    ).backButtonTooltip,
+                  ),
+                  // Contact photo (or gradient initial fallback) in a 40dp
+                  // ring — parity with the Matrix room app-bar avatar.
+                  _SmsAvatarWithRing(
+                    initial: initial,
+                    photoPath: photoPath,
+                    cyber: cyber,
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          title,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: theme.textTheme.titleMedium?.copyWith(
+                            fontSize: 16,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                        const SizedBox(height: 2),
+                        Text(
+                          subtitle,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: theme.textTheme.bodySmall?.copyWith(
+                            color: theme.colorScheme.onSurfaceVariant,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  IconButton(
+                    icon: Icon(Icons.call_outlined, color: cyber.cyan),
+                    onPressed: onCall,
+                    tooltip: 'Appeler',
+                  ),
+                  PopupMenuButton<String>(
+                    icon: Icon(
+                      Icons.more_vert,
+                      color: theme.colorScheme.onSurface,
+                    ),
+                    color: theme.colorScheme.surfaceContainerHigh,
+                    shape: const RoundedRectangleBorder(
+                      borderRadius: FluffyRadius.brMd,
+                    ),
+                    onSelected: (value) {
+                      if (value == 'gallery') onGallery();
+                      if (value == 'delete') onDelete();
+                    },
+                    itemBuilder: (context) => [
+                      PopupMenuItem<String>(
+                        value: 'gallery',
+                        child: Row(
                           children: [
-                            Text(
-                              title,
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: theme.textTheme.titleMedium?.copyWith(
-                                fontSize: 16,
-                                fontWeight: FontWeight.w600,
-                              ),
+                            Icon(
+                              Icons.photo_library_outlined,
+                              color: cyber.cyan,
+                              size: 20,
                             ),
-                            const SizedBox(height: 2),
+                            const SizedBox(width: FluffySpacing.md),
                             Text(
-                              subtitle,
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: theme.textTheme.bodySmall?.copyWith(
-                                color: theme.colorScheme.onSurfaceVariant,
+                              'Galerie médias',
+                              style: FluffyTypography.bodyM.copyWith(
+                                color: theme.colorScheme.onSurface,
                               ),
                             ),
                           ],
                         ),
                       ),
-                      IconButton(
-                        icon: Icon(Icons.call_outlined, color: cyber.cyan),
-                        onPressed: onCall,
-                        tooltip: 'Appeler',
-                      ),
-                      PopupMenuButton<String>(
-                        icon: Icon(
-                          Icons.more_vert,
-                          color: theme.colorScheme.onSurface,
-                        ),
-                        color: theme.colorScheme.surfaceContainerHigh,
-                        shape: const RoundedRectangleBorder(
-                          borderRadius: FluffyRadius.brMd,
-                        ),
-                        onSelected: (value) {
-                          if (value == 'gallery') onGallery();
-                          if (value == 'delete') onDelete();
-                        },
-                        itemBuilder: (context) => [
-                          PopupMenuItem<String>(
-                            value: 'gallery',
-                            child: Row(
-                              children: [
-                                Icon(
-                                  Icons.photo_library_outlined,
-                                  color: cyber.cyan,
-                                  size: 20,
-                                ),
-                                const SizedBox(width: FluffySpacing.md),
-                                Text(
-                                  'Galerie médias',
-                                  style: FluffyTypography.bodyM.copyWith(
-                                    color: theme.colorScheme.onSurface,
-                                  ),
-                                ),
-                              ],
+                      PopupMenuItem<String>(
+                        value: 'delete',
+                        child: Row(
+                          children: [
+                            Icon(
+                              Icons.delete_outline_rounded,
+                              color: cyber.magenta,
+                              size: 20,
                             ),
-                          ),
-                          PopupMenuItem<String>(
-                            value: 'delete',
-                            child: Row(
-                              children: [
-                                Icon(
-                                  Icons.delete_outline_rounded,
-                                  color: cyber.magenta,
-                                  size: 20,
-                                ),
-                                const SizedBox(width: FluffySpacing.md),
-                                Text(
-                                  'Supprimer la conversation',
-                                  style: FluffyTypography.bodyM.copyWith(
-                                    color: theme.colorScheme.onSurface,
-                                  ),
-                                ),
-                              ],
+                            const SizedBox(width: FluffySpacing.md),
+                            Text(
+                              'Supprimer la conversation',
+                              style: FluffyTypography.bodyM.copyWith(
+                                color: theme.colorScheme.onSurface,
+                              ),
                             ),
-                          ),
-                        ],
+                          ],
+                        ),
                       ),
-                      const SizedBox(width: 4),
                     ],
                   ),
-                ),
+                  const SizedBox(width: 4),
+                ],
               ),
             ),
           ),

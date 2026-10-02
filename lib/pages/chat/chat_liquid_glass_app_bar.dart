@@ -1,5 +1,3 @@
-import 'dart:ui' as ui;
-
 import 'package:fluffychat/config/cyberpunk_theme_extension.dart';
 import 'package:fluffychat/config/setting_keys.dart';
 import 'package:fluffychat/config/themes.dart';
@@ -49,41 +47,33 @@ class ChatLiquidGlassAppBar extends StatelessWidget
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final cyber = theme.extension<CyberpunkTheme>();
     final room = controller.room;
     final mediaPadding = MediaQuery.paddingOf(context);
-    final blurSigma = cyber?.blurSigmaAppBar ?? 20.0;
 
     final surfaceColor = theme.colorScheme.surface.withValues(alpha: 0.65);
-    final borderColor =
-        theme.colorScheme.outlineVariant.withValues(alpha: 0.45);
+    final borderColor = theme.colorScheme.outlineVariant.withValues(
+      alpha: 0.45,
+    );
 
     return RepaintBoundary(
       child: SizedBox(
         height: _kAppBarHeight + mediaPadding.top + appbarBottomHeight,
-        child: ClipRect(
-          child: BackdropFilter(
-            filter: ui.ImageFilter.blur(sigmaX: blurSigma, sigmaY: blurSigma),
-            child: DecoratedBox(
-              decoration: BoxDecoration(
-                color: surfaceColor,
-                border: Border(
-                  bottom: BorderSide(color: borderColor, width: 0.5),
+        child: DecoratedBox(
+          decoration: BoxDecoration(
+            color: surfaceColor,
+            border: Border(bottom: BorderSide(color: borderColor, width: 0.5)),
+          ),
+          child: Padding(
+            padding: EdgeInsets.only(top: mediaPadding.top),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                SizedBox(
+                  height: _kAppBarHeight,
+                  child: _buildContent(context, theme, room),
                 ),
-              ),
-              child: Padding(
-                padding: EdgeInsets.only(top: mediaPadding.top),
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    SizedBox(
-                      height: _kAppBarHeight,
-                      child: _buildContent(context, theme, room),
-                    ),
-                    ?bottom,
-                  ],
-                ),
-              ),
+                ?bottom,
+              ],
             ),
           ),
         ),
@@ -153,7 +143,8 @@ class ChatLiquidGlassAppBar extends StatelessWidget
     final isEncrypted = room.encrypted;
     final bridgeLabel = _detectBridgeLabel(room);
 
-    final canPlaceCall = AppSettings.experimentalVoip.value &&
+    final canPlaceCall =
+        AppSettings.experimentalVoip.value &&
         Matrix.of(context).voipPlugin != null &&
         isDirectChat;
 
@@ -176,8 +167,8 @@ class ChatLiquidGlassAppBar extends StatelessWidget
           onTap: controller.isArchived
               ? null
               : () => FluffyThemes.isThreeColumnMode(context)
-                  ? controller.toggleDisplayChatDetailsColumn()
-                  : context.go('/rooms/${room.id}/details'),
+                    ? controller.toggleDisplayChatDetailsColumn()
+                    : context.go('/rooms/${room.id}/details'),
           // Outer Hero matches the chat list row avatar so opening a room
           // animates the avatar from its row position up to the AppBar
           // (M3 shared element motion). The inner `content_banner` Hero is
@@ -203,8 +194,8 @@ class ChatLiquidGlassAppBar extends StatelessWidget
             onTap: controller.isArchived
                 ? null
                 : () => FluffyThemes.isThreeColumnMode(context)
-                    ? controller.toggleDisplayChatDetailsColumn()
-                    : context.go('/rooms/${room.id}/details'),
+                      ? controller.toggleDisplayChatDetailsColumn()
+                      : context.go('/rooms/${room.id}/details'),
             child: Column(
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -263,7 +254,8 @@ class ChatLiquidGlassAppBar extends StatelessWidget
     for (final type in const ['m.bridge', 'uk.half-shot.bridge']) {
       final state = room.getState(type);
       if (state != null) {
-        final protocol = state.content
+        final protocol =
+            state.content
                 .tryGetMap<String, Object?>('protocol')
                 ?.tryGet<String>('displayname') ??
             state.content.tryGet<String>('protocol');
@@ -393,8 +385,8 @@ class _AvatarWithRing extends StatelessWidget {
         final accent = isEncrypted && online
             ? (cyber?.cyan ?? theme.colorScheme.tertiary)
             : (online
-                ? theme.colorScheme.primary
-                : theme.colorScheme.outlineVariant);
+                  ? theme.colorScheme.primary
+                  : theme.colorScheme.outlineVariant);
         return Container(
           padding: const EdgeInsets.all(2),
           decoration: BoxDecoration(
@@ -426,30 +418,21 @@ class _BridgePill extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final accent = cyber?.violet ?? theme.colorScheme.tertiary;
-    return ClipRRect(
-      borderRadius: BorderRadius.circular(8),
-      child: BackdropFilter(
-        filter: ui.ImageFilter.blur(sigmaX: 6, sigmaY: 6),
-        child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-          decoration: BoxDecoration(
-            color: accent.withValues(alpha: 0.16),
-            borderRadius: BorderRadius.circular(8),
-            border: Border.all(
-              color: accent.withValues(alpha: 0.45),
-              width: 0.5,
-            ),
-          ),
-          child: Text(
-            label,
-            style: TextStyle(
-              fontSize: 10,
-              fontWeight: FontWeight.w600,
-              letterSpacing: 0.3,
-              color: accent,
-              height: 1.2,
-            ),
-          ),
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+      decoration: BoxDecoration(
+        color: accent.withValues(alpha: 0.16),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: accent.withValues(alpha: 0.45), width: 0.5),
+      ),
+      child: Text(
+        label,
+        style: TextStyle(
+          fontSize: 10,
+          fontWeight: FontWeight.w600,
+          letterSpacing: 0.3,
+          color: accent,
+          height: 1.2,
         ),
       ),
     );
@@ -466,7 +449,8 @@ class _SubtitleLine extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final room = controller.room;
-    final style = theme.textTheme.bodySmall?.copyWith(
+    final style =
+        theme.textTheme.bodySmall?.copyWith(
           fontSize: 12,
           color: theme.colorScheme.onSurfaceVariant,
           height: 1.2,
@@ -484,10 +468,10 @@ class _SubtitleLine extends StatelessWidget {
       builder: (context, _) {
         // Sync status takes over when the client is still warming up.
         final syncStatus = room.client.onSyncStatus.value;
-        final syncing = !FluffyThemes.isColumnMode(context) &&
+        final syncing =
+            !FluffyThemes.isColumnMode(context) &&
             (room.client.onSync.value == null ||
-                (syncStatus != null &&
-                    syncStatus.status == SyncStatus.error) ||
+                (syncStatus != null && syncStatus.status == SyncStatus.error) ||
                 room.client.prevBatch == null);
         if (syncing && syncStatus != null) {
           return Row(
@@ -547,8 +531,9 @@ class _SubtitleLine extends StatelessWidget {
               final lastActive = presence?.lastActiveTimestamp;
               if (lastActive != null) {
                 return Text(
-                  L10n.of(context)
-                      .lastActiveAgo(lastActive.localizedTimeShort(context)),
+                  L10n.of(
+                    context,
+                  ).lastActiveAgo(lastActive.localizedTimeShort(context)),
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: style,
