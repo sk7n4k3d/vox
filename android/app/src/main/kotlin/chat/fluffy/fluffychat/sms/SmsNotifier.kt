@@ -61,6 +61,7 @@ object SmsNotifier {
     private const val MAX_CONTEXT_MESSAGES = 8
     private const val MAX_SUGGESTIONS = 3
     private const val MAX_SUGGESTION_LENGTH = 80
+    private const val LLM_CONTEXT_MESSAGES = 6
 
     /**
      * Historique court par thread pour reconstruire le MessagingStyle.
@@ -200,7 +201,9 @@ object SmsNotifier {
             threadId = threadId,
             address = address,
             locked = locked,
-            choices = if (locked) emptyArray() else quickRepliesFor(body),
+            choices = if (locked) emptyArray() else {
+                llmRepliesFor(context, threadId, recentMsgs) ?: quickRepliesFor(body)
+            },
         )
         val markReadAction = buildMarkReadAction(context, threadId)
         // Code OTP/2FA détecté dans le corps → action « Copier le code » (jamais
@@ -260,6 +263,7 @@ object SmsNotifier {
     /** Retire la notif d'un thread (après lecture / ouverture). */
     fun cancel(context: Context, threadId: Long) {
         history.remove(threadId)
+        LlmSuggestions.invalidate(threadId)
         NotificationManagerCompat.from(context).cancel(threadId.toInt())
     }
 
@@ -340,6 +344,27 @@ object SmsNotifier {
             if (out.size == MAX_SUGGESTIONS) break
         }
         return out
+    }
+
+    /**
+     * Tente des suggestions LLM pour cette notification. Renvoie null si le LLM
+     * est désactivé, indisponible ou n'a rien produit d'exploitable — l'appelant
+     * retombe alors sur [quickRepliesFor]. Bloquante et bornée (voir
+     * [LlmSuggestions]) : appelée depuis notifyIncoming sur Dispatchers.IO.
+     */
+    private fun llmRepliesFor(
+        context: Context,
+        threadId: Long,
+        recentMsgs: List<HistoryEntry>,
+    ): Array<String>? {
+        val transcript = recentMsgs
+            .takeLast(LLM_CONTEXT_MESSAGES)
+            .joinToString("\n") { entry ->
+                val who = if (entry.isLocal) "Moi" else "Contact"
+                "$who: ${entry.fullBody}"
+            }
+        val replies = LlmSuggestions.suggest(context, threadId, transcript)
+        return replies.takeIf { it.isNotEmpty() }?.toTypedArray()
     }
 
     /**
