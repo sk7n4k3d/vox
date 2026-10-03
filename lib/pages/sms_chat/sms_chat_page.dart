@@ -768,6 +768,19 @@ class _SmsChatPageState extends State<SmsChatPage> with WidgetsBindingObserver {
     );
   }
 
+  /// Header menu → "Exporter la conversation". Dumps this thread's SMS + MMS
+  /// (text bodies + metadata) to a JSON file in the app's Documents dir via the
+  /// native layer, then surfaces the path. No storage permission required.
+  Future<void> _exportConversation() async {
+    final path = await SmsBridge.instance.exportSms(widget.threadId);
+    if (!mounted) return;
+    if (path != null) {
+      _showSnackBar('Conversation exportée :\n$path');
+    } else {
+      _showSnackBar('Export impossible');
+    }
+  }
+
   /// « Résumé IA » — collecte les derniers messages textuels du fil SMS et
   /// ouvre le dialogue de résumé. Asynchrone côté réseau (aucun blocage UI).
   Future<void> _openSmsSummary() async {
@@ -937,6 +950,7 @@ class _SmsChatPageState extends State<SmsChatPage> with WidgetsBindingObserver {
       onCall: _callContact,
       onSummary: _openSmsSummary,
       onBlock: _blockContact,
+      onExport: _exportConversation,
     );
   }
 
@@ -2128,6 +2142,7 @@ class _SmsLiquidGlassAppBar extends StatelessWidget
   final VoidCallback onDelete;
   final VoidCallback onGallery;
   final VoidCallback onBlock;
+  final VoidCallback onExport;
   final VoidCallback onCall;
   final VoidCallback onSummary;
 
@@ -2142,6 +2157,7 @@ class _SmsLiquidGlassAppBar extends StatelessWidget
     required this.onDelete,
     required this.onGallery,
     required this.onBlock,
+    required this.onExport,
     required this.onCall,
     required this.onSummary,
   });
@@ -2234,6 +2250,7 @@ class _SmsLiquidGlassAppBar extends StatelessWidget
                       if (value == 'summary') onSummary();
                       if (value == 'delete') onDelete();
                       if (value == 'block') onBlock();
+                      if (value == 'export') onExport();
                     },
                     itemBuilder: (context) => [
                       PopupMenuItem<String>(
@@ -2286,6 +2303,25 @@ class _SmsLiquidGlassAppBar extends StatelessWidget
                             const SizedBox(width: FluffySpacing.md),
                             Text(
                               'Bloquer le numéro',
+                              style: FluffyTypography.bodyM.copyWith(
+                                color: theme.colorScheme.onSurface,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      PopupMenuItem<String>(
+                        value: 'export',
+                        child: Row(
+                          children: [
+                            Icon(
+                              Icons.file_download_outlined,
+                              color: cyber.cyan,
+                              size: 20,
+                            ),
+                            const SizedBox(width: FluffySpacing.md),
+                            Text(
+                              'Exporter la conversation',
                               style: FluffyTypography.bodyM.copyWith(
                                 color: theme.colorScheme.onSurface,
                               ),

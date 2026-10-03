@@ -9,6 +9,7 @@ import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.net.Uri
 import android.os.Build
+import android.os.Environment
 import android.provider.ContactsContract
 import android.provider.Telephony
 import android.telephony.SmsManager
@@ -16,6 +17,8 @@ import android.telephony.SubscriptionManager
 import android.util.Log
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import org.json.JSONArray
+import org.json.JSONObject
 import java.io.ByteArrayOutputStream
 import java.io.File
 import java.io.FileOutputStream
@@ -749,6 +752,88 @@ object SmsBridge {
                     Log.e(TAG, "deleteConversation fallback failed: ${e2.message}")
                 }
                 n
+            }
+        }
+
+    /**
+     * Exports one SMS/MMS thread ([threadId] > 0) or every conversation
+     * ([threadId] <= 0) as JSON into the app's external Documents dir
+     * (getExternalFilesDir(DIRECTORY_DOCUMENTS)) — no storage permission needed,
+     * wiped on uninstall. Returns the absolute path of the written file, or null
+     * on failure.
+     *
+     * Shape: { exportedAt, threadCount, threads: [ { threadId, address,
+     * displayName, messages: [ { id, address, body, date, isFromMe, isMms,
+     * attachments: [ { mimeType, fileName } ] } ] } ] }.
+     */
+    suspend fun exportSms(context: Context, threadId: Long): String? =
+        withContext(Dispatchers.IO) {
+            try {
+                val dir = context.getExternalFilesDir(Environment.DIRECTORY_DOCUMENTS)
+                    ?: context.filesDir
+                if (!dir.exists()) dir.mkdirs()
+
+                val threads = if (threadId > 0L) {
+                    listConversations(context).filter {
+                        (it["threadId"] as? Long) == threadId
+                    }
+                } else {
+                    listConversations(context)
+                }
+
+                val root = JSONObject()
+                root.put("exportedAt", System.currentTimeMillis())
+                root.put("threadCount", threads.size)
+                val threadsArr = JSONArray()
+                for (t in threads) {
+                    val tid = (t["threadId"] as? Long) ?: 0L
+                    val obj = JSONObject()
+                    obj.put("threadId", tid)
+                    obj.put("address", (t["address"] as? String) ?: "")
+                    obj.put("displayName", (t["displayName"] as? String) ?: JSONObject.NULL)
+                    val msgsArr = JSONArray()
+                    for (m in listMessages(context, tid)) {
+                        val mo = JSONObject()
+                        mo.put("id", (m["id"] as? Long) ?: 0L)
+                        mo.put("address", (m["address"] as? String) ?: "")
+                        mo.put("body", (m["body"] as? String) ?: "")
+                        mo.put("date", (m["date"] as? Long) ?: 0L)
+                        mo.put("isFromMe", m["isFromMe"] == true)
+                        mo.put("isMms", m["isMms"] == true)
+                        val attsArr = JSONArray()
+                        @Suppress("UNCHECKED_CAST")
+                        val attachments =
+                            (m["attachments"] as? List<Map<String, Any?>>) ?: emptyList()
+                        for (a in attachments) {
+                            attsArr.put(
+                                JSONObject().apply {
+                                    put("mimeType", (a["mimeType"] as? String) ?: "")
+                                    put("fileName", (a["fileName"] as? String) ?: "")
+                                },
+                            )
+                        }
+                        mo.put("attachments", attsArr)
+                        msgsArr.put(mo)
+                    }
+                    obj.put("messages", msgsArr)
+                    threadsArr.put(obj)
+                }
+                root.put("threads", threadsArr)
+
+                val stamp = java.text.SimpleDateFormat(
+                    "yyyyMMdd-HHmmss",
+                    java.util.Locale.US,
+                ).format(java.util.Date())
+                val suffix = if (threadId > 0L) "thread-$threadId" else "all"
+                val file = File(dir, "vox-sms-$suffix-$stamp.json")
+                FileOutputStream(file).use {
+                    it.write(root.toString(2).toByteArray(Charsets.UTF_8))
+                }
+                Log.i(TAG, "exportSms wrote ${file.absolutePath}")
+                file.absolutePath
+            } catch (e: Exception) {
+                Log.e(TAG, "exportSms failed: ${e.message}")
+                null
             }
         }
 

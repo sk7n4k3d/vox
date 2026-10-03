@@ -353,6 +353,19 @@ class SmsBridge {
       return const [];
     }
   }
+
+  /// Exports [threadId] (> 0) or every conversation (<= 0) as a JSON file into
+  /// the app's Documents dir. Returns the absolute file path, or null on
+  /// failure (no SMS permission, disk error…).
+  Future<String?> exportSms(String threadId) async {
+    try {
+      return await _channel.invokeMethod<String>('exportSms', {
+        'threadId': threadId,
+      });
+    } on PlatformException {
+      return null;
+    }
+  }
 }
 
 class SmsAttachment {

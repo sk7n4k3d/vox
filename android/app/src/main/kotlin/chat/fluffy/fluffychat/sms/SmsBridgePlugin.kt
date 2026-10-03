@@ -246,6 +246,12 @@ class SmsBridgePlugin private constructor(
                 launchReply(result) { BlockedNumbers.list(context) }
             }
 
+            // ── Export / backup JSON (Documents de l'app, sans permission) ────────
+            "exportSms" -> {
+                val threadId = call.longArg("threadId") ?: 0L
+                launchReply(result) { SmsBridge.exportSms(context, threadId) }
+            }
+
             "sendMms" -> {
                 val address = call.argument<String>("address")
                 val body = call.argument<String>("body")          // nullable
