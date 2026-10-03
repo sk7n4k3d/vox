@@ -18,7 +18,7 @@ VOX est un client de messagerie **Matrix** décentralisé, bâti sur le travail 
 
 Ce qu'il apporte par rapport à l'amont :
 
-- **SMS / MMS natifs** — l'app peut devenir ton application SMS par défaut. Les MMS sont durcis, avec gestion des OTP et identification de l'appelant (caller-ID).
+- **SMS / MMS natifs** — l'app peut devenir ton application SMS par défaut. Les MMS sont durcis, avec gestion des OTP et identification de l'appelant (caller-ID). Ajouts récents : blocage de numéros (blacklist système), export des conversations, messages programmés, filtre anti-spam local et aperçus enrichis de liens (lecteurs vidéo intégrés).
 - **Thème cyberpunk `CYBERCORE`** — 6 presets, dont `STARLINK` avec un fond en particules animées.
 - **Assistance IA** — un backend compatible OpenAI configurable : résumés de conversations, suggestions de réponses dans les notifications.
 - **Réponses rapides Wear OS** — répondre depuis la montre.
@@ -39,6 +39,11 @@ Le reste (chiffrement de bout en bout, espaces, appels, sauvegarde chiffrée, st
 
 - 💬 **Matrix décentralisé** — compte sur n'importe quel homeserver compatible.
 - 📲 **App SMS/MMS par défaut** — un seul fil pour Matrix et les SMS.
+- 🚫 **Blocage de numéros** — blacklist système Android : SMS, MMS et appels rejetés d'un seul geste.
+- 💾 **Export des conversations** — sauvegarde JSON d'un fil complet pour changer de téléphone sans rien perdre.
+- ⏰ **Messages programmés** — écrits maintenant, envoyés à l'heure que tu choisis.
+- 🛡️ **Filtre anti-spam local** — les pubs des numéros inconnus partent dans un dossier Spam, sans notification. 100 % sur l'appareil.
+- 🔗 **Aperçus enrichis de liens** — carte avec vignette pour chaque lien partagé ; les vidéos YouTube se jouent dans la conversation, TikTok et Instagram dans leur lecteur officiel intégré.
 - 🔐 **Chiffrement de bout en bout** — via la pile Matrix (vodozemac / Olm-Megolm).
 - 🤖 **Assistance IA** — résumés, suggestions de réponses, backend configurable.
 - 🎨 **Thème cyberpunk CYBERCORE** — 6 presets, mode sombre, Material You.
