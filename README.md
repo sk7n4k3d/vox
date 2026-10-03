@@ -28,12 +28,12 @@ Le reste (chiffrement de bout en bout, espaces, appels, sauvegarde chiffrée, st
 
 ## Captures d'écran
 
-> 📸 Placeholders — à compléter dans `docs/screenshots/` :
->
-> - `01-chat.png` — liste des conversations
-> - `02-theme-cybercore.png` — thème CYBERCORE / STARLINK
-> - `03-sms.png` — fil SMS/MMS natif
-> - `04-ia.png` — assistance IA
+| ![Liste des conversations](docs/screenshots/01-chat-list.png) | ![Conversation](docs/screenshots/02-conversation.png) |
+|---|---|
+| Liste des discussions | Fil de conversation |
+
+*Textes des conversations floutés par respect de la vie privée.*
+
 
 ## Fonctionnalités phares
 
