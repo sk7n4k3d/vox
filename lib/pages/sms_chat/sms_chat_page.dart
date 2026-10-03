@@ -1310,6 +1310,18 @@ class _SmsChatPageState extends State<SmsChatPage> with WidgetsBindingObserver {
                 ),
                 SizedBox(
                   height: _composerRowHeight,
+                  width: 48,
+                  child: Center(
+                    child: IconButton(
+                      tooltip: 'Programmer l\'envoi',
+                      color: cyber.cyan,
+                      icon: const Icon(Icons.schedule_outlined),
+                      onPressed: _hasText && !_sending ? _schedule : null,
+                    ),
+                  ),
+                ),
+                SizedBox(
+                  height: _composerRowHeight,
                   width: _composerRowHeight,
                   child: Center(
                     child: GestureDetector(
