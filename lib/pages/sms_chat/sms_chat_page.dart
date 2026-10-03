@@ -107,6 +107,10 @@ class _SmsChatPageState extends State<SmsChatPage> with WidgetsBindingObserver {
   final Map<int, String?> _mmsPartCache = {};
   final Map<int, Future<String?>> _mmsFutures = {};
 
+  /// partIds already handed to the native MediaStore exporter (public gallery
+  /// auto-upload). In-memory only: the native side keeps the durable dedup set.
+  final Set<int> _exportedPartIds = {};
+
   /// Optimistic (locally-sent) image attachments keyed by their synthetic
   /// negative partId → on-disk path of the picked image.
   final Map<int, String> _localOptimisticPaths = {};
@@ -276,6 +280,7 @@ class _SmsChatPageState extends State<SmsChatPage> with WidgetsBindingObserver {
     });
     _scrollToBottom(animated: false);
     _prefetchMedia(messages);
+    _maybeExportMedia(messages);
   }
 
   /// Pré-extrait en arrière-plan les parts média (images + vidéos) des messages
@@ -287,6 +292,36 @@ class _SmsChatPageState extends State<SmsChatPage> with WidgetsBindingObserver {
         // putIfAbsent via _resolveMmsPart : déclenche le chargement une fois et
         // mémoïse, sans relancer si déjà en cours / fait.
         unawaited(_resolveMmsPart(a.partId));
+      }
+    }
+  }
+
+  /// Safety net for the gallery auto-export: the native pipeline already
+  /// exports MMS parts at download time, but this catches anything it missed
+  /// (e.g. parts ingested before the feature shipped). Gated by
+  /// [AppSettings.autoExportMedia]; dedup is handled natively by content hash.
+  Future<void> _maybeExportMmsPart(int partId, SmsAttachment attachment) async {
+    if (!AppSettings.autoExportMedia.value) return;
+    if (partId <= 0) return;
+    if (!attachment.isVisualMedia) return;
+    if (!_exportedPartIds.add(partId)) return;
+    final path = await _resolveMmsPart(partId);
+    if (path == null) return;
+    await SmsBridge.instance.exportMediaFile(
+      path,
+      attachment.mimeType,
+      attachment.fileName,
+    );
+  }
+
+  /// Scans the [messages] visual attachments and exports the ones not yet sent
+  /// to the native gallery exporter. Best-effort, non blocking.
+  void _maybeExportMedia(List<SmsMessage> messages) {
+    if (!AppSettings.autoExportMedia.value) return;
+    for (final m in messages) {
+      if (m.isFromMe) continue;
+      for (final a in m.visualMedia) {
+        unawaited(_maybeExportMmsPart(a.partId, a));
       }
     }
   }
@@ -316,6 +351,7 @@ class _SmsChatPageState extends State<SmsChatPage> with WidgetsBindingObserver {
       _loadingMore = false;
     });
     _prefetchMedia(older);
+    _maybeExportMedia(older);
     // Compense le décalage introduit par les nouveaux items en tête.
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!_scroll.hasClients) return;

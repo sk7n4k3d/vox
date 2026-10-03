@@ -110,6 +110,10 @@ class SettingsChatView extends StatelessWidget {
                           setting: AppSettings.screenEffectsEnabled,
                         ),
                         SettingsSwitchListTile.adaptive(
+                          title: 'Exporter les médias vers la galerie',
+                          setting: AppSettings.autoExportMedia,
+                        ),
+                        SettingsSwitchListTile.adaptive(
                           title: L10n.of(context).sendOnEnter,
                           setting: AppSettings.sendOnEnter,
                         ),

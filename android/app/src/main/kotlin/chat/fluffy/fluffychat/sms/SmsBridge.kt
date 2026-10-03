@@ -17,6 +17,7 @@ import android.telephony.SubscriptionManager
 import android.util.Log
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import chat.fluffy.fluffychat.media.MediaExporter
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.ByteArrayOutputStream
@@ -2327,6 +2328,13 @@ object SmsBridge {
                     } catch (e: Exception) {
                         Log.w(TAG, "insertRetrievedMms: fallback _data #$index échoué: ${e.message}")
                     }
+                }
+                // Public-gallery export: an incoming visual attachment is made
+                // visible to MediaStore as soon as its bytes are persisted,
+                // independently of whether the user ever opens the conversation.
+                if (MediaExporter.isEnabled(context)) {
+                    val exportMime = resolveMime(contentType, part.name)
+                    MediaExporter.exportBytes(context, part.data, exportMime, part.name)
                 }
             }
         }

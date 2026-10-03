@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 import 'dart:math';
 import 'dart:typed_data';
@@ -5,6 +6,7 @@ import 'dart:typed_data';
 import 'package:fluffychat/config/themes.dart';
 import 'package:fluffychat/utils/client_download_content_extension.dart';
 import 'package:fluffychat/utils/matrix_sdk_extensions/matrix_file_extension.dart';
+import 'package:fluffychat/utils/media/media_exporter.dart';
 import 'package:fluffychat/widgets/matrix.dart';
 import 'package:flutter/material.dart';
 import 'package:matrix/matrix.dart';
@@ -102,6 +104,9 @@ class _MxcImageState extends State<MxcImage> {
         setState(() {
           _imageData = data.bytes;
         });
+        if (!widget.isThumbnail) {
+          unawaited(MediaExporter.instance.exportMatrixEvent(event, data));
+        }
         return;
       }
     }

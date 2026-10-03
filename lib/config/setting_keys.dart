@@ -35,6 +35,9 @@ enum AppSettings<T> {
   sendPublicReadReceipts<bool>('chat.fluffy.send_public_read_receipts', true),
   swipeRightToLeftToReply<bool>('chat.fluffy.swipeRightToLeftToReply', true),
   screenEffectsEnabled<bool>('chat.fluffy.screen_effects_enabled', true),
+  // Expose received images/videos in the public gallery (MediaStore) so that
+  // gallery clients like Nextcloud auto-upload them.
+  autoExportMedia<bool>('chat.fluffy.auto_export_media', true),
   // Police des bulles de message (SMS + Matrix, identique). Valeurs :
   // '' = Inter (défaut), 'Rajdhani', 'JetBrainsMono', 'Orbitron'.
   messageFontFamily<String>('chat.fluffy.message_font_family', ''),

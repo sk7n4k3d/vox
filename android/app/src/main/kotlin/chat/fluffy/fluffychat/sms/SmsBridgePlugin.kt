@@ -9,6 +9,7 @@ import android.os.Handler
 import android.os.Looper
 import android.provider.Telephony
 import android.util.Log
+import chat.fluffy.fluffychat.media.MediaExporter
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.EventChannel
 import io.flutter.plugin.common.MethodCall
@@ -37,6 +38,7 @@ import kotlinx.coroutines.withContext
  *   - sendMms(address: String, body: String?, imagePath: String?)
  *                                               -> Long? (mmsId Outbox) | null si échec. Best-effort carrier.
  *   - loadMmsPart(partId: Int|Long)             -> String? (path du fichier cache écrit) | null si échec
+ *   - exportMediaFile(filePath, mimeType, displayName) -> String? (URI MediaStore) | null
  *   - markRead(threadId: Int|Long)              -> Int (nb lignes mises à jour)
  *
  * Events (EventChannel) : à chaque message entrant, un Map est poussé avec un champ `kind` :
@@ -212,6 +214,28 @@ class SmsBridgePlugin private constructor(
                     return
                 }
                 launchReply(result) { SmsBridge.loadMmsPart(context, partId) }
+            }
+
+            // Exposes a local image/video file to the public MediaStore gallery
+            // (Pictures/VOX, Movies/VOX). Returns the media URI, or null when the
+            // export is unavailable (API < 29), disabled, or already done.
+            "exportMediaFile" -> {
+                val filePath = call.argument<String>("filePath")
+                val mimeType = call.argument<String>("mimeType")
+                val displayName = call.argument<String>("displayName")
+                if (filePath.isNullOrEmpty() || mimeType.isNullOrEmpty()) {
+                    result.error("BAD_ARGS", "filePath or mimeType missing", null)
+                    return
+                }
+                launchReply(result) {
+                    if (!MediaExporter.isEnabled(context)) return@launchReply null
+                    MediaExporter.export(
+                        context,
+                        filePath,
+                        mimeType,
+                        displayName ?: filePath.substringAfterLast('/'),
+                    )
+                }
             }
 
             // ── Blocage de numéros (blacklist système BlockedNumberContract) ──────

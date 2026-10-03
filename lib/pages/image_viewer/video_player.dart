@@ -1,8 +1,10 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:chewie/chewie.dart';
 import 'package:fluffychat/utils/localized_exception_extension.dart';
 import 'package:fluffychat/utils/matrix_sdk_extensions/event_extension.dart';
+import 'package:fluffychat/utils/media/media_exporter.dart';
 import 'package:fluffychat/utils/platform_infos.dart';
 import 'package:fluffychat/widgets/blur_hash.dart';
 import 'package:flutter/foundation.dart';
@@ -58,6 +60,7 @@ class EventVideoPlayerState extends State<EventVideoPlayer> {
 
       // Dispose the controllers if we already have them.
       _disposeControllers();
+      unawaited(MediaExporter.instance.exportMatrixEvent(widget.event, videoFile));
       late VideoPlayerController videoPlayerController;
 
       // Create the VideoPlayerController from the contents of videoFile.

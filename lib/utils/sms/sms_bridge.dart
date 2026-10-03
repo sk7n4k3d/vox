@@ -286,6 +286,26 @@ class SmsBridge {
     }
   }
 
+  /// Exposes a local image/video file to the public Android gallery
+  /// (MediaStore, Pictures/VOX or Movies/VOX). Returns the media URI, or null
+  /// when the export is a no-op (API < 29, disabled setting, already exported,
+  /// non-visual MIME). Caller must gate on [AppSettings.autoExportMedia].
+  Future<String?> exportMediaFile(
+    String filePath,
+    String mimeType, [
+    String? displayName,
+  ]) async {
+    try {
+      return await _channel.invokeMethod<String>('exportMediaFile', {
+        'filePath': filePath,
+        'mimeType': mimeType,
+        'displayName': displayName,
+      });
+    } on PlatformException {
+      return null;
+    }
+  }
+
   /// Sends an MMS (optional text + optional image path). Returns the provider
   /// row id of the outbox entry (or null on failure).
   Future<int?> sendMms(String address, String? body, String? imagePath) async {
