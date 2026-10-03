@@ -91,6 +91,8 @@ dependencies:
   animated_emoji: ^3.2.1
   flutter_confetti: ^0.5.1
   lottie: ^3.3.3
+  youtube_player_iframe: ^6.0.2
+  webview_flutter: ^4.14.1
 
 dev_dependencies:
   dart_code_linter: ^3.2.1
