@@ -732,6 +732,42 @@ class _SmsChatPageState extends State<SmsChatPage> with WidgetsBindingObserver {
     Navigator.of(context).pop();
   }
 
+  /// Header menu → "Bloquer le numéro". Uses the SYSTEM blacklist
+  /// (BlockedNumberContract): Android itself then rejects that sender's
+  /// SMS/MMS and calls — no notification, nothing stored. Same base as
+  /// Google Messages / QKSMS. Requires VOX to hold the default-SMS role
+  /// (contract requirement) — if the role isn't held, block() fails and we
+  /// surface an error toast.
+  Future<void> _blockContact() async {
+    final blocked = await SmsBridge.instance.isBlocked(widget.address);
+    if (!mounted) return;
+    if (blocked) {
+      final unblocked = await SmsBridge.instance.unblockNumber(widget.address);
+      if (unblocked > 0) {
+        _showSnackBar('Numéro débloqué');
+      } else {
+        _showSnackBar('Impossible de débloquer ce numéro');
+      }
+      return;
+    }
+    final ok = await SmsBridge.instance.blockNumber(widget.address);
+    if (!mounted) return;
+    if (ok) {
+      _showSnackBar('Numéro bloqué — SMS et appels rejetés');
+    } else {
+      _showSnackBar(
+        'Blocage impossible — VOX doit être l\'app SMS par défaut',
+      );
+    }
+  }
+
+  void _showSnackBar(String message) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(message), behavior: SnackBarBehavior.floating),
+    );
+  }
+
   /// « Résumé IA » — collecte les derniers messages textuels du fil SMS et
   /// ouvre le dialogue de résumé. Asynchrone côté réseau (aucun blocage UI).
   Future<void> _openSmsSummary() async {
@@ -900,6 +936,7 @@ class _SmsChatPageState extends State<SmsChatPage> with WidgetsBindingObserver {
       onGallery: _openSmsMediaGallery,
       onCall: _callContact,
       onSummary: _openSmsSummary,
+      onBlock: _blockContact,
     );
   }
 
@@ -2090,6 +2127,7 @@ class _SmsLiquidGlassAppBar extends StatelessWidget
   final VoidCallback onBack;
   final VoidCallback onDelete;
   final VoidCallback onGallery;
+  final VoidCallback onBlock;
   final VoidCallback onCall;
   final VoidCallback onSummary;
 
@@ -2103,6 +2141,7 @@ class _SmsLiquidGlassAppBar extends StatelessWidget
     required this.onBack,
     required this.onDelete,
     required this.onGallery,
+    required this.onBlock,
     required this.onCall,
     required this.onSummary,
   });
@@ -2194,6 +2233,7 @@ class _SmsLiquidGlassAppBar extends StatelessWidget
                       if (value == 'gallery') onGallery();
                       if (value == 'summary') onSummary();
                       if (value == 'delete') onDelete();
+                      if (value == 'block') onBlock();
                     },
                     itemBuilder: (context) => [
                       PopupMenuItem<String>(
@@ -2227,6 +2267,25 @@ class _SmsLiquidGlassAppBar extends StatelessWidget
                             const SizedBox(width: FluffySpacing.md),
                             Text(
                               'Galerie médias',
+                              style: FluffyTypography.bodyM.copyWith(
+                                color: theme.colorScheme.onSurface,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      PopupMenuItem<String>(
+                        value: 'block',
+                        child: Row(
+                          children: [
+                            Icon(
+                              Icons.block_outlined,
+                              color: cyber.warn,
+                              size: 20,
+                            ),
+                            const SizedBox(width: FluffySpacing.md),
+                            Text(
+                              'Bloquer le numéro',
                               style: FluffyTypography.bodyM.copyWith(
                                 color: theme.colorScheme.onSurface,
                               ),

@@ -299,6 +299,60 @@ class SmsBridge {
       return null;
     }
   }
+
+  // ── Blocage de numéros (blacklist système Android) ──────────────────────────
+
+  /// True si [address] est dans la blacklist système (BlockedNumberContract).
+  Future<bool> isBlocked(String address) async {
+    try {
+      return await _channel.invokeMethod<bool>('isBlocked', {
+            'address': address,
+          }) ??
+          false;
+    } on PlatformException {
+      return false;
+    }
+  }
+
+  /// Bloque [address] via la blacklist système : le système rejette alors
+  /// lui-même ses SMS/MMS ET ses appels. Exige que VOX soit l'app SMS par
+  /// défaut (contrat Android). @return true si l'insertion a réussi.
+  Future<bool> blockNumber(String address) async {
+    try {
+      return await _channel.invokeMethod<bool>('blockNumber', {
+            'address': address,
+          }) ??
+          false;
+    } on PlatformException {
+      return false;
+    }
+  }
+
+  /// Retire [address] de la blacklist système (toutes variantes du numéro).
+  /// @return nombre d'entrées supprimées.
+  Future<int> unblockNumber(String address) async {
+    try {
+      return await _channel.invokeMethod<int>('unblockNumber', {
+            'address': address,
+          }) ??
+          0;
+    } on PlatformException {
+      return 0;
+    }
+  }
+
+  /// Liste les numéros bloqués : maps {id, number, e164}.
+  Future<List<Map<String, dynamic>>> listBlockedNumbers() async {
+    try {
+      final raw = await _channel
+          .invokeMethod<List<dynamic>>('listBlockedNumbers');
+      return (raw ?? [])
+          .map((e) => Map<String, dynamic>.from(e as Map))
+          .toList();
+    } on PlatformException {
+      return const [];
+    }
+  }
 }
 
 class SmsAttachment {

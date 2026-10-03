@@ -214,6 +214,38 @@ class SmsBridgePlugin private constructor(
                 launchReply(result) { SmsBridge.loadMmsPart(context, partId) }
             }
 
+            // ── Blocage de numéros (blacklist système BlockedNumberContract) ──────
+            "isBlocked" -> {
+                val address = call.argument<String>("address")
+                if (address.isNullOrEmpty()) {
+                    result.error("BAD_ARGS", "address missing", null)
+                    return
+                }
+                launchReply(result) { BlockedNumbers.isBlocked(context, address) }
+            }
+
+            "blockNumber" -> {
+                val address = call.argument<String>("address")
+                if (address.isNullOrEmpty()) {
+                    result.error("BAD_ARGS", "address missing", null)
+                    return
+                }
+                launchReply(result) { BlockedNumbers.block(context, address) }
+            }
+
+            "unblockNumber" -> {
+                val address = call.argument<String>("address")
+                if (address.isNullOrEmpty()) {
+                    result.error("BAD_ARGS", "address missing", null)
+                    return
+                }
+                launchReply(result) { BlockedNumbers.unblock(context, address) }
+            }
+
+            "listBlockedNumbers" -> {
+                launchReply(result) { BlockedNumbers.list(context) }
+            }
+
             "sendMms" -> {
                 val address = call.argument<String>("address")
                 val body = call.argument<String>("body")          // nullable
