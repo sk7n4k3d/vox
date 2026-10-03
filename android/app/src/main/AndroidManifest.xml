@@ -37,6 +37,11 @@
     <uses-permission android:name="android.permission.RECEIVE_WAP_PUSH" />
     <!-- Optionnel : résolution displayName des numéros. Non bloquant si refusé. -->
     <uses-permission android:name="android.permission.READ_CONTACTS" />
+
+    <!-- Requis pour les SMS longs (multi-segments) : le framework lit le GroupIdLevel1 de la
+         SIM (hasEmsSupport) au moment du sendMultipartTextMessage, et ce binder exige
+         READ_PHONE_STATE. Sans lui, SecurityException -> messages longs jamais envoyés. -->
+    <uses-permission android:name="android.permission.READ_PHONE_STATE" />
     <!-- App SMS par défaut : exemption Doze pour que SMS_DELIVER réveille le
          process même app fermée + tel en veille profonde (sinon SMS différés/ratés). -->
     <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
