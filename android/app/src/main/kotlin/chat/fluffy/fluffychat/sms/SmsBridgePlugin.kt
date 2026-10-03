@@ -252,6 +252,24 @@ class SmsBridgePlugin private constructor(
                 launchReply(result) { SmsBridge.exportSms(context, threadId) }
             }
 
+            // ── Filtre spam local (set natif persistant consulté par SmsNotifier) ──
+            "markThreadSpam" -> {
+                val threadId = call.longArg("threadId")
+                if (threadId == null) {
+                    result.error("BAD_ARGS", "threadId missing", null)
+                    return
+                }
+                val spam = call.argument<Boolean>("spam") ?: true
+                launchReply(result) {
+                    SpamFilter.mark(context, threadId, spam)
+                    null
+                }
+            }
+
+            "listSpamThreads" -> {
+                launchReply(result) { SpamFilter.list(context) }
+            }
+
             "sendMms" -> {
                 val address = call.argument<String>("address")
                 val body = call.argument<String>("body")          // nullable

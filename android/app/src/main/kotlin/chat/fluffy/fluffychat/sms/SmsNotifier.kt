@@ -123,6 +123,10 @@ object SmsNotifier {
         imageMime: String? = null,
     ) {
         if (!prefBool(context, KEY_ENABLED, true)) return
+        // Thread flagged as spam by the local filter (mirrored from Dart) → stay
+        // silent. The notifier runs synchronously on SMS_DELIVER, before Dart
+        // sees the event, hence the persisted native set (SpamFilter).
+        if (SpamFilter.isSpam(context, threadId)) return
         // Conversation déjà ouverte au premier plan → pas de notif.
         if (threadId == activeThreadId) return
         if (ContextCompat.checkSelfPermission(

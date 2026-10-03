@@ -366,6 +366,32 @@ class SmsBridge {
       return null;
     }
   }
+
+  // ── Filtre spam local ────────────────────────────────────────────────────────
+
+  /// Flags/unflags [threadId] as spam in the native persisted set consulted by
+  /// the notifier, so a known-spam thread stops notifying even when the app is
+  /// closed. Dart mirrors its own verdict here.
+  Future<void> markThreadSpam(String threadId, bool spam) async {
+    try {
+      await _channel.invokeMethod<void>('markThreadSpam', {
+        'threadId': threadId,
+        'spam': spam,
+      });
+    } on PlatformException {
+      // best-effort
+    }
+  }
+
+  /// Thread ids currently flagged as spam on the native side.
+  Future<Set<String>> listSpamThreads() async {
+    try {
+      final raw = await _channel.invokeMethod<List<dynamic>>('listSpamThreads');
+      return (raw ?? []).map((e) => '$e').toSet();
+    } on PlatformException {
+      return const {};
+    }
+  }
 }
 
 class SmsAttachment {

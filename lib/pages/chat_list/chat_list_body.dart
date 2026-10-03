@@ -265,10 +265,35 @@ class ChatListViewBody extends StatelessWidget {
                                   }).toList())
                           : controller.smsConversations;
                       final entries = _ChatListSections.layout(rooms, sms);
+                      if (!controller.isSearchMode &&
+                          controller.smsSpamConversations.isNotEmpty) {
+                        entries.add(_ChatListEntry.spamCounter());
+                      }
                       return SliverList.builder(
                         itemCount: entries.length,
                         itemBuilder: (BuildContext context, int i) {
                           final entry = entries[i];
+                          if (entry.isSpamCounter) {
+                            final cyber = CyberColors.of(context);
+                            final count = controller.smsSpamConversations.length;
+                            return ListTile(
+                              leading: Icon(
+                                Icons.shield_outlined,
+                                color: cyber.warn,
+                              ),
+                              title: Text(
+                                'Spam ($count)',
+                                style: FluffyTypography.bodyM.copyWith(
+                                  color: cyber.warn,
+                                ),
+                              ),
+                              subtitle: const Text(
+                                'Appui long pour gérer',
+                                style: FluffyTypography.bodyS,
+                              ),
+                              onLongPress: controller.showSpamSheet,
+                            );
+                          }
                           if (entry.isHeader) {
                             return _ChatListSectionHeader(
                               label: entry.headerLabel!,
@@ -531,12 +556,27 @@ class _ChatListEntry {
   final Room? room;
   final SmsConversation? sms;
   final String? headerLabel;
+  final bool isSpamCounter;
 
-  _ChatListEntry.header(this.headerLabel) : room = null, sms = null;
-  _ChatListEntry.room(this.room) : headerLabel = null, sms = null;
-  _ChatListEntry.sms(this.sms) : headerLabel = null, room = null;
+  _ChatListEntry.header(this.headerLabel)
+    : room = null,
+      sms = null,
+      isSpamCounter = false;
+  _ChatListEntry.room(this.room)
+    : headerLabel = null,
+      sms = null,
+      isSpamCounter = false;
+  _ChatListEntry.sms(this.sms)
+    : headerLabel = null,
+      room = null,
+      isSpamCounter = false;
+  _ChatListEntry.spamCounter()
+    : room = null,
+      sms = null,
+      headerLabel = null,
+      isSpamCounter = true;
 
-  bool get isHeader => room == null && sms == null;
+  bool get isHeader => room == null && sms == null && !isSpamCounter;
 }
 
 /// Coloured swipe background for SMS conversation dismiss actions.

@@ -37,10 +37,10 @@ object BlockedNumbers {
     fun block(context: Context, address: String): Boolean {
         return try {
             val values = android.content.ContentValues().apply {
-                put(BlockedNumberContract.BlockedNumberColumns.COLUMN_ORIGINAL_NUMBER, address)
-                put(BlockedNumberContract.BlockedNumberColumns.COLUMN_E164_NUMBER, normalize(address))
+                put(BlockedNumberContract.BlockedNumbers.COLUMN_ORIGINAL_NUMBER, address)
+                put(BlockedNumberContract.BlockedNumbers.COLUMN_E164_NUMBER, normalize(address))
             }
-            context.contentResolver.insert(BlockedNumberContract.BlockedNumberColumns.CONTENT_URI, values) != null
+            context.contentResolver.insert(BlockedNumberContract.BlockedNumbers.CONTENT_URI, values) != null
         } catch (e: Exception) {
             Log.e(SmsBridge.TAG, "block failed: ${e.message}")
             false
@@ -54,9 +54,9 @@ object BlockedNumbers {
             var removed = 0
             for (v in variants) {
                 removed += context.contentResolver.delete(
-                    BlockedNumberContract.BlockedNumberColumns.CONTENT_URI,
-                    "${BlockedNumberContract.BlockedNumberColumns.COLUMN_ORIGINAL_NUMBER}=? OR " +
-                        "${BlockedNumberContract.BlockedNumberColumns.COLUMN_E164_NUMBER}=?",
+                    BlockedNumberContract.BlockedNumbers.CONTENT_URI,
+                    "${BlockedNumberContract.BlockedNumbers.COLUMN_ORIGINAL_NUMBER}=? OR " +
+                        "${BlockedNumberContract.BlockedNumbers.COLUMN_E164_NUMBER}=?",
                     arrayOf(v, v),
                 )
             }
@@ -72,11 +72,11 @@ object BlockedNumbers {
         return try {
             val out = mutableListOf<Map<String, Any?>>()
             context.contentResolver.query(
-                BlockedNumberContract.BlockedNumberColumns.CONTENT_URI,
+                BlockedNumberContract.BlockedNumbers.CONTENT_URI,
                 arrayOf(
-                    BlockedNumberContract.BlockedNumberColumns._ID,
-                    BlockedNumberContract.BlockedNumberColumns.COLUMN_ORIGINAL_NUMBER,
-                    BlockedNumberContract.BlockedNumberColumns.COLUMN_E164_NUMBER,
+                    android.provider.BaseColumns._ID,
+                    BlockedNumberContract.BlockedNumbers.COLUMN_ORIGINAL_NUMBER,
+                    BlockedNumberContract.BlockedNumbers.COLUMN_E164_NUMBER,
                 ),
                 null, null, null,
             )?.use { c ->

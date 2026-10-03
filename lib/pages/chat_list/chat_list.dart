@@ -16,6 +16,7 @@ import 'package:fluffychat/utils/scheduled/scheduled_messages.dart';
 import 'package:fluffychat/utils/show_scaffold_dialog.dart';
 import 'package:fluffychat/utils/show_update_snackbar.dart';
 import 'package:fluffychat/utils/sms/sms_bridge.dart';
+import 'package:fluffychat/utils/sms/spam_filter.dart';
 import 'package:fluffychat/widgets/adaptive_dialogs/adaptive_dialog_action.dart';
 import 'package:fluffychat/widgets/adaptive_dialogs/show_modal_action_popup.dart';
 import 'package:fluffychat/widgets/adaptive_dialogs/show_ok_cancel_alert_dialog.dart';
@@ -271,8 +272,13 @@ class ChatListController extends State<ChatList>
   /// SMS conversations merged into the chat list (only when VOX is the default
   /// SMS app). Loaded natively via [SmsBridge]; refreshed on each incoming SMS.
   List<SmsConversation> smsConversations = const [];
+
+  /// Threads hidden by the local spam filter, surfaced behind a single
+  /// "Spam (N)" counter at the bottom of the list.
+  List<SmsConversation> smsSpamConversations = const [];
   StreamSubscription<SmsIncoming>? _smsSub;
   StreamSubscription<SmsOpenRequest>? _smsOpenSub;
+  StreamSubscription<void>? _spamSub;
   Timer? _smsReloadDebounce;
 
   /// Garde-fou : la proposition d'exemption batterie n'est tentée qu'une fois par
@@ -298,8 +304,14 @@ class ChatListController extends State<ChatList>
     // *in the model* so sensitive content never reaches the widget tree (a blur
     // alone is reversible and leaks via screenshots/inspector).
     final visible = <SmsConversation>[];
+    final spam = <SmsConversation>[];
+    final spamEnabled = SpamFilterService.instance.isEnabled;
     for (final c in convs) {
       if (archived.contains(c.threadId)) continue;
+      if (spamEnabled && SpamFilterService.instance.isSpam(c.threadId)) {
+        spam.add(c);
+        continue;
+      }
       if (ConversationLock.instance.isHidden(
         ConversationLock.smsId(c.threadId),
       )) {
@@ -317,7 +329,40 @@ class ChatListController extends State<ChatList>
         visible.add(c);
       }
     }
-    setState(() => smsConversations = visible);
+    setState(() {
+      smsConversations = visible;
+      smsSpamConversations = spam;
+    });
+  }
+
+  /// Classifies an incoming SMS against the local spam heuristic. Best-effort:
+  /// the contact book decides "not spam"; when enough criteria match the thread
+  /// is flagged (hidden from the list + silenced natively), the notification of
+  /// the already-shown message is cancelled, and the list reloads.
+  Future<void> _maybeFlagSpam(SmsIncoming sms) async {
+    if (!SpamFilterService.instance.isEnabled || sms.threadId.isEmpty) return;
+    if (SpamFilterService.instance.isSpam(sms.threadId)) return;
+    var hasContact = false;
+    try {
+      final contacts = await SmsBridge.instance.listContacts();
+      final target = sms.address.replaceAll(RegExp(r'[^0-9]'), '');
+      hasContact = contacts.any(
+        (c) => c.numbers.any(
+          (n) => n.number.replaceAll(RegExp(r'[^0-9]'), '') == target,
+        ),
+      );
+    } catch (_) {
+      hasContact = false;
+    }
+    final spam = SpamFilterService.looksLikeSpam(
+      address: sms.address,
+      body: sms.body,
+      hasContact: hasContact,
+    );
+    if (!spam) return;
+    await SpamFilterService.instance.flag(sms.threadId);
+    await SmsBridge.instance.cancelNotification(sms.threadId);
+    if (mounted) await _loadSmsConversations();
   }
 
   /// Pull-to-refresh de la liste de conversations : force un one-shot sync
@@ -444,6 +489,79 @@ class ChatListController extends State<ChatList>
   Future<void> deleteSms(SmsConversation conv) async {
     await SmsBridge.instance.deleteConversation(conv.threadId);
     await _loadSmsConversations();
+  }
+
+  /// Opens the spam sheet (long-press on the "Spam (N)" counter): lists hidden
+  /// spam threads with a "Débloquer / Restaurer" button each. Restoring unhides
+  /// the thread and re-enables its notifications.
+  Future<void> showSpamSheet() async {
+    await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      builder: (sheetContext) => StreamBuilder<void>(
+        stream: SpamFilterService.instance.changes,
+        builder: (sheetContext, _) {
+          final spam = smsSpamConversations;
+          return SafeArea(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Padding(
+                  padding: const EdgeInsets.all(16),
+                  child: Row(
+                    children: [
+                      const Icon(Icons.shield_outlined),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Text(
+                          'Spam (${spam.length})',
+                          style: Theme.of(sheetContext).textTheme.titleMedium,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                if (spam.isEmpty)
+                  const Padding(
+                    padding: EdgeInsets.fromLTRB(16, 0, 16, 24),
+                    child: Text('Aucun message indésirable'),
+                  )
+                else
+                  Flexible(
+                    child: ListView.builder(
+                      shrinkWrap: true,
+                      itemCount: spam.length,
+                      itemBuilder: (context, i) {
+                        final conv = spam[i];
+                        return ListTile(
+                          title: Text(conv.title),
+                          subtitle: Text(
+                            conv.snippet,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                          trailing: TextButton(
+                            onPressed: () async {
+                              await SpamFilterService.instance.restore(
+                                conv.threadId,
+                              );
+                              if (sheetContext.mounted) {
+                                Navigator.of(sheetContext).pop();
+                              }
+                              if (mounted) await _loadSmsConversations();
+                            },
+                            child: const Text('Débloquer'),
+                          ),
+                        );
+                      },
+                    ),
+                  ),
+              ],
+            ),
+          );
+        },
+      ),
+    );
   }
 
   /// Long-press menu for an SMS conversation: lock / archive / delete.
@@ -725,15 +843,29 @@ class ChatListController extends State<ChatList>
 
     scrollController.addListener(_onScroll);
     _waitForFirstSync();
+    // Load the local spam filter state (enabled flag + flagged threads) and
+    // mirror the native persisted set before the first list paint, so hidden
+    // spam threads never flash in the list.
+    SpamFilterService.instance.load().then((_) async {
+      await SpamFilterService.instance.syncFromNative();
+      if (mounted) _loadSmsConversations();
+    });
+    _spamSub = SpamFilterService.instance.changes.listen((_) {
+      if (mounted) {
+        setState(() {});
+        _loadSmsConversations();
+      }
+    });
     _loadSmsConversations();
     // Coalesce incoming-SMS bursts (a multipart SMS arrives as N events) into a
     // single reload so we don't re-query the whole provider N times in a row.
-    _smsSub = SmsBridge.instance.incoming.listen((_) {
+    _smsSub = SmsBridge.instance.incoming.listen((sms) {
       _smsReloadDebounce?.cancel();
       _smsReloadDebounce = Timer(
         const Duration(milliseconds: 800),
         _loadSmsConversations,
       );
+      _maybeFlagSpam(sms);
     });
     // Open-conversation requests from notification taps (app already running).
     _smsOpenSub = SmsBridge.instance.openRequests.listen(openSmsFromIntent);
@@ -793,6 +925,7 @@ class ChatListController extends State<ChatList>
     _intentFileStreamSubscription?.cancel();
     _smsSub?.cancel();
     _smsOpenSub?.cancel();
+    _spamSub?.cancel();
     _smsReloadDebounce?.cancel();
     _coolDown?.cancel();
     ConversationLock.instance.removeListener(_onConversationLockChanged);
