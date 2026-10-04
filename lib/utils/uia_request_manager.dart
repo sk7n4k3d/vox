@@ -40,7 +40,7 @@ extension UiaRequestManager on MatrixState {
           if (input == null || input.isEmpty) {
             return uiaRequest.cancel();
           }
-          return uiaRequest.completeStage(
+          await uiaRequest.completeStage(
             AuthenticationPassword(
               session: uiaRequest.session,
               password: input,
@@ -70,11 +70,12 @@ extension UiaRequestManager on MatrixState {
                 okLabel: l10n.iHaveClickedOnLink,
                 cancelLabel: l10n.cancel,
               )) {
-            return uiaRequest.completeStage(auth);
+            await uiaRequest.completeStage(auth);
+          } else {
+            return uiaRequest.cancel();
           }
-          return uiaRequest.cancel();
         case AuthenticationTypes.dummy:
-          return uiaRequest.completeStage(
+          await uiaRequest.completeStage(
             AuthenticationData(
               type: AuthenticationTypes.dummy,
               session: uiaRequest.session,
@@ -101,13 +102,13 @@ extension UiaRequestManager on MatrixState {
           );
           if (consent != OkCancelResult.ok) return uiaRequest.cancel();
 
-          launchUrl(url, mode: LaunchMode.inAppBrowserView);
+          await launchUrl(url, mode: LaunchMode.inAppBrowserView);
           final completer = Completer();
           final listener = AppLifecycleListener(onResume: completer.complete);
           await completer.future;
           listener.dispose();
 
-          return uiaRequest.completeStage(
+          await uiaRequest.completeStage(
             AuthenticationData(session: uiaRequest.session),
           );
       }
@@ -120,7 +121,6 @@ extension UiaRequestManager on MatrixState {
 
 class UiaException implements Exception {
   final String reason;
-
   UiaException(this.reason);
 
   @override

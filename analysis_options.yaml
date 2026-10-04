@@ -39,6 +39,13 @@ analyzer:
     use_build_context_synchronously: ignore
   exclude:
     - lib/l10n/*.dart
+    - build/**
+    - android/**
+    - ios/**
+    - web/**
+    - windows/**
+    - macos/**
+    - linux/**
 
 dart_code_linter:
   rules:
