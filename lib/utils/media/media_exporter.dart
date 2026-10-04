@@ -21,6 +21,15 @@ class MediaExporter {
   static const String _prefsKey = 'chat.fluffy.exported.matrix_events';
   static const int _maxEntries = 2000;
 
+  /// Message types whose incoming attachments are exported on receipt.
+  /// A sticker is an image, so it belongs to this set — the same set
+  /// the timeline renders through MxcImage / the video player.
+  static const Set<String> _autoExportMessageTypes = {
+    MessageTypes.Image,
+    MessageTypes.Video,
+    MessageTypes.Sticker,
+  };
+
   List<String>? _exported;
   Future<void>? _loadFuture;
 
@@ -75,6 +84,31 @@ class MediaExporter {
       await prefs.setStringList(_prefsKey, exported);
     } catch (e) {
       debugPrint('MediaExporter: matrix export failed: $e');
+    }
+  }
+
+  /// Receive-path entry point: called for every incoming timeline event
+  /// ([Client.onTimelineEvent], fired after decryption). Downloads the
+  /// attachment of an incoming image/video message and mirrors it into
+  /// the public MediaStore, without the user having to open the
+  /// conversation first. The display-time hooks (MxcImage, video
+  /// player) keep calling [exportMatrixEvent]; the event-id dedup here
+  /// and the native content-hash dedup make the two paths overlap-safe.
+  Future<void> exportIncomingEvent(Event event) async {
+    try {
+      if (!AppSettings.autoExportMedia.value) return;
+      if (!PlatformInfos.isAndroid) return;
+      if (event.redacted) return;
+      if (event.senderId == event.room.client.userID) return;
+      if (!_autoExportMessageTypes.contains(event.messageType)) return;
+
+      await _ensureLoaded();
+      if ((_exported ?? const []).contains(event.eventId)) return;
+
+      final file = await event.downloadAndDecryptAttachment();
+      await exportMatrixEvent(event, file);
+    } catch (e) {
+      debugPrint('MediaExporter: matrix receive export failed: $e');
     }
   }
 }

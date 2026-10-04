@@ -9,6 +9,7 @@ import 'package:fluffychat/utils/audio_playback_controller.dart';
 import 'package:fluffychat/utils/client_manager.dart';
 import 'package:fluffychat/utils/init_with_restore.dart';
 import 'package:fluffychat/utils/matrix_sdk_extensions/matrix_file_extension.dart';
+import 'package:fluffychat/utils/media/media_exporter.dart';
 import 'package:fluffychat/utils/platform_infos.dart';
 import 'package:fluffychat/utils/uia_request_manager.dart';
 import 'package:fluffychat/utils/voip_plugin.dart';
@@ -180,6 +181,7 @@ class MatrixState extends State<Matrix> with WidgetsBindingObserver {
   final onRoomKeyRequestSub = <String, StreamSubscription>{};
   final onKeyVerificationRequestSub = <String, StreamSubscription>{};
   final onNotification = <String, StreamSubscription>{};
+  final onMediaExportSub = <String, StreamSubscription>{};
   final onLogoutSub = <String, StreamSubscription<LoginState>>{};
   final onUiaRequest = <String, StreamSubscription<UiaRequest>>{};
 
@@ -291,6 +293,11 @@ class MatrixState extends State<Matrix> with WidgetsBindingObserver {
           FluffyChatApp.router.go('/');
         });
     onUiaRequest[name] ??= c.onUiaRequest.stream.listen(uiaRequestHandler);
+    // Auto-export received image/video messages to the public
+    // MediaStore as soon as they arrive (see MediaExporter).
+    onMediaExportSub[name] ??= c.onTimelineEvent.stream.listen((event) {
+      unawaited(MediaExporter.instance.exportIncomingEvent(event));
+    });
     if (PlatformInfos.isWeb || PlatformInfos.isLinux) {
       c.onSync.stream.first.then((s) {
         html.Notification.requestPermission();
@@ -311,6 +318,8 @@ class MatrixState extends State<Matrix> with WidgetsBindingObserver {
     onLogoutSub.remove(name);
     onNotification[name]?.cancel();
     onNotification.remove(name);
+    onMediaExportSub[name]?.cancel();
+    onMediaExportSub.remove(name);
   }
 
   void initMatrix() {
@@ -394,6 +403,9 @@ class MatrixState extends State<Matrix> with WidgetsBindingObserver {
       s.cancel();
     }
     for (final s in onNotification.values) {
+      s.cancel();
+    }
+    for (final s in onMediaExportSub.values) {
       s.cancel();
     }
 
