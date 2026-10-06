@@ -294,12 +294,28 @@ class SmsBridge {
     String filePath,
     String mimeType, [
     String? displayName,
+    int? dateTakenMs,
   ]) async {
     try {
       return await _channel.invokeMethod<String>('exportMediaFile', {
         'filePath': filePath,
         'mimeType': mimeType,
         'displayName': displayName,
+        'dateTakenMs': dateTakenMs,
+      });
+    } on PlatformException {
+      return null;
+    }
+  }
+
+  /// Sweeps every MMS part of every thread and exports the image/video ones
+  /// to the public gallery, without the user opening a single conversation.
+  /// Returns the number of parts newly written, or null when unavailable.
+  /// Deduplicated by content hash natively.
+  Future<int?> exportAllMmsMedia({String? threadId}) async {
+    try {
+      return await _channel.invokeMethod<int>('exportAllMmsMedia', {
+        'threadId': threadId == null ? null : int.tryParse(threadId),
       });
     } on PlatformException {
       return null;

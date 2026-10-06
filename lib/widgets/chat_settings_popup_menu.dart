@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:fluffychat/l10n/l10n.dart';
+import 'package:fluffychat/utils/media/media_backfill.dart';
 import 'package:fluffychat/widgets/adaptive_dialogs/show_ok_cancel_alert_dialog.dart';
 import 'package:fluffychat/widgets/future_loading_dialog.dart';
 import 'package:flutter/material.dart';
@@ -17,6 +18,7 @@ enum ChatPopupMenuActions {
   leave,
   search,
   summary,
+  exportMedia,
 }
 
 class ChatSettingsPopupMenu extends StatefulWidget {
@@ -112,6 +114,9 @@ class ChatSettingsPopupMenuState extends State<ChatSettingsPopupMenu> {
               case ChatPopupMenuActions.summary:
                 widget.onLlmSummary?.call();
                 break;
+              case ChatPopupMenuActions.exportMedia:
+                await _exportMedia();
+                break;
               case ChatPopupMenuActions.emote:
                 goToEmoteSettings();
             }
@@ -182,6 +187,16 @@ class ChatSettingsPopupMenuState extends State<ChatSettingsPopupMenu> {
               ),
             ),
             PopupMenuItem<ChatPopupMenuActions>(
+              value: ChatPopupMenuActions.exportMedia,
+              child: Row(
+                children: [
+                  const Icon(Icons.download_for_offline_outlined),
+                  const SizedBox(width: 12),
+                  const Text('Exporter les médias'),
+                ],
+              ),
+            ),
+            PopupMenuItem<ChatPopupMenuActions>(
               value: ChatPopupMenuActions.leave,
               child: Row(
                 children: [
@@ -194,6 +209,28 @@ class ChatSettingsPopupMenuState extends State<ChatSettingsPopupMenu> {
           ],
         ),
       ],
+    );
+  }
+
+  /// Copies this room's received images/videos into the Android gallery,
+  /// dated with each event's timestamp.
+  Future<void> _exportMedia() async {
+    final messenger = ScaffoldMessenger.of(context);
+    final confirmed = await showOkCancelAlertDialog(
+      context: context,
+      title: 'Exporter les médias',
+      message: 'Copier les images et vidéos reçues dans cette conversation '
+          'vers la galerie Android ?',
+      okLabel: 'Exporter',
+      cancelLabel: L10n.of(context).cancel,
+    );
+    if (confirmed != OkCancelResult.ok || !mounted) return;
+    final result = await MediaBackfill.instance.exportRoom(
+      Matrix.of(context).client,
+      widget.room.id,
+    );
+    messenger.showSnackBar(
+      SnackBar(content: Text(mediaBackfillSummary(result))),
     );
   }
 

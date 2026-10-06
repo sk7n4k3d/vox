@@ -45,19 +45,27 @@ class MediaExporter {
         }
       }();
 
+  /// Whether [eventId]'s media already reached the gallery in a previous run.
+  Future<bool> isExported(String eventId) async {
+    await _ensureLoaded();
+    return (_exported ?? const <String>[]).contains(eventId);
+  }
+
   /// Exports the (already downloaded/decrypted) [file] of [event] when it is an
-  /// image or a video received from someone else. No-op otherwise.
-  Future<void> exportMatrixEvent(Event event, MatrixFile file) async {
+  /// image or a video received from someone else. Returns the MediaStore URI,
+  /// or null when nothing was written (disabled, not Android, not media, own
+  /// message, already exported, or failure).
+  Future<String?> exportMatrixEvent(Event event, MatrixFile file) async {
     try {
-      if (!AppSettings.autoExportMedia.value) return;
-      if (!PlatformInfos.isAndroid) return;
+      if (!AppSettings.autoExportMedia.value) return null;
+      if (!PlatformInfos.isAndroid) return null;
       final mime = file.mimeType.toLowerCase();
-      if (!mime.startsWith('image/') && !mime.startsWith('video/')) return;
-      if (event.senderId == event.room.client.userID) return;
+      if (!mime.startsWith('image/') && !mime.startsWith('video/')) return null;
+      if (event.senderId == event.room.client.userID) return null;
 
       await _ensureLoaded();
       final exported = _exported ?? <String>[];
-      if (exported.contains(event.eventId)) return;
+      if (exported.contains(event.eventId)) return null;
 
       final tmpDir = await getTemporaryDirectory();
       final dir = Directory('${tmpDir.path}/vox_export');
@@ -72,18 +80,21 @@ class MediaExporter {
         tmp.path,
         file.mimeType,
         safeName,
+        event.originServerTs.millisecondsSinceEpoch,
       );
       unawaited(tmp.delete().then((_) {}, onError: (_) {}));
 
-      if (uri == null) return;
+      if (uri == null) return null;
       exported.add(event.eventId);
       while (exported.length > _maxEntries) {
         exported.removeAt(0);
       }
       final prefs = await SharedPreferences.getInstance();
       await prefs.setStringList(_prefsKey, exported);
+      return uri;
     } catch (e) {
       debugPrint('MediaExporter: matrix export failed: $e');
+      return null;
     }
   }
 

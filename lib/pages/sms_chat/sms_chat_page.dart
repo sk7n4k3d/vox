@@ -15,9 +15,11 @@ import 'package:fluffychat/pages/sms_chat/sms_effects.dart';
 import 'package:fluffychat/utils/ephemeral/ephemeral_messages.dart';
 import 'package:fluffychat/utils/llm/llm_summary.dart';
 import 'package:fluffychat/utils/llm/llm_summary_dialog.dart';
+import 'package:fluffychat/utils/media/media_backfill.dart';
 import 'package:fluffychat/utils/scheduled/scheduled_messages.dart';
 import 'package:fluffychat/utils/sms/map_linkifier.dart';
 import 'package:fluffychat/utils/sms/sms_bridge.dart';
+import 'package:fluffychat/widgets/adaptive_dialogs/show_ok_cancel_alert_dialog.dart';
 import 'package:fluffychat/widgets/cyber/animated_emoji_text.dart';
 import 'package:fluffychat/widgets/cyber/cyber_backdrop.dart';
 import 'package:fluffychat/widgets/cyber/chat_bubble_skin.dart';
@@ -300,7 +302,11 @@ class _SmsChatPageState extends State<SmsChatPage> with WidgetsBindingObserver {
   /// exports MMS parts at download time, but this catches anything it missed
   /// (e.g. parts ingested before the feature shipped). Gated by
   /// [AppSettings.autoExportMedia]; dedup is handled natively by content hash.
-  Future<void> _maybeExportMmsPart(int partId, SmsAttachment attachment) async {
+  Future<void> _maybeExportMmsPart(
+    int partId,
+    SmsAttachment attachment,
+    int dateTakenMs,
+  ) async {
     if (!AppSettings.autoExportMedia.value) return;
     if (partId <= 0) return;
     if (!attachment.isVisualMedia) return;
@@ -311,6 +317,7 @@ class _SmsChatPageState extends State<SmsChatPage> with WidgetsBindingObserver {
       path,
       attachment.mimeType,
       attachment.fileName,
+      dateTakenMs,
     );
   }
 
@@ -321,7 +328,7 @@ class _SmsChatPageState extends State<SmsChatPage> with WidgetsBindingObserver {
     for (final m in messages) {
       if (m.isFromMe) continue;
       for (final a in m.visualMedia) {
-        unawaited(_maybeExportMmsPart(a.partId, a));
+        unawaited(_maybeExportMmsPart(a.partId, a, m.date));
       }
     }
   }
@@ -817,6 +824,27 @@ class _SmsChatPageState extends State<SmsChatPage> with WidgetsBindingObserver {
     }
   }
 
+  /// Header menu → "Exporter les médias". Copies every image/video of this
+  /// thread into the Android gallery, dated with the original MMS timestamps.
+  Future<void> _exportThreadMedia() async {
+    final confirmed = await showOkCancelAlertDialog(
+      context: context,
+      title: 'Exporter les médias',
+      message: 'Copier les images et vidéos de cette conversation vers la '
+          'galerie Android ?',
+      okLabel: 'Exporter',
+      cancelLabel: 'Annuler',
+    );
+    if (confirmed != OkCancelResult.ok || !mounted) return;
+    final count = await MediaBackfill.instance.exportSmsThread(widget.threadId);
+    if (!mounted) return;
+    _showSnackBar(
+      count == 0
+          ? 'Aucun nouveau média à exporter.'
+          : '$count médias exportés vers la galerie.',
+    );
+  }
+
   /// « Résumé IA » — collecte les derniers messages textuels du fil SMS et
   /// ouvre le dialogue de résumé. Asynchrone côté réseau (aucun blocage UI).
   Future<void> _openSmsSummary() async {
@@ -987,6 +1015,7 @@ class _SmsChatPageState extends State<SmsChatPage> with WidgetsBindingObserver {
       onSummary: _openSmsSummary,
       onBlock: _blockContact,
       onExport: _exportConversation,
+      onExportMedia: _exportThreadMedia,
     );
   }
 
@@ -2191,6 +2220,7 @@ class _SmsLiquidGlassAppBar extends StatelessWidget
   final VoidCallback onGallery;
   final VoidCallback onBlock;
   final VoidCallback onExport;
+  final VoidCallback onExportMedia;
   final VoidCallback onCall;
   final VoidCallback onSummary;
 
@@ -2206,6 +2236,7 @@ class _SmsLiquidGlassAppBar extends StatelessWidget
     required this.onGallery,
     required this.onBlock,
     required this.onExport,
+    required this.onExportMedia,
     required this.onCall,
     required this.onSummary,
   });
@@ -2299,6 +2330,7 @@ class _SmsLiquidGlassAppBar extends StatelessWidget
                       if (value == 'delete') onDelete();
                       if (value == 'block') onBlock();
                       if (value == 'export') onExport();
+                      if (value == 'media') onExportMedia();
                     },
                     itemBuilder: (context) => [
                       PopupMenuItem<String>(
@@ -2351,6 +2383,25 @@ class _SmsLiquidGlassAppBar extends StatelessWidget
                             const SizedBox(width: FluffySpacing.md),
                             Text(
                               'Bloquer le numéro',
+                              style: FluffyTypography.bodyM.copyWith(
+                                color: theme.colorScheme.onSurface,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      PopupMenuItem<String>(
+                        value: 'media',
+                        child: Row(
+                          children: [
+                            Icon(
+                              Icons.download_for_offline_outlined,
+                              color: cyber.cyan,
+                              size: 20,
+                            ),
+                            const SizedBox(width: FluffySpacing.md),
+                            Text(
+                              'Exporter les médias',
                               style: FluffyTypography.bodyM.copyWith(
                                 color: theme.colorScheme.onSurface,
                               ),

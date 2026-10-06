@@ -223,10 +223,12 @@ class SmsBridgePlugin private constructor(
                 val filePath = call.argument<String>("filePath")
                 val mimeType = call.argument<String>("mimeType")
                 val displayName = call.argument<String>("displayName")
+                val dateTakenMs = call.argument<Number>("dateTakenMs")?.toLong()
                 if (filePath.isNullOrEmpty() || mimeType.isNullOrEmpty()) {
                     result.error("BAD_ARGS", "filePath or mimeType missing", null)
                     return
                 }
+                Log.i(SmsBridge.TAG, "exportMediaFile: dateTakenMs=$dateTakenMs")
                 launchReply(result) {
                     if (!MediaExporter.isEnabled(context)) return@launchReply null
                     MediaExporter.export(
@@ -234,8 +236,20 @@ class SmsBridgePlugin private constructor(
                         filePath,
                         mimeType,
                         displayName ?: filePath.substringAfterLast('/'),
+                        dateTakenMs,
                     )
                 }
+            }
+
+            // Balaye TOUTES les parts image/vidéo de TOUS les MMS (content://mms/part)
+            // et les copie dans la galerie, sans ouvrir de conversation. Retourne
+            // le nombre de parts nouvellement exportées.
+            "exportAllMmsMedia" -> launchReply(result) {
+                if (!MediaExporter.isEnabled(context)) return@launchReply 0
+                SmsBridge.exportAllMmsMedia(
+                    context,
+                    call.argument<Number>("threadId")?.toLong(),
+                )
             }
 
             // ── Blocage de numéros (blacklist système BlockedNumberContract) ──────

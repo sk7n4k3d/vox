@@ -1019,6 +1019,102 @@ object SmsBridge {
             }
         }
 
+    /**
+     * Exporte vers la galerie publique toutes les parts image/vidéo de TOUS
+     * les MMS (content://mms/part), sans dépendre de l'ouverture d'une
+     * conversation. Réutilise le cache disque de [loadMmsPart] (transcode
+     * HEIC/HEIF inclus) et la dédup par empreinte de [MediaExporter].
+     * Best-effort.
+     * @return nombre de parts nouvellement écrites.
+     */
+    suspend fun exportAllMmsMedia(context: Context, threadId: Long? = null): Int =
+        withContext(Dispatchers.IO) {
+            if (!MediaExporter.isEnabled(context)) return@withContext 0
+            var exported = 0
+            // Dates des MMS : content://mms.DATE est en SECONDES (contrairement à
+            // SMS.DATE en ms). On les collecte une fois pour dater chaque part dans
+            // la galerie à l'heure d'envoi/réception du MMS. Quand [threadId] est
+            // fourni, cette table sert aussi de filtre (seuls ses MMS sont exportés).
+            val dateByMms = HashMap<Long, Long>()
+            try {
+                context.contentResolver.query(
+                    Uri.parse("content://mms"),
+                    arrayOf(Telephony.Mms._ID, Telephony.Mms.DATE),
+                    if (threadId != null) "${Telephony.Mms.THREAD_ID}=?" else null,
+                    if (threadId != null) arrayOf(threadId.toString()) else null,
+                    null,
+                )?.use { c ->
+                    val idxId = c.getColumnIndexOrThrow(Telephony.Mms._ID)
+                    val idxDate = c.getColumnIndexOrThrow(Telephony.Mms.DATE)
+                    while (c.moveToNext()) {
+                        val sec = c.getLong(idxDate)
+                        dateByMms[c.getLong(idxId)] = if (sec > 0L) sec * 1000L else 0L
+                    }
+                }
+            } catch (e: Exception) {
+                Log.w(TAG, "exportAllMmsMedia: mms dates query failed: ${e.message}")
+            }
+            if (threadId != null && dateByMms.isEmpty()) return@withContext 0
+
+            val allowed = if (threadId != null) dateByMms.keys.toList() else null
+            try {
+                context.contentResolver.query(
+                    MMS_PART_URI,
+                    arrayOf(
+                        Telephony.Mms.Part._ID,
+                        Telephony.Mms.Part.MSG_ID,
+                        Telephony.Mms.Part.CONTENT_TYPE,
+                        Telephony.Mms.Part.NAME,
+                        Telephony.Mms.Part.FILENAME,
+                    ),
+                    if (allowed != null)
+                        "${Telephony.Mms.Part.MSG_ID} IN (${allowed.joinToString(",") { "?" }})"
+                    else null,
+                    allowed?.map { it.toString() }?.toTypedArray(),
+                    null,
+                )?.use { c ->
+                    val idxId = c.getColumnIndexOrThrow(Telephony.Mms.Part._ID)
+                    val idxMsg = c.getColumnIndexOrThrow(Telephony.Mms.Part.MSG_ID)
+                    val idxCt = c.getColumnIndexOrThrow(Telephony.Mms.Part.CONTENT_TYPE)
+                    val idxName = c.getColumnIndexOrThrow(Telephony.Mms.Part.NAME)
+                    val idxFile = c.getColumnIndexOrThrow(Telephony.Mms.Part.FILENAME)
+                    while (c.moveToNext()) {
+                        val partId = c.getLong(idxId)
+                        val msgId = c.getLong(idxMsg)
+                        val rawMime = (c.getString(idxCt) ?: "").substringBefore(';').trim()
+                        val fileName = MmsRetrieveParser.sanitizeName(
+                            c.getString(idxName) ?: c.getString(idxFile),
+                            "part_$partId",
+                        )
+                        val mime = resolveMime(rawMime, fileName)
+                        if (!mime.startsWith("image/") && !mime.startsWith("video/")) {
+                            continue
+                        }
+                        val path = loadMmsPart(context, partId) ?: continue
+                        val bytes = try {
+                            File(path).readBytes()
+                        } catch (e: Exception) {
+                            Log.w(TAG, "exportAllMmsMedia($partId): read failed: ${e.message}")
+                            null
+                        } ?: continue
+                        if (bytes.isEmpty()) continue
+                        val uri = MediaExporter.exportBytes(
+                            context,
+                            bytes,
+                            mime,
+                            fileName,
+                            dateByMms[msgId],
+                        )
+                        if (uri != null) exported++
+                    }
+                }
+            } catch (e: Exception) {
+                Log.w(TAG, "exportAllMmsMedia failed: ${e.message}")
+            }
+            Log.i(TAG, "exportAllMmsMedia(thread=$threadId): $exported parts exportées")
+            exported
+        }
+
     /** Image content-types Flutter/Skia can't decode but Android can. */
     private fun needsTranscode(mime: String): Boolean {
         val m = mime.lowercase()
@@ -2334,7 +2430,13 @@ object SmsBridge {
                 // independently of whether the user ever opens the conversation.
                 if (MediaExporter.isEnabled(context)) {
                     val exportMime = resolveMime(contentType, part.name)
-                    MediaExporter.exportBytes(context, part.data, exportMime, part.name)
+                    MediaExporter.exportBytes(
+                        context,
+                        part.data,
+                        exportMime,
+                        part.name,
+                        sentAtSec * 1000L,
+                    )
                 }
             }
         }

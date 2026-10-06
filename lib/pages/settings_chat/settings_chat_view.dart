@@ -12,6 +12,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import 'package:go_router/go_router.dart';
 
+import 'media_backfill_tile.dart';
 import 'settings_chat.dart';
 
 class SettingsChatView extends StatelessWidget {
@@ -113,6 +114,7 @@ class SettingsChatView extends StatelessWidget {
                           title: 'Exporter les médias vers la galerie',
                           setting: AppSettings.autoExportMedia,
                         ),
+                        if (PlatformInfos.isAndroid) const MediaBackfillTile(),
                         SettingsSwitchListTile.adaptive(
                           title: L10n.of(context).sendOnEnter,
                           setting: AppSettings.sendOnEnter,
