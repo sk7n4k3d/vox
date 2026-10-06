@@ -90,14 +90,19 @@ class WebhookEvent {
 }
 
 /// Une room Matrix n'est poussée que si elle est explicitement cochée dans les
-/// réglages. Liste vide = aucune room (défaut sûr).
-bool isRoomAllowed(Set<String> allowedRooms, String roomId) =>
-    allowedRooms.contains(roomId);
+/// réglages. Liste vide = aucune room (défaut sûr). [all] court-circuite la
+/// liste : tout est poussé, y compris les nouvelles conversations.
+bool isRoomAllowed(Set<String> allowedRooms, String roomId, {bool all = false}) =>
+    all || allowedRooms.contains(roomId);
 
 /// Un fil SMS/MMS n'est poussé que s'il est coché. Même sémantique que les
-/// rooms : liste vide = aucun fil.
-bool isSmsThreadAllowed(Set<String> allowedThreads, String threadId) =>
-    allowedThreads.contains(threadId);
+/// rooms, [all] compris.
+bool isSmsThreadAllowed(
+  Set<String> allowedThreads,
+  String threadId, {
+  bool all = false,
+}) =>
+    all || allowedThreads.contains(threadId);
 
 /// Comparaison de numéros tolérante : le même contact peut s'écrire
 /// `+33 6 50 73 02 02`, `+33650730202` ou `06.50.73.02.02` selon la source.
@@ -109,8 +114,10 @@ String normalizeSmsAddress(String raw) =>
 bool isSmsAddressAllowed(
   Iterable<({String threadId, String address})> threads,
   Set<String> allowedThreads,
-  String address,
-) {
+  String address, {
+  bool all = false,
+}) {
+  if (all) return true;
   final target = normalizeSmsAddress(address);
   for (final thread in threads) {
     if (allowedThreads.contains(thread.threadId) &&

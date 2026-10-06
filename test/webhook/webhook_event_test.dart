@@ -141,5 +141,17 @@ void main() {
       expect(isSmsAddressAllowed(threads, {'12'}, '+33699999999'), isFalse);
       expect(isSmsAddressAllowed(threads, const {}, '+33650730202'), isFalse);
     });
+
+    test('all=true envoie meme les conversations jamais vues', () {
+      expect(isRoomAllowed(const <String>{}, '!nouvelle:x', all: true), isTrue);
+      expect(isSmsThreadAllowed(const <String>{}, '99', all: true), isTrue);
+      expect(
+        isSmsAddressAllowed(const [], const <String>{}, '+33600000000', all: true),
+        isTrue,
+      );
+      // Sans le drapeau, une conversation hors liste reste exclue.
+      expect(isRoomAllowed(const {'!a:x'}, '!nouvelle:x'), isFalse);
+      expect(isSmsThreadAllowed(const {'12'}, '99'), isFalse);
+    });
   });
 }

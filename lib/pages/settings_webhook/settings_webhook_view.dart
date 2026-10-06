@@ -120,7 +120,21 @@ class SettingsWebhookView extends StatelessWidget {
                   vertical: FluffySpacing.xs,
                 ),
                 child: Column(
-                  children: _smsTiles(controller, cyber),
+                  children: [
+                    CyberSettingsTile(
+                      icon: Icons.done_all_outlined,
+                      accent: cyber.cyan,
+                      title: 'Tout envoyer, nouvelles conversations comprises',
+                      subtitle: 'Coché : la liste ci-dessous est ignorée',
+                      trailing: Switch.adaptive(
+                        value: controller.smsAll,
+                        activeThumbColor: cyber.cyan,
+                        onChanged: controller.toggleSmsAll,
+                      ),
+                      onTap: () => controller.toggleSmsAll(!controller.smsAll),
+                    ),
+                    ..._smsTiles(controller, cyber),
+                  ],
                 ),
               ),
             ),
@@ -136,7 +150,22 @@ class SettingsWebhookView extends StatelessWidget {
                   vertical: FluffySpacing.xs,
                 ),
                 child: Column(
-                  children: _roomTiles(controller, cyber),
+                  children: [
+                    CyberSettingsTile(
+                      icon: Icons.done_all_outlined,
+                      accent: cyber.cyan,
+                      title: 'Tout envoyer, nouvelles conversations comprises',
+                      subtitle: 'Coché : la liste ci-dessous est ignorée',
+                      trailing: Switch.adaptive(
+                        value: controller.matrixAll,
+                        activeThumbColor: cyber.cyan,
+                        onChanged: controller.toggleMatrixAll,
+                      ),
+                      onTap: () =>
+                          controller.toggleMatrixAll(!controller.matrixAll),
+                    ),
+                    ..._roomTiles(controller, cyber),
+                  ],
                 ),
               ),
             ),

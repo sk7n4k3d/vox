@@ -58,6 +58,11 @@ class WebhookService {
       AppSettings.webhookEnabled.value &&
       AppSettings.webhookUrl.value.trim().isNotEmpty;
 
+  /// Tout envoyer (nouvelles conversations comprises) plutôt que la liste
+  /// cochée. Lu à chaque message, sans cache : c'est un simple booléen.
+  bool get smsAll => AppSettings.webhookSmsAll.value;
+  bool get matrixAll => AppSettings.webhookMatrixAll.value;
+
   Future<void> dispatch(WebhookEvent event) async {
     if (!isConfigured) return;
     final uri = Uri.tryParse(AppSettings.webhookUrl.value.trim());

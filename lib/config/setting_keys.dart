@@ -42,6 +42,10 @@ enum AppSettings<T> {
   // ou envoyé. Désactivé par défaut, et rien ne part tant que l'URL est vide.
   webhookEnabled<bool>('chat.fluffy.webhook_enabled', false),
   webhookUrl<String>('chat.fluffy.webhook_url', ''),
+  // Envoie TOUT, y compris les conversations qui apparaissent après coup : la
+  // liste de sélection n'est alors plus consultée.
+  webhookSmsAll<bool>('chat.fluffy.webhook_sms_all', false),
+  webhookMatrixAll<bool>('chat.fluffy.webhook_matrix_all', false),
   // Police des bulles de message (SMS + Matrix, identique). Valeurs :
   // '' = Inter (défaut), 'Rajdhani', 'JetBrainsMono', 'Orbitron'.
   messageFontFamily<String>('chat.fluffy.message_font_family', ''),

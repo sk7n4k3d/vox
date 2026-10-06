@@ -27,6 +27,8 @@ class SettingsWebhookController extends State<SettingsWebhook> {
   Set<String> rooms = <String>{};
   Set<String> smsThreads = <String>{};
   List<SmsConversation> smsConversations = const <SmsConversation>[];
+  bool smsAll = AppSettings.webhookSmsAll.value;
+  bool matrixAll = AppSettings.webhookMatrixAll.value;
 
   @override
   void initState() {
@@ -59,6 +61,18 @@ class SettingsWebhookController extends State<SettingsWebhook> {
 
   void toggleSecretVisibility() =>
       setState(() => obscureSecret = !obscureSecret);
+
+  Future<void> toggleSmsAll(bool value) async {
+    await AppSettings.webhookSmsAll.setItem(value);
+    if (!mounted) return;
+    setState(() => smsAll = value);
+  }
+
+  Future<void> toggleMatrixAll(bool value) async {
+    await AppSettings.webhookMatrixAll.setItem(value);
+    if (!mounted) return;
+    setState(() => matrixAll = value);
+  }
 
   void onUrlChanged(String value) =>
       unawaited(AppSettings.webhookUrl.setItem(value.trim()));

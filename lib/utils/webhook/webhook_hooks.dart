@@ -29,7 +29,13 @@ class WebhookHooks {
 
     final room = event.room;
     final allowed = await WebhookService.instance.allowedRooms();
-    if (!isRoomAllowed(allowed, room.id)) return;
+    if (!isRoomAllowed(
+      allowed,
+      room.id,
+      all: WebhookService.instance.matrixAll,
+    )) {
+      return;
+    }
 
     final body = event.content.tryGet<String>('body');
     final member = room.getState(EventTypes.RoomMember, event.senderId);
@@ -54,7 +60,13 @@ class WebhookHooks {
   static Future<void> onSmsIncoming(SmsIncoming sms) async {
     if (!WebhookService.instance.isConfigured) return;
     final allowed = await WebhookService.instance.allowedSmsThreads();
-    if (!isSmsThreadAllowed(allowed, sms.threadId)) return;
+    if (!isSmsThreadAllowed(
+      allowed,
+      sms.threadId,
+      all: WebhookService.instance.smsAll,
+    )) {
+      return;
+    }
     await WebhookService.instance.dispatch(
       WebhookEvent(
         source: sms.kind == 'mms' ? WebhookSource.mms : WebhookSource.sms,
@@ -81,8 +93,9 @@ class WebhookHooks {
   ) async {
     if (!WebhookService.instance.isConfigured) return;
     final allowed = await WebhookService.instance.allowedSmsThreads();
-    if (allowed.isEmpty) return;
-    if (!await _outgoingTargetAllowed(allowed, address)) return;
+    final all = WebhookService.instance.smsAll;
+    if (allowed.isEmpty && !all) return;
+    if (!await _outgoingTargetAllowed(allowed, address, all)) return;
     await WebhookService.instance.dispatch(
       WebhookEvent(
         source: isMms ? WebhookSource.mms : WebhookSource.sms,
@@ -116,7 +129,9 @@ class WebhookHooks {
   static Future<bool> _outgoingTargetAllowed(
     Set<String> allowed,
     String address,
+    bool all,
   ) async {
+    if (all) return true;
     try {
       final conversations = await SmsBridge.instance.listConversations();
       return isSmsAddressAllowed(
