@@ -109,6 +109,22 @@ class SettingsWebhookView extends StatelessWidget {
               ),
             ),
             CyberSectionHeader(
+              'Conversations SMS/MMS (${controller.smsThreads.length} cochée'
+              '${controller.smsThreads.length > 1 ? 's' : ''})',
+              accent: cyber.cyan,
+            ),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: FluffySpacing.lg),
+              child: CyberGlass(
+                padding: const EdgeInsets.symmetric(
+                  vertical: FluffySpacing.xs,
+                ),
+                child: Column(
+                  children: _smsTiles(controller, cyber),
+                ),
+              ),
+            ),
+            CyberSectionHeader(
               'Conversations Matrix (${controller.rooms.length} cochée'
               '${controller.rooms.length > 1 ? 's' : ''})',
               accent: cyber.cyan,
@@ -154,6 +170,40 @@ class SettingsWebhookView extends StatelessWidget {
         ),
       ),
     );
+  }
+
+  /// Une ligne par fil SMS/MMS : coché = ses messages partent au webhook.
+  List<Widget> _smsTiles(
+    SettingsWebhookController controller,
+    CyberpunkTheme cyber,
+  ) {
+    final conversations = controller.smsConversations;
+    if (conversations.isEmpty) {
+      return const [
+        Padding(
+          padding: EdgeInsets.all(FluffySpacing.md),
+          child: Text('Aucune conversation SMS/MMS'),
+        ),
+      ];
+    }
+    return conversations
+        .map(
+          (c) => CheckboxListTile.adaptive(
+            dense: true,
+            value: controller.smsThreads.contains(c.threadId),
+            activeColor: cyber.cyan,
+            title: Text(c.title, maxLines: 1, overflow: TextOverflow.ellipsis),
+            subtitle: c.address == c.title
+                ? null
+                : Text(
+                    c.address,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+            onChanged: (v) => controller.toggleSmsThread(c.threadId, v == true),
+          ),
+        )
+        .toList();
   }
 
   /// Une ligne par room rejointe : cochée = ses messages partent au webhook.

@@ -50,8 +50,11 @@ class WebhookHooks {
   }
 
   /// SMS/MMS entrant, depuis le flux natif `SmsBridge.instance.incoming`.
+  /// Filtré sur les fils cochés dans les réglages.
   static Future<void> onSmsIncoming(SmsIncoming sms) async {
     if (!WebhookService.instance.isConfigured) return;
+    final allowed = await WebhookService.instance.allowedSmsThreads();
+    if (!isSmsThreadAllowed(allowed, sms.threadId)) return;
     await WebhookService.instance.dispatch(
       WebhookEvent(
         source: sms.kind == 'mms' ? WebhookSource.mms : WebhookSource.sms,
@@ -70,13 +73,16 @@ class WebhookHooks {
 
   /// SMS/MMS sortant, depuis le callback posé sur [SmsBridge.onMessageSent]
   /// (point de passage unique de tous les envois : composeur, programmé,
-  /// partage).
+  /// partage). Filtré sur les fils cochés — on retrouve le fil par le numéro.
   static Future<void> onSmsOutgoing(
     String address,
     String? body,
     bool isMms,
   ) async {
     if (!WebhookService.instance.isConfigured) return;
+    final allowed = await WebhookService.instance.allowedSmsThreads();
+    if (allowed.isEmpty) return;
+    if (!await _outgoingTargetAllowed(allowed, address)) return;
     await WebhookService.instance.dispatch(
       WebhookEvent(
         source: isMms ? WebhookSource.mms : WebhookSource.sms,
@@ -105,8 +111,25 @@ class WebhookHooks {
     ];
   }
 
-  static Future<String?> _contactName(String address) async {
-    if (address.isEmpty) return null;
+  /// L'envoi vise-t-il un fil coché ? On retrouve le fil par le numéro : la
+  /// conversation native porte le couple (threadId, adresse).
+  static Future<bool> _outgoingTargetAllowed(
+    Set<String> allowed,
+    String address,
+  ) async {
+    try {
+      final conversations = await SmsBridge.instance.listConversations();
+      return isSmsAddressAllowed(
+        conversations.map((c) => (threadId: c.threadId, address: c.address)),
+        allowed,
+        address,
+      );
+    } catch (_) {
+      return false;
+    }
+  }
+
+  static Future<String?> _contactName(String address) async {    if (address.isEmpty) return null;
     try {
       final name = await SmsBridge.instance.resolveContactName(address);
       return (name != null && name.trim().isNotEmpty) ? name.trim() : null;

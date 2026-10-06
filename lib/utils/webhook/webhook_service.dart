@@ -36,13 +36,22 @@ class WebhookService {
   final ValueNotifier<WebhookStats> stats = ValueNotifier(const WebhookStats());
 
   /// Rooms Matrix autorisées, mises en cache (le filtre est consulté à chaque
-  /// message). Invalidé par [invalidateRooms] quand les réglages changent.
+  /// message). Invalidé par [invalidateFilters] quand les réglages changent.
   Set<String>? _allowedRooms;
+
+  /// Fils SMS/MMS autorisés, même principe.
+  Set<String>? _allowedSmsThreads;
 
   Future<Set<String>> allowedRooms() async =>
       _allowedRooms ??= await WebhookStore.instance.loadRooms();
 
-  void invalidateRooms() => _allowedRooms = null;
+  Future<Set<String>> allowedSmsThreads() async =>
+      _allowedSmsThreads ??= await WebhookStore.instance.loadSmsThreads();
+
+  void invalidateFilters() {
+    _allowedRooms = null;
+    _allowedSmsThreads = null;
+  }
 
   /// Rien ne part tant que l'interrupteur est off ou que l'URL est vide.
   bool get isConfigured =>

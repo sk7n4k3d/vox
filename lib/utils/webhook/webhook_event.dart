@@ -93,3 +93,30 @@ class WebhookEvent {
 /// réglages. Liste vide = aucune room (défaut sûr).
 bool isRoomAllowed(Set<String> allowedRooms, String roomId) =>
     allowedRooms.contains(roomId);
+
+/// Un fil SMS/MMS n'est poussé que s'il est coché. Même sémantique que les
+/// rooms : liste vide = aucun fil.
+bool isSmsThreadAllowed(Set<String> allowedThreads, String threadId) =>
+    allowedThreads.contains(threadId);
+
+/// Comparaison de numéros tolérante : le même contact peut s'écrire
+/// `+33 6 50 73 02 02`, `+33650730202` ou `06.50.73.02.02` selon la source.
+String normalizeSmsAddress(String raw) =>
+    raw.replaceAll(RegExp(r'[\s\-.()]'), '');
+
+/// Un envoi part si son destinataire correspond à un fil coché. [threads] est la
+/// liste des conversations (threadId + adresse) issue du pont SMS.
+bool isSmsAddressAllowed(
+  Iterable<({String threadId, String address})> threads,
+  Set<String> allowedThreads,
+  String address,
+) {
+  final target = normalizeSmsAddress(address);
+  for (final thread in threads) {
+    if (allowedThreads.contains(thread.threadId) &&
+        normalizeSmsAddress(thread.address) == target) {
+      return true;
+    }
+  }
+  return false;
+}

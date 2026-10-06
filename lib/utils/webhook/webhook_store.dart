@@ -10,6 +10,7 @@ class WebhookStore {
 
   static const String _secretKey = 'chat.fluffy.webhook_secret';
   static const String _roomsKey = 'chat.fluffy.webhook_rooms';
+  static const String _smsThreadsKey = 'chat.fluffy.webhook_sms_threads';
 
   Future<String> loadSecret() async {
     try {
@@ -42,6 +43,23 @@ class WebhookStore {
     try {
       final prefs = await SharedPreferences.getInstance();
       await prefs.setStringList(_roomsKey, rooms.toList());
+    } catch (_) {}
+  }
+
+  /// Fils SMS/MMS cochés (même sémantique que les rooms : liste vide = aucun).
+  Future<Set<String>> loadSmsThreads() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      return (prefs.getStringList(_smsThreadsKey) ?? const <String>[]).toSet();
+    } catch (_) {
+      return <String>{};
+    }
+  }
+
+  Future<void> saveSmsThreads(Set<String> threads) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setStringList(_smsThreadsKey, threads.toList());
     } catch (_) {}
   }
 }

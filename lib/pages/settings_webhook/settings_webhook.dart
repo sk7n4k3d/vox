@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:fluffychat/config/setting_keys.dart';
+import 'package:fluffychat/utils/sms/sms_bridge.dart';
 import 'package:fluffychat/utils/webhook/webhook_service.dart';
 import 'package:fluffychat/utils/webhook/webhook_store.dart';
 import 'package:fluffychat/widgets/matrix.dart';
@@ -24,6 +25,8 @@ class SettingsWebhookController extends State<SettingsWebhook> {
   bool enabled = AppSettings.webhookEnabled.value;
   bool obscureSecret = true;
   Set<String> rooms = <String>{};
+  Set<String> smsThreads = <String>{};
+  List<SmsConversation> smsConversations = const <SmsConversation>[];
 
   @override
   void initState() {
@@ -34,10 +37,17 @@ class SettingsWebhookController extends State<SettingsWebhook> {
   Future<void> _load() async {
     final secret = await WebhookStore.instance.loadSecret();
     final saved = await WebhookStore.instance.loadRooms();
+    final savedSms = await WebhookStore.instance.loadSmsThreads();
+    var conversations = const <SmsConversation>[];
+    try {
+      conversations = await SmsBridge.instance.listConversations();
+    } catch (_) {}
     if (!mounted) return;
     setState(() {
       secretController.text = secret;
       rooms = saved;
+      smsThreads = savedSms;
+      smsConversations = conversations;
     });
   }
 
@@ -65,7 +75,19 @@ class SettingsWebhookController extends State<SettingsWebhook> {
       }
     });
     await WebhookStore.instance.saveRooms(rooms);
-    WebhookService.instance.invalidateRooms();
+    WebhookService.instance.invalidateFilters();
+  }
+
+  Future<void> toggleSmsThread(String threadId, bool selected) async {
+    setState(() {
+      if (selected) {
+        smsThreads.add(threadId);
+      } else {
+        smsThreads.remove(threadId);
+      }
+    });
+    await WebhookStore.instance.saveSmsThreads(smsThreads);
+    WebhookService.instance.invalidateFilters();
   }
 
   /// Rooms rejointes, triées par nom d'affichage.

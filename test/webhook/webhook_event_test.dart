@@ -110,4 +110,36 @@ void main() {
       expect(isRoomAllowed(allowed, '!c:x'), isFalse);
     });
   });
+
+  group('isSmsThreadAllowed', () {
+    test('aucun fil coche = rien ne passe', () {
+      expect(isSmsThreadAllowed(const <String>{}, '12'), isFalse);
+    });
+
+    test('seuls les fils coches passent', () {
+      const allowed = {'12', '4'};
+      expect(isSmsThreadAllowed(allowed, '12'), isTrue);
+      expect(isSmsThreadAllowed(allowed, '7'), isFalse);
+    });
+  });
+
+  group('normalizeSmsAddress / isSmsAddressAllowed', () {
+    test('espaces, tirets et points ne changent pas le numero', () {
+      expect(normalizeSmsAddress('+33 6 50 73 02 02'), '+33650730202');
+      expect(normalizeSmsAddress('06.50.73.02.02'), '0650730202');
+      expect(normalizeSmsAddress('+33-(6)-50-73-02-02'), '+33650730202');
+    });
+
+    test('un envoi part si son destinataire est un fil coche', () {
+      const threads = [
+        (threadId: '12', address: '+33650730202'),
+        (threadId: '4', address: '+33612345678'),
+      ];
+      expect(isSmsAddressAllowed(threads, {'12'}, '+33650730202'), isTrue);
+      expect(isSmsAddressAllowed(threads, {'12'}, '+33 6 50 73 02 02'), isTrue);
+      expect(isSmsAddressAllowed(threads, {'4'}, '+33650730202'), isFalse);
+      expect(isSmsAddressAllowed(threads, {'12'}, '+33699999999'), isFalse);
+      expect(isSmsAddressAllowed(threads, const {}, '+33650730202'), isFalse);
+    });
+  });
 }
