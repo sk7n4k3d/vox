@@ -38,6 +38,11 @@ enum AppSettings<T> {
   // Expose received images/videos in the public gallery (MediaStore) so that
   // gallery clients like Nextcloud auto-upload them.
   autoExportMedia<bool>('chat.fluffy.auto_export_media', true),
+  // Webhook sortant : POST signé (HMAC V2) à chaque message SMS/MMS/Matrix reçu
+  // ou envoyé. Désactivé par défaut, et rien ne part tant que l'URL est vide.
+  webhookEnabled<bool>('chat.fluffy.webhook_enabled', false),
+  webhookUrl<String>('chat.fluffy.webhook_url', ''),
+  webhookHideBody<bool>('chat.fluffy.webhook_hide_body', false),
   // Police des bulles de message (SMS + Matrix, identique). Valeurs :
   // '' = Inter (défaut), 'Rajdhani', 'JetBrainsMono', 'Orbitron'.
   messageFontFamily<String>('chat.fluffy.message_font_family', ''),

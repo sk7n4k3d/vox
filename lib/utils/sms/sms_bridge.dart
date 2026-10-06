@@ -199,12 +199,30 @@ class SmsBridge {
     }
   }
 
+  /// Callback posé par la couche webhook (évite une dépendance circulaire) :
+  /// appelé après chaque envoi réussi, quel que soit l'appelant.
+  void Function(String address, String? body, bool isMms)? onMessageSent;
+
   /// Sends an SMS. Returns the provider row id (or null on failure).
   Future<int?> sendSms(String address, String body) async {
     try {
-      return await _channel.invokeMethod<int>('sendSms', {
+      final rowId = await _channel.invokeMethod<int>('sendSms', {
         'address': address,
         'body': body,
+      });
+      if (rowId != null) onMessageSent?.call(address, body, false);
+      return rowId;
+    } on PlatformException {
+      return null;
+    }
+  }
+
+  /// Nom du contact associé à [address], ou null si inconnu (champ « contact »
+  /// du webhook).
+  Future<String?> resolveContactName(String address) async {
+    try {
+      return await _channel.invokeMethod<String>('resolveContactName', {
+        'address': address,
       });
     } on PlatformException {
       return null;
@@ -326,11 +344,13 @@ class SmsBridge {
   /// row id of the outbox entry (or null on failure).
   Future<int?> sendMms(String address, String? body, String? imagePath) async {
     try {
-      return await _channel.invokeMethod<int>('sendMms', {
+      final rowId = await _channel.invokeMethod<int>('sendMms', {
         'address': address,
         'body': body,
         'imagePath': imagePath,
       });
+      if (rowId != null) onMessageSent?.call(address, body, true);
+      return rowId;
     } on PlatformException {
       return null;
     }

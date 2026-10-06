@@ -30,6 +30,7 @@ import 'package:fluffychat/pages/settings_notifications/settings_notifications.d
 import 'package:fluffychat/pages/settings_password/settings_password.dart';
 import 'package:fluffychat/pages/settings_security/settings_security.dart';
 import 'package:fluffychat/pages/settings_style/settings_style.dart';
+import 'package:fluffychat/pages/settings_webhook/settings_webhook.dart';
 import 'package:fluffychat/pages/sign_in/sign_in_page.dart';
 import 'package:fluffychat/pages/sms_test/sms_test_page.dart';
 import 'package:fluffychat/widgets/config_viewer.dart';
@@ -256,6 +257,14 @@ abstract class AppRoutes {
                         context,
                         state,
                         const SettingsIa(),
+                      ),
+                    ),
+                    GoRoute(
+                      path: 'webhook',
+                      pageBuilder: (context, state) => defaultPageBuilder(
+                        context,
+                        state,
+                        const SettingsWebhook(),
                       ),
                     ),
                     GoRoute(

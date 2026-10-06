@@ -241,6 +241,19 @@ class SmsBridgePlugin private constructor(
                 }
             }
 
+            // Nom du contact associé à une adresse (champ « contact » du
+            // webhook). Null si l'adresse n'est pas dans les contacts.
+            "resolveContactName" -> {
+                val address = call.argument<String>("address")
+                if (address.isNullOrEmpty()) {
+                    launchReply(result) { null }
+                } else {
+                    launchReply(result) {
+                        SmsBridge.lookupContact(context, address).name
+                    }
+                }
+            }
+
             // Balaye TOUTES les parts image/vidéo de TOUS les MMS (content://mms/part)
             // et les copie dans la galerie, sans ouvrir de conversation. Retourne
             // le nombre de parts nouvellement exportées.

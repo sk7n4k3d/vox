@@ -134,6 +134,16 @@ class SettingsView extends StatelessWidget {
             onTap: () => context.go('/rooms/settings/ia'),
           ),
 
+          // Webhook — POST signé vers Hermes à chaque message.
+          SettingsSectionTile(
+            icon: Icons.webhook_outlined,
+            color: appearanceColor,
+            title: 'Webhook',
+            subtitle: _webhookSubtitle(),
+            selected: activeRoute.startsWith('/rooms/settings/webhook'),
+            onTap: () => context.go('/rooms/settings/webhook'),
+          ),
+
           // Appearance.
           SettingsSectionTile(
             icon: Icons.palette_outlined,
@@ -364,6 +374,16 @@ class SettingsView extends StatelessWidget {
     try {
       // Computing real cache size is async + heavy → keep it cheap here.
       return 'Cache, media & cleanup';
+    } catch (_) {
+      return null;
+    }
+  }
+
+  String? _webhookSubtitle() {
+    try {
+      if (!AppSettings.webhookEnabled.value) return 'Désactivé';
+      final url = AppSettings.webhookUrl.value.trim();
+      return url.isEmpty ? 'Activé · URL manquante' : 'Activé · $url';
     } catch (_) {
       return null;
     }

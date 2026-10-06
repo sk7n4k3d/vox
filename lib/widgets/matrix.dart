@@ -11,9 +11,11 @@ import 'package:fluffychat/utils/init_with_restore.dart';
 import 'package:fluffychat/utils/matrix_sdk_extensions/matrix_file_extension.dart';
 import 'package:fluffychat/utils/media/media_exporter.dart';
 import 'package:fluffychat/utils/platform_infos.dart';
+import 'package:fluffychat/utils/sms/sms_bridge.dart';
 import 'package:fluffychat/utils/uia_request_manager.dart';
 import 'package:fluffychat/utils/voip_plugin.dart';
 import 'package:fluffychat/utils/wear_bridge.dart';
+import 'package:fluffychat/utils/webhook/webhook_hooks.dart';
 import 'package:fluffychat/widgets/adaptive_dialogs/show_ok_cancel_alert_dialog.dart';
 import 'package:fluffychat/widgets/fluffy_chat_app.dart';
 import 'package:fluffychat/widgets/future_loading_dialog.dart';
@@ -182,6 +184,8 @@ class MatrixState extends State<Matrix> with WidgetsBindingObserver {
   final onKeyVerificationRequestSub = <String, StreamSubscription>{};
   final onNotification = <String, StreamSubscription>{};
   final onMediaExportSub = <String, StreamSubscription>{};
+  final onWebhookMatrixSub = <String, StreamSubscription>{};
+  StreamSubscription? onWebhookSmsSub;
   final onLogoutSub = <String, StreamSubscription<LoginState>>{};
   final onUiaRequest = <String, StreamSubscription<UiaRequest>>{};
 
@@ -298,6 +302,23 @@ class MatrixState extends State<Matrix> with WidgetsBindingObserver {
     onMediaExportSub[name] ??= c.onTimelineEvent.stream.listen((event) {
       unawaited(MediaExporter.instance.exportIncomingEvent(event));
     });
+    // Webhook sortant : chaque message Matrix (entrant et sortant) des rooms
+    // cochées dans les réglages part en POST signé (voir WebhookHooks).
+    onWebhookMatrixSub[name] ??= c.onTimelineEvent.stream.listen((event) {
+      unawaited(WebhookHooks.onMatrixEvent(event));
+    });
+    // …et les SMS/MMS : entrant depuis le flux natif, sortant via le callback
+    // posé sur le pont (point de passage unique de tous les envois). Ces deux
+    // abonnements sont globaux (SmsBridge est un singleton), donc posés une
+    // seule fois même si plusieurs clients sont ouverts.
+    if (onWebhookSmsSub == null) {
+      onWebhookSmsSub = SmsBridge.instance.incoming.listen((sms) {
+        unawaited(WebhookHooks.onSmsIncoming(sms));
+      });
+      SmsBridge.instance.onMessageSent = (address, body, isMms) {
+        unawaited(WebhookHooks.onSmsOutgoing(address, body, isMms));
+      };
+    }
     if (PlatformInfos.isWeb || PlatformInfos.isLinux) {
       c.onSync.stream.first.then((s) {
         html.Notification.requestPermission();
@@ -320,6 +341,10 @@ class MatrixState extends State<Matrix> with WidgetsBindingObserver {
     onNotification.remove(name);
     onMediaExportSub[name]?.cancel();
     onMediaExportSub.remove(name);
+    onWebhookMatrixSub[name]?.cancel();
+    onWebhookMatrixSub.remove(name);
+    onWebhookSmsSub?.cancel();
+    onWebhookSmsSub = null;
   }
 
   void initMatrix() {
@@ -408,6 +433,10 @@ class MatrixState extends State<Matrix> with WidgetsBindingObserver {
     for (final s in onMediaExportSub.values) {
       s.cancel();
     }
+    for (final s in onWebhookMatrixSub.values) {
+      s.cancel();
+    }
+    onWebhookSmsSub?.cancel();
 
     linuxNotifications?.close();
 
