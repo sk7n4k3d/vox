@@ -87,6 +87,7 @@ class ThemeController extends State<ThemeBuilder> {
     final preferences = _sharedPreferences ??=
         await SharedPreferences.getInstance();
     await AppSettings.cyberThemeId.setItem(presetId);
+    await AppSettings.useDynamicColor.setItem(false);
     await preferences.remove(widget.primaryColorSettingsKey);
     setState(() {
       _primaryColor = null;
@@ -104,8 +105,19 @@ class ThemeController extends State<ThemeBuilder> {
     return Provider(
       create: (_) => this,
       child: DynamicColorBuilder(
-        builder: (light, _) =>
-            widget.builder(context, themeMode, primaryColor ?? light?.primary),
+        // Priorité : couleur choisie dans la palette > couleur du fond d'écran
+        // (pastille « Système ») > seed du preset. Avant, `light?.primary`
+        // s'appliquait même sans pastille « Système » : le fond d'écran Android
+        // écrasait le seed du preset, donc changer de thème ne changeait que les
+        // accents CYBER et laissait les couleurs Material sur celles du fond
+        // d'écran — d'où l'impression que les couleurs d'accentuation n'étaient
+        // pas prises en compte.
+        builder: (light, _) => widget.builder(
+          context,
+          themeMode,
+          primaryColor ??
+              (AppSettings.useDynamicColor.value ? light?.primary : null),
+        ),
       ),
     );
   }

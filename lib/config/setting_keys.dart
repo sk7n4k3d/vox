@@ -106,6 +106,11 @@ enum AppSettings<T> {
   // Selected premium theme preset id (see CyberThemes): cybercore | nexus |
   // aurora | ember | monochrome.
   cyberThemeId<String>('chat.fluffy.cyber_theme_id', 'cybercore'),
+  // Couleur du thème = couleur dynamique du fond d'écran Android (pastille
+  // « Système » de la palette). Sans ce drapeau, impossible de distinguer
+  // « aucune couleur choisie, applique le seed du preset » de « utilise la
+  // couleur du fond d'écran » : le fond d'écran écrasait alors le preset.
+  useDynamicColor<bool>('chat.fluffy.use_dynamic_color', false),
   // Use biometric (fingerprint/face) to unlock the app lock when available.
   appLockBiometric<bool>('chat.fluffy.app_lock_biometric', true),
   // SMS notifications (read natively by SmsNotifier via FlutterSharedPreferences).

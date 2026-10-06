@@ -121,7 +121,10 @@ class SettingsStyleView extends StatelessWidget {
                             child: SizedBox(
                               width: colorPickerSize,
                               height: colorPickerSize,
-                              child: controller.currentColor == color
+                              child:
+                                  controller.currentColor == color &&
+                                      (color != null ||
+                                          AppSettings.useDynamicColor.value)
                                   ? Center(
                                       child: Icon(
                                         Icons.check,

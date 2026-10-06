@@ -21,6 +21,9 @@ class SettingsStyleController extends State<SettingsStyle> {
     AppSettings.colorSchemeSeedInt.setItem(
       color?.toARGB32() ?? AppSettings.colorSchemeSeedInt.defaultValue,
     );
+    // Pastille « Système » = couleur dynamique du fond d'écran ; toute autre
+    // pastille est une couleur explicite qui prime sur le seed du preset.
+    AppSettings.useDynamicColor.setItem(color == null);
     ThemeController.of(context).setPrimaryColor(color);
   }
 

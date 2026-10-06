@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:fluffychat/config/cyberpunk_theme_extension.dart';
 import 'package:fluffychat/config/design_tokens.dart';
 import 'package:fluffychat/widgets/avatar.dart';
@@ -206,15 +208,27 @@ class _PulseRing extends StatefulWidget {
 
 class _PulseRingState extends State<_PulseRing>
     with SingleTickerProviderStateMixin {
+  // Deux respirations à l'entrée, puis repos définitif. Un `repeat()` permanent
+  // sur chaque conversation non lue saturait le thread raster : mesuré à
+  // 117 fps et ~7,5 ms de raster par frame en continu, écran pourtant figé
+  // (et 0 fps dès que les lignes sortaient du viewport). Le contrat CYBERCORE
+  // interdit `.repeat()` en liste.
   late final AnimationController _ctrl = AnimationController(
     vsync: this,
-    duration: const Duration(milliseconds: 1600),
-  )..repeat(reverse: true);
-
-  late final Animation<double> _glow = CurvedAnimation(
-    parent: _ctrl,
-    curve: Curves.easeInOut,
+    duration: const Duration(milliseconds: 3200),
   );
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final reduce = MediaQuery.maybeOf(context)?.disableAnimations ?? false;
+    if (reduce) {
+      _ctrl.stop();
+      _ctrl.value = 1;
+    } else if (!_ctrl.isAnimating && _ctrl.value == 0) {
+      _ctrl.forward();
+    }
+  }
 
   @override
   void dispose() {
@@ -226,10 +240,14 @@ class _PulseRingState extends State<_PulseRing>
   Widget build(BuildContext context) {
     return RepaintBoundary(
       child: AnimatedBuilder(
-        animation: _glow,
+        animation: _ctrl,
         builder: (context, child) {
-          final alpha = 0.25 + 0.35 * _glow.value;
-          final blur = 6.0 + 8.0 * _glow.value;
+          // 2 respirations réparties sur la durée, puis valeur figée à 1 : le
+          // halo reste présent mais l'animation s'arrête (plus aucune frame).
+          final breath =
+              0.5 - 0.5 * math.cos(_ctrl.value * 2 * math.pi * 2);
+          final alpha = 0.25 + 0.35 * breath;
+          final blur = 6.0 + 8.0 * breath;
           return Container(
             padding: EdgeInsets.all(widget.gap),
             decoration: BoxDecoration(
