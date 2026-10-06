@@ -93,7 +93,13 @@ class WebhookHooks {
 
   /// SMS/MMS sortant, depuis le callback posé sur [SmsBridge.onMessageSent]
   /// (point de passage unique de tous les envois : composeur, programmé,
-  /// partage). Filtré sur les fils cochés — on retrouve le fil par le numéro.
+  /// partage).
+  ///
+  /// Le callback ne porte que le numéro : on **résout le fil** (threadId) via le
+  /// pont natif, comme pour le filtrage. Sans ça l'événement partait avec un fil
+  /// vide, donc dans un fil différent de celui des entrants : la détection
+  /// « à qui je n'ai pas répondu » (qui compare entrants et sortants d'un même
+  /// fil) ne voyait jamais les réponses SMS.
   static Future<void> onSmsOutgoing(
     String address,
     String? body,
@@ -102,16 +108,18 @@ class WebhookHooks {
   ) async {
     if (!WebhookService.instance.isConfigured) return;
     final allowed = await WebhookService.instance.allowedSmsThreads();
-    final excluded = await WebhookService.instance.excludedSmsThreads();
     final all = WebhookService.instance.smsAll;
     final newDefault = WebhookService.instance.smsNewDefault;
+    // Rien ne peut partir : inutile d'aller résoudre le fil.
     if (!all && !newDefault && allowed.isEmpty) return;
-    if (!await _outgoingTargetAllowed(
+    final excluded = await WebhookService.instance.excludedSmsThreads();
+    final threadId = await _threadIdForAddress(address);
+    if (!isSmsThreadAllowed(
       allowed,
-      excluded,
-      address,
+      threadId ?? '',
       all: all,
       newDefault: newDefault,
+      excluded: excluded,
     )) {
       return;
     }
@@ -124,6 +132,7 @@ class WebhookHooks {
         sender: address,
         senderName: await _contactName(address),
         body: body,
+        threadId: threadId,
         media: attachmentPath == null || attachmentPath.isEmpty
             ? const <WebhookMedia>[]
             : [
@@ -293,28 +302,19 @@ class WebhookHooks {
     };
   }
 
-  /// L'envoi vise-t-il une conversation qui part ? On retrouve le fil par le
-  /// numéro : la conversation native porte le couple (threadId, adresse).
-  static Future<bool> _outgoingTargetAllowed(
-    Set<String> allowed,
-    Set<String> excluded,
-    String address, {
-    required bool all,
-    required bool newDefault,
-  }) async {
-    if (all) return true;
+  /// Fil (threadId) correspondant à un numéro, via le pont natif. Null si le
+  /// numéro ne correspond à aucune conversation connue.
+  static Future<String?> _threadIdForAddress(String address) async {
     try {
       final conversations = await SmsBridge.instance.listConversations();
-      return isSmsAddressAllowed(
+      return smsThreadIdForAddress(
         conversations.map((c) => (threadId: c.threadId, address: c.address)),
-        allowed,
         address,
-        newDefault: newDefault,
-        excluded: excluded,
       );
-    } catch (_) {
-      return false;
+    } catch (e) {
+      debugPrint('WebhookHooks: fil introuvable pour un envoi: $e');
     }
+    return null;
   }
 
   static Future<String?> _contactName(String address) async {

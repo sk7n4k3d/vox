@@ -126,32 +126,27 @@ void main() {
     });
   });
 
-  group('normalizeSmsAddress / isSmsAddressAllowed', () {
+  group('normalizeSmsAddress / smsThreadIdForAddress', () {
     test('espaces, tirets et points ne changent pas le numero', () {
       expect(normalizeSmsAddress('+33 6 50 73 02 02'), '+33650730202');
       expect(normalizeSmsAddress('06.50.73.02.02'), '0650730202');
       expect(normalizeSmsAddress('+33-(6)-50-73-02-02'), '+33650730202');
     });
 
-    test('un envoi part si son destinataire est un fil coche', () {
+    test('un envoi retrouve son fil malgre la mise en forme du numero', () {
       const threads = [
         (threadId: '12', address: '+33650730202'),
         (threadId: '4', address: '+33612345678'),
       ];
-      expect(isSmsAddressAllowed(threads, {'12'}, '+33650730202'), isTrue);
-      expect(isSmsAddressAllowed(threads, {'12'}, '+33 6 50 73 02 02'), isTrue);
-      expect(isSmsAddressAllowed(threads, {'4'}, '+33650730202'), isFalse);
-      expect(isSmsAddressAllowed(threads, {'12'}, '+33699999999'), isFalse);
-      expect(isSmsAddressAllowed(threads, const {}, '+33650730202'), isFalse);
+      expect(smsThreadIdForAddress(threads, '+33650730202'), '12');
+      expect(smsThreadIdForAddress(threads, '+33 6 50 73 02 02'), '12');
+      expect(smsThreadIdForAddress(threads, '+33612345678'), '4');
+      expect(smsThreadIdForAddress(threads, '+33699999999'), isNull);
     });
 
     test('all=true envoie meme les conversations jamais vues', () {
       expect(isRoomAllowed(const <String>{}, '!nouvelle:x', all: true), isTrue);
       expect(isSmsThreadAllowed(const <String>{}, '99', all: true), isTrue);
-      expect(
-        isSmsAddressAllowed(const [], const <String>{}, '+33600000000', all: true),
-        isTrue,
-      );
       // Sans le drapeau, une conversation hors liste reste exclue.
       expect(isRoomAllowed(const {'!a:x'}, '!nouvelle:x'), isFalse);
       expect(isSmsThreadAllowed(const {'12'}, '99'), isFalse);
@@ -211,29 +206,10 @@ void main() {
 
     test('sortant : le fil retrouve par le numero suit la meme regle', () {
       const threads = [(threadId: '12', address: '+33650730202')];
-      expect(
-        isSmsAddressAllowed(threads, const {}, '+33650730202', newDefault: true),
-        isTrue,
-      );
-      expect(
-        isSmsAddressAllowed(
-          threads,
-          const {},
-          '+33650730202',
-          newDefault: true,
-          excluded: const {'12'},
-        ),
-        isFalse,
-      );
-      expect(
-        isSmsAddressAllowed(
-          const [],
-          const {},
-          '+33600000000',
-          newDefault: true,
-        ),
-        isTrue,
-      );
+      expect(smsThreadIdForAddress(threads, '+33650730202'), '12');
+      expect(smsThreadIdForAddress(threads, '+33 6 50 73 02 02'), '12');
+      expect(smsThreadIdForAddress(threads, '+33699999999'), isNull);
+      expect(smsThreadIdForAddress(const [], '+33650730202'), isNull);
     });
   });
 

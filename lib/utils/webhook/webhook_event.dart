@@ -164,22 +164,18 @@ bool isSmsThreadAllowed(
 String normalizeSmsAddress(String raw) =>
     raw.replaceAll(RegExp(r'[\s\-.()]'), '');
 
-/// Un envoi sortant ne porte que le numéro : on retrouve le fil dans [threads]
-/// (couples threadId + adresse issus du pont SMS) puis on applique la règle.
-bool isSmsAddressAllowed(
-  Iterable<({String threadId, String address})> threads,
-  Set<String> allowedThreads,
-  String address, {
-  bool all = false,
-  bool newDefault = false,
-  Set<String> excluded = const <String>{},
-}) {
-  if (all) return true;
+/// Fil (threadId) d'un numéro, à partir des conversations du pont SMS. Pur :
+/// c'est la règle de résolution utilisée pour les envois sortants, dont le
+/// callback ne porte que le numéro. Null si aucune conversation ne correspond.
+String? smsThreadIdForAddress(
+  Iterable<({String threadId, String address})> conversations,
+  String address,
+) {
   final target = normalizeSmsAddress(address);
-  for (final thread in threads) {
-    if (normalizeSmsAddress(thread.address) != target) continue;
-    if (allowedThreads.contains(thread.threadId)) return true;
-    if (excluded.contains(thread.threadId)) return false;
+  for (final conversation in conversations) {
+    if (normalizeSmsAddress(conversation.address) == target) {
+      return conversation.threadId;
+    }
   }
-  return newDefault;
+  return null;
 }
