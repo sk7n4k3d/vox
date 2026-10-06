@@ -1,8 +1,11 @@
 import 'dart:async';
+import 'dart:convert';
+import 'dart:io';
 
 import 'package:fluffychat/utils/sms/sms_bridge.dart';
 import 'package:fluffychat/utils/webhook/webhook_event.dart';
 import 'package:fluffychat/utils/webhook/webhook_service.dart';
+import 'package:flutter/foundation.dart';
 import 'package:matrix/matrix.dart';
 
 /// Adaptateurs : transforment un message Matrix ou SMS/MMS en [WebhookEvent]
@@ -52,7 +55,7 @@ class WebhookHooks {
         body: body,
         roomId: room.id,
         roomName: room.getLocalizedDisplayname(),
-        media: _matrixMedia(event, body),
+        media: await _matrixMedia(event, body),
       ),
     );
   }
@@ -83,6 +86,7 @@ class WebhookHooks {
         senderName: await _contactName(sms.address),
         body: sms.body,
         threadId: sms.threadId,
+        media: sms.hasMmsId ? await _mmsMedia(sms.mmsId) : const <WebhookMedia>[],
       ),
     );
   }
@@ -94,6 +98,7 @@ class WebhookHooks {
     String address,
     String? body,
     bool isMms,
+    String? attachmentPath,
   ) async {
     if (!WebhookService.instance.isConfigured) return;
     final allowed = await WebhookService.instance.allowedSmsThreads();
@@ -119,23 +124,173 @@ class WebhookHooks {
         sender: address,
         senderName: await _contactName(address),
         body: body,
+        media: attachmentPath == null || attachmentPath.isEmpty
+            ? const <WebhookMedia>[]
+            : [
+                await _fileMedia(
+                  attachmentPath,
+                  attachmentPath.split('/').last,
+                  mimeType: _mimeForPath(attachmentPath),
+                ),
+              ],
       ),
     );
   }
 
-  /// Métadonnées d'une pièce jointe Matrix (jamais les octets en v1).
-  static List<WebhookMedia> _matrixMedia(Event event, String? body) {
+  /// Médias d'un message Matrix : les octets déchiffrés partent en base64, sous
+  /// le plafond. Un téléchargement raté ou un fichier trop gros devient une
+  /// simple métadonnée (`reason`), jamais un échec de l'événement.
+  static Future<List<WebhookMedia>> _matrixMedia(
+    Event event,
+    String? body,
+  ) async {
     if (!_matrixMediaTypes.contains(event.messageType)) {
       return const <WebhookMedia>[];
     }
     final info = event.content.tryGetMap<String, Object?>('info');
-    return <WebhookMedia>[
-      WebhookMedia(
-        mimeType: (info?.tryGet<String>('mimetype')) ?? '',
-        fileName: body,
-        size: (info?.tryGet<int>('size')) ?? 0,
-      ),
-    ];
+    final mime = (info?.tryGet<String>('mimetype')) ?? '';
+    final declared = (info?.tryGet<int>('size')) ?? 0;
+    if (declared > maxWebhookMediaBytes) {
+      return <WebhookMedia>[
+        WebhookMedia(
+          mimeType: mime,
+          fileName: body,
+          size: declared,
+          reason: 'trop volumineux (> 16 Mo)',
+        ),
+      ];
+    }
+    try {
+      final file = await event.downloadAndDecryptAttachment();
+      final bytes = file.bytes;
+      if (bytes.isEmpty) {
+        return <WebhookMedia>[
+          WebhookMedia(
+            mimeType: mime.isEmpty ? file.mimeType : mime,
+            fileName: body,
+            size: declared,
+            reason: 'octets vides',
+          ),
+        ];
+      }
+      if (bytes.length > maxWebhookMediaBytes) {
+        return <WebhookMedia>[
+          WebhookMedia(
+            mimeType: mime.isEmpty ? file.mimeType : mime,
+            fileName: body,
+            size: bytes.length,
+            reason: 'trop volumineux (> 16 Mo)',
+          ),
+        ];
+      }
+      return <WebhookMedia>[
+        WebhookMedia(
+          mimeType: mime.isEmpty ? file.mimeType : mime,
+          fileName: body,
+          size: bytes.length,
+          dataB64: base64Encode(bytes),
+        ),
+      ];
+    } catch (e) {
+      debugPrint('WebhookHooks: média Matrix illisible: $e');
+      return <WebhookMedia>[
+        WebhookMedia(
+          mimeType: mime,
+          fileName: body,
+          size: declared,
+          reason: 'téléchargement échoué',
+        ),
+      ];
+    }
+  }
+
+  /// Médias d'un MMS entrant : chaque part est extraite puis lue, sous le
+  /// plafond. Une part illisible devient une métadonnée.
+  static Future<List<WebhookMedia>> _mmsMedia(int mmsId) async {
+    final out = <WebhookMedia>[];
+    try {
+      final parts = await SmsBridge.instance.listMmsParts(mmsId);
+      for (final part in parts) {
+        final path = await SmsBridge.instance.loadMmsPart(part.partId);
+        if (path == null || path.isEmpty) {
+          out.add(
+            WebhookMedia(
+              mimeType: part.mimeType,
+              fileName: part.fileName,
+              size: 0,
+              reason: 'part illisible',
+            ),
+          );
+          continue;
+        }
+        out.add(
+          await _fileMedia(path, part.fileName, mimeType: part.mimeType),
+        );
+      }
+    } catch (e) {
+      debugPrint('WebhookHooks: média MMS illisible: $e');
+    }
+    return out;
+  }
+
+  /// Lit un fichier local et l'encode. Au-delà du plafond, ou si la lecture
+  /// échoue, on ne garde que la métadonnée.
+  static Future<WebhookMedia> _fileMedia(
+    String path,
+    String? fileName, {
+    String mimeType = '',
+  }) async {
+    try {
+      final file = File(path);
+      if (!await file.exists()) {
+        return WebhookMedia(
+          mimeType: mimeType,
+          fileName: fileName,
+          size: 0,
+          reason: 'fichier introuvable',
+        );
+      }
+      final length = await file.length();
+      if (length > maxWebhookMediaBytes) {
+        return WebhookMedia(
+          mimeType: mimeType,
+          fileName: fileName,
+          size: length,
+          reason: 'trop volumineux (> 16 Mo)',
+        );
+      }
+      final bytes = await file.readAsBytes();
+      return WebhookMedia(
+        mimeType: mimeType,
+        fileName: fileName,
+        size: bytes.length,
+        dataB64: base64Encode(bytes),
+      );
+    } catch (e) {
+      debugPrint('WebhookHooks: fichier média illisible: $e');
+      return WebhookMedia(
+        mimeType: mimeType,
+        fileName: fileName,
+        size: 0,
+        reason: 'lecture impossible',
+      );
+    }
+  }
+
+  /// Type MIME déduit de l'extension (un MMS sortant ne nous donne que le
+  /// chemin du fichier).
+  static String _mimeForPath(String path) {
+    final ext = path.toLowerCase().split('.').last;
+    return switch (ext) {
+      'jpg' || 'jpeg' => 'image/jpeg',
+      'png' => 'image/png',
+      'gif' => 'image/gif',
+      'webp' => 'image/webp',
+      'heic' => 'image/heic',
+      'mp4' => 'video/mp4',
+      '3gp' => 'video/3gpp',
+      _ => 'application/octet-stream',
+    };
   }
 
   /// L'envoi vise-t-il une conversation qui part ? On retrouve le fil par le

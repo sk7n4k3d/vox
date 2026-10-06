@@ -201,7 +201,9 @@ class SmsBridge {
 
   /// Callback posé par la couche webhook (évite une dépendance circulaire) :
   /// appelé après chaque envoi réussi, quel que soit l'appelant.
-  void Function(String address, String? body, bool isMms)? onMessageSent;
+  /// [attachmentPath] porte l'image d'un MMS sortant (null pour un SMS).
+  void Function(String address, String? body, bool isMms, String? attachmentPath)?
+      onMessageSent;
 
   /// Sends an SMS. Returns the provider row id (or null on failure).
   Future<int?> sendSms(String address, String body) async {
@@ -210,7 +212,7 @@ class SmsBridge {
         'address': address,
         'body': body,
       });
-      if (rowId != null) onMessageSent?.call(address, body, false);
+      if (rowId != null) onMessageSent?.call(address, body, false, null);
       return rowId;
     } on PlatformException {
       return null;
@@ -293,6 +295,22 @@ class SmsBridge {
     }
   }
 
+  /// Parts (pièces jointes) d'un MMS : partId, type MIME et nom de fichier. Les
+  /// octets se lisent ensuite via [loadMmsPart] — c'est ce que fait le webhook
+  /// pour archiver le média d'un MMS entrant.
+  Future<List<SmsAttachment>> listMmsParts(int mmsId) async {
+    try {
+      final raw = await _channel.invokeMethod<List<dynamic>>('listMmsParts', {
+        'mmsId': mmsId,
+      });
+      return (raw ?? [])
+          .map((e) => SmsAttachment.fromMap(Map<String, dynamic>.from(e)))
+          .toList();
+    } on PlatformException {
+      return const [];
+    }
+  }
+
   /// Extracts an MMS part (image) to a cache file and returns its local path.
   Future<String?> loadMmsPart(int partId) async {
     try {
@@ -349,7 +367,7 @@ class SmsBridge {
         'body': body,
         'imagePath': imagePath,
       });
-      if (rowId != null) onMessageSent?.call(address, body, true);
+      if (rowId != null) onMessageSent?.call(address, body, true, imagePath);
       return rowId;
     } on PlatformException {
       return null;
@@ -620,6 +638,10 @@ class SmsIncoming {
   /// SMS.
   final int messageId;
 
+  /// Provider rowId du MMS ingéré, ou -1. Permet au webhook d'aller chercher les
+  /// parts (média) du message via [SmsBridge.listMmsParts].
+  final int mmsId;
+
   const SmsIncoming({
     required this.kind,
     required this.address,
@@ -627,6 +649,7 @@ class SmsIncoming {
     required this.date,
     required this.threadId,
     this.messageId = -1,
+    this.mmsId = -1,
   });
 
   factory SmsIncoming.fromMap(Map<String, dynamic> m) => SmsIncoming(
@@ -636,12 +659,16 @@ class SmsIncoming {
         date: (m['date'] as num?)?.toInt() ?? 0,
         threadId: '${m['threadId'] ?? ''}',
         messageId: (m['messageId'] as num?)?.toInt() ?? -1,
+        mmsId: (m['mmsId'] as num?)?.toInt() ?? -1,
       );
 
   bool get isMms => kind == 'mms';
 
   /// True when [messageId] is a real provider rowId we can target for deletion.
   bool get hasMessageId => messageId > 0;
+
+  /// True quand on a le rowId du MMS et qu'on peut donc en lire les parts.
+  bool get hasMmsId => mmsId > 0;
 }
 
 /// A request to open a conversation, emitted when the user taps an SMS

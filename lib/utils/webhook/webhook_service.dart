@@ -119,16 +119,35 @@ class WebhookService {
     }
   }
 
-  /// Envoie un événement de test, pour vérifier le câblage côté Hermes.
-  Future<void> sendTest() => dispatch(
-        WebhookEvent(
-          source: WebhookSource.sms,
-          eventId: 'test-${DateTime.now().millisecondsSinceEpoch}',
-          outgoing: false,
-          timestamp: DateTime.now(),
-          sender: '+33000000000',
-          senderName: 'VOX (test)',
-          body: 'Test du webhook VOX',
-        ),
-      );
+  /// Envoie un événement de test, pour vérifier le câblage côté Hermes — texte
+  /// **et** média (un PNG d'un pixel), histoire de valider toute la chaîne
+  /// base64, pas seulement le POST.
+  Future<void> sendTest() {
+    final bytes = base64Decode(_testPngBase64);
+    return dispatch(
+      WebhookEvent(
+        source: WebhookSource.sms,
+        eventId: 'test-${DateTime.now().millisecondsSinceEpoch}',
+        outgoing: false,
+        timestamp: DateTime.now(),
+        sender: '+33000000000',
+        senderName: 'VOX (test)',
+        body: 'Test du webhook VOX',
+        media: [
+          WebhookMedia(
+            mimeType: 'image/png',
+            fileName: 'vox-test.png',
+            size: bytes.length,
+            dataB64: _testPngBase64,
+          ),
+        ],
+      ),
+    );
+  }
 }
+
+/// PNG 1×1 transparent — le média du bouton de test, pour prouver que les octets
+/// arrivent bien jusqu'au disque de Hermes.
+const String _testPngBase64 =
+    'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQ'
+    'DwAEhQGAhKmMIQAAAABJRU5ErkJggg==';

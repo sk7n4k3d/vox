@@ -216,6 +216,17 @@ class SmsBridgePlugin private constructor(
                 launchReply(result) { SmsBridge.loadMmsPart(context, partId) }
             }
 
+            // Parts d'un MMS (partId + type MIME + nom) : le webhook en dérive le
+            // média à archiver, avant de lire chaque part via loadMmsPart.
+            "listMmsParts" -> launchReply(result) {
+                val mmsId = call.longArg("mmsId")
+                if (mmsId == null || mmsId <= 0) {
+                    emptyList<Map<String, Any?>>()
+                } else {
+                    SmsBridge.listMmsParts(context, mmsId)
+                }
+            }
+
             // Exposes a local image/video file to the public MediaStore gallery
             // (Pictures/VOX, Movies/VOX). Returns the media URI, or null when the
             // export is unavailable (API < 29), disabled, or already done.

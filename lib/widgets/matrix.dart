@@ -315,8 +315,10 @@ class MatrixState extends State<Matrix> with WidgetsBindingObserver {
       onWebhookSmsSub = SmsBridge.instance.incoming.listen((sms) {
         unawaited(WebhookHooks.onSmsIncoming(sms));
       });
-      SmsBridge.instance.onMessageSent = (address, body, isMms) {
-        unawaited(WebhookHooks.onSmsOutgoing(address, body, isMms));
+      SmsBridge.instance.onMessageSent = (address, body, isMms, attachmentPath) {
+        unawaited(
+          WebhookHooks.onSmsOutgoing(address, body, isMms, attachmentPath),
+        );
       };
     }
     if (PlatformInfos.isWeb || PlatformInfos.isLinux) {

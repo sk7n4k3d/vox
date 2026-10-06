@@ -233,4 +233,39 @@ void main() {
       );
     });
   });
+
+  group('WebhookMedia — contrat média', () {
+    test('les octets partent en base64 avec le type et le nom', () {
+      final json = WebhookMedia(
+        mimeType: 'image/jpeg',
+        fileName: 'photo.jpg',
+        size: 3,
+        dataB64: 'AQID',
+      ).toJson();
+
+      expect(json['mime'], 'image/jpeg');
+      expect(json['filename'], 'photo.jpg');
+      expect(json['size'], 3);
+      expect(json['data_b64'], 'AQID');
+      expect(json.containsKey('reason'), isFalse);
+    });
+
+    test('un média non joint porte une raison, pas d octets', () {
+      const media = WebhookMedia(
+        mimeType: 'video/mp4',
+        fileName: 'gros.mp4',
+        size: maxWebhookMediaBytes + 1,
+        reason: 'trop volumineux (> 16 Mo)',
+      );
+      final json = media.toJson();
+
+      expect(media.skipped, isTrue);
+      expect(json.containsKey('data_b64'), isFalse);
+      expect(json['reason'], 'trop volumineux (> 16 Mo)');
+    });
+
+    test('le plafond est bien de 16 Mo', () {
+      expect(maxWebhookMediaBytes, 16 * 1024 * 1024);
+    });
+  });
 }

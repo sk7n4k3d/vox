@@ -968,6 +968,14 @@ object SmsBridge {
      *
      * @return path absolu du fichier, ou null en cas d'échec.
      */
+    /**
+     * Parts d'un MMS (pièces jointes : { partId, mimeType, fileName }), telles
+     * que le pont Dart les expose. Sert au webhook pour archiver le média d'un
+     * MMS entrant : on lit ensuite chaque part via [loadMmsPart].
+     */
+    suspend fun listMmsParts(context: Context, mmsId: Long): List<Map<String, Any?>> =
+        withContext(Dispatchers.IO) { mmsParts(context, mmsId).second }
+
     suspend fun loadMmsPart(context: Context, partId: Long): String? =
         withContext(Dispatchers.IO) {
             if (partId <= 0L) return@withContext null
@@ -2231,22 +2239,29 @@ object SmsBridge {
             file.delete()
             if (mmsId > 0) {
                 Log.i(TAG, "MMS entrant ingéré mmsId=$mmsId thread=$threadId")
+                val cleanSender = sender?.substringBefore('/')?.trim()
+                val textPart = retrieved.parts
+                    .firstOrNull { it.contentType.startsWith("text/") }
+                    ?.let { String(it.data, Charsets.UTF_8).trim() }
                 // Notifie Dart : un MMS est désormais lisible dans le provider.
+                // On porte l'identité complète (fil, id provider, expéditeur, texte)
+                // pour que la couche webhook sache quoi archiver — média compris,
+                // les parts se lisant ensuite via listMmsParts + loadMmsPart.
                 onMmsReceived?.invoke(
                     mapOf(
                         "mimeType" to "application/vnd.wap.mms-message",
                         "date" to System.currentTimeMillis(),
                         "from" to (sender ?: ""),
+                        "address" to (cleanSender ?: ""),
+                        "threadId" to threadId,
+                        "mmsId" to mmsId,
+                        "body" to (textPart ?: ""),
                     )
                 )
                 // Notification système (même chemin que les SMS). Snippet = texte
                 // du MMS s'il y en a, sinon un libellé média.
-                val cleanSender = sender?.substringBefore('/')?.trim()
                 if (threadId > 0L && !cleanSender.isNullOrBlank()) {
                     runCatching {
-                        val textPart = retrieved.parts
-                            .firstOrNull { it.contentType.startsWith("text/") }
-                            ?.let { String(it.data, Charsets.UTF_8).trim() }
                         val hasImage = retrieved.parts.any { it.contentType.startsWith("image/") }
                         val hasVideo = retrieved.parts.any { it.contentType.startsWith("video/") }
                         val snippet = when {

@@ -1,23 +1,37 @@
 /// Source d'un événement poussé au webhook.
 enum WebhookSource { sms, mms, matrix }
 
-/// Métadonnée d'une pièce jointe. Volontairement **sans octets** : v1 n'envoie
-/// pas les images, seulement de quoi les identifier (type, nom, taille).
+/// Plafond d'un média poussé au webhook : 16 Mo de binaire (~21,3 Mo une fois
+/// encodé en base64, d'où le `client_max_body_size 32m` côté Hermes). Au-delà,
+/// seules les métadonnées partent, avec un [WebhookMedia.reason].
+const int maxWebhookMediaBytes = 16 * 1024 * 1024;
+
+/// Une pièce jointe. Les octets voyagent en base64 dans [dataB64] ; au-delà du
+/// plafond (ou si la lecture échoue) ils sont remplacés par [reason] et Hermes
+/// n'archive que la métadonnée.
 class WebhookMedia {
   const WebhookMedia({
     required this.mimeType,
     this.fileName,
     required this.size,
+    this.dataB64,
+    this.reason,
   });
 
   final String mimeType;
   final String? fileName;
   final int size;
+  final String? dataB64;
+  final String? reason;
+
+  bool get skipped => dataB64 == null;
 
   Map<String, Object?> toJson() => <String, Object?>{
         'mime': mimeType,
         'filename': fileName,
         'size': size,
+        if (dataB64 != null) 'data_b64': dataB64,
+        if (reason != null) 'reason': reason,
       };
 }
 
