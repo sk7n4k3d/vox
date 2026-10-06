@@ -81,7 +81,7 @@ elif have spotbugs; then
   if [ -z "$CLASSES" ]; then
     skip "spotbugs+findsecbugs" "classes Kotlin introuvables (voir gradle_compile.log)"
   else
-    PLUGINS="$(find /opt/bughunt/spotbugs -name 'findsecbugs-plugin-*.jar' 2>/dev/null | head -1)"
+    PLUGINS="$(find -L /opt/bughunt/spotbugs -name 'findsecbugs-plugin-*.jar' 2>/dev/null | head -1)"
     if [ -n "$PLUGINS" ]; then
       step "spotbugs+findsecbugs" "$OUT/spotbugs.log" \
         bash -c "spotbugs -textui -effort:max -low -pluginList '$PLUGINS' -sortByClass '$CLASSES' 2>&1; exit 0"
