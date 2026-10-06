@@ -18,6 +18,9 @@ paths = [
   '''macos/Podfile\.lock''',
   # 111 « generic-api-key » = longues chaînes de la doc.
   '''PRIVACY\.md''',
+  # Clé de fuseau horaire MCS-4175 dans du code amont FlutterChat (fichier
+  # supprimé depuis) : « us.cloke.msc4175.tz » matche l'heuristique générique.
+  '''lib/pages/settings_profile/settings_profile_presenter\.dart''',
   # Config Firebase : la clé d'API google-services est un identifiant PUBLIC,
   # pas un secret. À noter : ce fichier a été committé (FCM est mort dans VOX).
   '''android/app/google-services\.json''',

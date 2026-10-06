@@ -81,16 +81,16 @@ elif have spotbugs; then
   if [ -z "$CLASSES" ]; then
     skip "spotbugs+findsecbugs" "classes Kotlin introuvables (voir gradle_compile.log)"
   else
-    PLUGINS="$(find -L /opt/bughunt/spotbugs -name 'findsecbugs-plugin-*.jar' 2>/dev/null | head -1)"
     EXCLUDE=""
     [ -f "$ROOT/.spotbugs-exclude.xml" ] && EXCLUDE="-exclude $ROOT/.spotbugs-exclude.xml"
-    if [ -n "$PLUGINS" ]; then
-      step "spotbugs+findsecbugs" "$OUT/spotbugs.log" \
-        bash -c "spotbugs -textui -effort:max -low $EXCLUDE -pluginList '$PLUGINS' -sortByClass '$CLASSES' 2>&1; exit 0"
-    else
-      step "spotbugs" "$OUT/spotbugs.log" \
-        bash -c "spotbugs -textui -effort:max -low $EXCLUDE -sortByClass '$CLASSES' 2>&1; exit 0"
-    fi
+    # SpotBugs charge AUTOMATIQUEMENT les plugins de son dossier `plugin/`.
+    # Repasser le même jar en -pluginList déclenche DuplicatePluginIdException
+    # (l'analyse plante et sort 0 finding) — on ne fait que constater sa présence
+    # pour l'étiquette du rapport.
+    FSB="$(find -L /opt/bughunt/spotbugs -name 'findsecbugs-plugin-*.jar' 2>/dev/null | head -1)"
+    LABEL="spotbugs"; [ -n "$FSB" ] && LABEL="spotbugs+findsecbugs"
+    step "$LABEL" "$OUT/spotbugs.log" \
+      bash -c "spotbugs -textui -effort:max -low $EXCLUDE -sortByClass '$CLASSES' 2>&1; exit 0"
     say "  High/Medium : $(grep -cE '^H ' "$OUT/spotbugs.log" 2>/dev/null || true)/$(grep -cE '^M ' "$OUT/spotbugs.log" 2>/dev/null || true)"
   fi
 else
