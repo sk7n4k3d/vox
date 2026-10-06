@@ -80,3 +80,6 @@ web/native_executor.js*
 
 # Triage bug-hunt : documentation locale (machine de build), pas publiee.
 /docs/bughunt-triage-*.md
+
+# Docs de design touchant l infra (Hermes/homelab) : locales, pas publiees.
+/docs/superpowers/specs/2026-10-06-vox-hermes-inbox-design.md

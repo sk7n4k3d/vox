@@ -108,29 +108,6 @@ class SettingsWebhookView extends StatelessWidget {
                 ],
               ),
             ),
-            CyberSectionHeader('Confidentialité', accent: cyber.violet),
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: FluffySpacing.lg),
-              child: CyberGlass(
-                padding: const EdgeInsets.symmetric(
-                  vertical: FluffySpacing.xs,
-                ),
-                child: CyberSettingsTile(
-                  icon: Icons.visibility_off_outlined,
-                  accent: cyber.magenta,
-                  title: 'Masquer le contenu des conversations',
-                  subtitle:
-                      'N\'envoie que les métadonnées (numéro, contact, date, '
-                      'présence de média) — pas le texte',
-                  trailing: Switch.adaptive(
-                    value: controller.hideBody,
-                    activeThumbColor: cyber.magenta,
-                    onChanged: controller.toggleHideBody,
-                  ),
-                  onTap: () => controller.toggleHideBody(!controller.hideBody),
-                ),
-              ),
-            ),
             CyberSectionHeader(
               'Conversations Matrix (${controller.rooms.length} cochée'
               '${controller.rooms.length > 1 ? 's' : ''})',

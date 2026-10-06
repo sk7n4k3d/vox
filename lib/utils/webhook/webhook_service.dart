@@ -54,11 +54,7 @@ class WebhookService {
     final uri = Uri.tryParse(AppSettings.webhookUrl.value.trim());
     if (uri == null || !uri.hasScheme) return;
 
-    // « Cache conversation » est décidé ici, une fois pour toutes les sources :
-    // aucun appelant ne peut l'oublier.
-    final rawBody = jsonEncode(
-      event.toJson(hideBody: AppSettings.webhookHideBody.value),
-    );
+    final rawBody = jsonEncode(event.toJson());
     final timestamp =
         (DateTime.now().millisecondsSinceEpoch ~/ 1000).toString();
     final secret = await WebhookStore.instance.loadSecret();

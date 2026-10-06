@@ -22,7 +22,6 @@ class SettingsWebhookController extends State<SettingsWebhook> {
   final TextEditingController secretController = TextEditingController();
 
   bool enabled = AppSettings.webhookEnabled.value;
-  bool hideBody = AppSettings.webhookHideBody.value;
   bool obscureSecret = true;
   Set<String> rooms = <String>{};
 
@@ -46,12 +45,6 @@ class SettingsWebhookController extends State<SettingsWebhook> {
     await AppSettings.webhookEnabled.setItem(value);
     if (!mounted) return;
     setState(() => enabled = value);
-  }
-
-  Future<void> toggleHideBody(bool value) async {
-    await AppSettings.webhookHideBody.setItem(value);
-    if (!mounted) return;
-    setState(() => hideBody = value);
   }
 
   void toggleSecretVisibility() =>
