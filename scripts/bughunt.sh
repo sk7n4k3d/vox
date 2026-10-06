@@ -82,12 +82,14 @@ elif have spotbugs; then
     skip "spotbugs+findsecbugs" "classes Kotlin introuvables (voir gradle_compile.log)"
   else
     PLUGINS="$(find -L /opt/bughunt/spotbugs -name 'findsecbugs-plugin-*.jar' 2>/dev/null | head -1)"
+    EXCLUDE=""
+    [ -f "$ROOT/.spotbugs-exclude.xml" ] && EXCLUDE="-exclude $ROOT/.spotbugs-exclude.xml"
     if [ -n "$PLUGINS" ]; then
       step "spotbugs+findsecbugs" "$OUT/spotbugs.log" \
-        bash -c "spotbugs -textui -effort:max -low -pluginList '$PLUGINS' -sortByClass '$CLASSES' 2>&1; exit 0"
+        bash -c "spotbugs -textui -effort:max -low $EXCLUDE -pluginList '$PLUGINS' -sortByClass '$CLASSES' 2>&1; exit 0"
     else
       step "spotbugs" "$OUT/spotbugs.log" \
-        bash -c "spotbugs -textui -effort:max -low -sortByClass '$CLASSES' 2>&1; exit 0"
+        bash -c "spotbugs -textui -effort:max -low $EXCLUDE -sortByClass '$CLASSES' 2>&1; exit 0"
     fi
     say "  High/Medium : $(grep -cE '^H ' "$OUT/spotbugs.log" 2>/dev/null || true)/$(grep -cE '^M ' "$OUT/spotbugs.log" 2>/dev/null || true)"
   fi
@@ -122,9 +124,11 @@ fi
 if [ "$FAST" = "1" ]; then
   skip "gitleaks (git)" "--fast"
 elif have gitleaks; then
+  GLARGS=""
+  [ -f "$ROOT/.gitleaks.toml" ] && GLARGS="--config .gitleaks.toml"
   step "gitleaks (git)" "$OUT/gitleaks.log" \
-    bash -c 'gitleaks detect --source . --redact --no-banner --report-format json \
-      --report-path build/bughunt/gitleaks.json 2>&1; exit 0'
+    bash -c "gitleaks detect --source . --redact --no-banner $GLARGS \
+      --report-format json --report-path build/bughunt/gitleaks.json 2>&1; exit 0"
   say "  findings : $(grep -oE '"RuleID"' "$OUT/gitleaks.json" 2>/dev/null | wc -l)"
 fi
 
