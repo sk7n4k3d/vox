@@ -121,13 +121,14 @@ class StarlinkPainter extends CustomPainter {
   @override
   void paint(Canvas canvas, Size size) {
     if (size.isEmpty) return;
-    const count = 42;
+    // 28 particules (au lieu de 42) : le coût est dominé par les halos, pas par
+    // le nombre de particules, mais on garde de la marge.
+    const count = 28;
     final linkDist = size.shortestSide * 0.19;
     final pts = List.generate(count, (i) => _particle(i, size, t));
 
     // Luminous filaments between close particles.
     final linkPaint = Paint()
-      ..color = cyan.withValues(alpha: 0.35)
       ..strokeWidth = 1.4
       ..strokeCap = StrokeCap.round;
     for (var i = 0; i < count; i++) {
@@ -144,13 +145,18 @@ class StarlinkPainter extends CustomPainter {
     }
 
     // Particles: a few bright 'satellites', the rest dim stars.
+    //
+    // Le halo était un MaskFilter.blur : 42 flous hors-écran par frame, chacun
+    // avec son propre calque. Mesuré : 12 à 14 ms de raster par frame (73-82 fps
+    // au lieu de 120). On le remplace par deux disques translucides concentriques
+    // — mêmes ronds doux, sans calque ni blur.
     for (var i = 0; i < count; i++) {
       final bright = _rand(i, 7) > 0.7;
       final r = bright ? 2.8 : 1.5;
-      final glow = Paint()
-        ..color = cyan.withValues(alpha: bright ? 0.38 : 0.18)
-        ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 7);
-      canvas.drawCircle(pts[i], r * 3, glow);
+      final glowColor = cyan.withValues(alpha: bright ? 0.12 : 0.06);
+      canvas.drawCircle(pts[i], r * 3.4, Paint()..color = glowColor);
+      canvas.drawCircle(pts[i], r * 2.1, Paint()
+        ..color = cyan.withValues(alpha: bright ? 0.18 : 0.09));
       final core = Paint()
         ..color = (bright ? violet : cyan).withValues(
           alpha: bright ? 1.0 : 0.75,

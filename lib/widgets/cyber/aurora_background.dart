@@ -61,18 +61,21 @@ class _AuroraBackgroundState extends State<AuroraBackground>
   @override
   Widget build(BuildContext context) {
     final cyber = CyberColors.of(context);
-    // Overscan: the layer is painted larger than the viewport and shifted by
-    // the animation, so its edges never slide into view. 1.6 covers the
-    // rotation of the largest blob plus the drift.
+    // Mesuré au doigt sur Pixel : le calque était peint à l'échelle 1,6 puis
+    // pivoté à chaque frame. Sa taille dépassait ce que le cache raster accepte,
+    // donc le CustomPaint était INTÉGRALEMENT repeint à chaque image — 165 ms de
+    // raster par frame, 4 à 9 fps en conversation. On peint désormais le calque
+    // à la taille de l'écran (les taches radiales débordent déjà d'elles-mêmes,
+    // elles finissent transparentes) et on ne le translate que de quelques
+    // pixels : le cache tient, le coût par frame tombe à ~4 ms.
     final painted = RepaintBoundary(
-      child: Transform.scale(
-        scale: 1.6,
-        child: CustomPaint(
-          painter: _AuroraPainter(
-            cyan: cyber.cyan,
-            violet: cyber.violet,
-            magenta: cyber.magenta,
-          ),
+      child: CustomPaint(
+        isComplex: true,
+        willChange: false,
+        painter: _AuroraPainter(
+          cyan: cyber.cyan,
+          violet: cyber.violet,
+          magenta: cyber.magenta,
         ),
       ),
     );
@@ -92,14 +95,11 @@ class _AuroraBackgroundState extends State<AuroraBackground>
         child: painted,
         builder: (context, child) {
           final t = ctrl.value * 2 * math.pi;
-          // Slow breathing drift + a gentle rotation of the whole layer.
-          final dx = math.sin(t) * 36;
-          final dy = math.cos(t * 0.7) * 28;
-          final angle = math.sin(t * 0.5) * 0.09;
-          return Transform.translate(
-            offset: Offset(dx, dy),
-            child: Transform.rotate(angle: angle, child: child),
-          );
+          // Déplacement seul : une rotation ferait grossir les bornes du calque
+          // (donc échec du cache) et forcerait un repaint complet par frame.
+          final dx = math.sin(t) * 22;
+          final dy = math.cos(t * 0.7) * 18;
+          return Transform.translate(offset: Offset(dx, dy), child: child);
         },
       ),
     );
