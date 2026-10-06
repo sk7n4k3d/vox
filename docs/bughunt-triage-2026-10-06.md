@@ -83,8 +83,13 @@ Tous relus dans le code le 2026-10-06. **Aucun ne décrit un défaut réel.**
 - `USO` ×1 (`MmsNetworkManager.lock` exposé), `MS` ×1
   (`SmsBridgePlugin.pendingSmsIntent` statique mutable) — encapsulation, sans
   impact fonctionnel.
-- `DB` ×1 — branches identiques dans `MediaExporter.insert` **corrigé** (les deux
-  branches écrivaient la même colonne `datetaken`).
+- `DB` — **corrigé** dans `MediaExporter.insert` (les deux branches écrivaient la
+  même colonne `datetaken`). Restent 2 `DB` **Low** dans
+  `MmsNotificationParser.parse` : la règle est **structurelle sur un `when`
+  Kotlin** — dès que deux branches font `p.readByte()`, elle se déclenche. Fusionner
+  les groupes de champs nuirait à la lisibilité du parseur sans rien corriger
+  (testé : la fusion déplace le finding sur les branches restantes, le compte ne
+  bouge pas). Non corrigé volontairement.
 
 ## À traiter plus tard (vrai gisement, non urgent)
 
