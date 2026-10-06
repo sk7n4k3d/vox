@@ -50,6 +50,14 @@ enum AppSettings<T> {
   // salon) : true = envoyée sans être cochée, false = ignorée.
   webhookSmsNew<bool>('chat.fluffy.webhook_sms_new', false),
   webhookMatrixNew<bool>('chat.fluffy.webhook_matrix_new', false),
+  // File de retry des POST ratés (voir WebhookQueue) : interrupteur, nombre de
+  // tentatives, délai de base (doublé à chaque échec), durée de vie, et
+  // « n'envoyer qu'en Wi-Fi ».
+  webhookRetryEnabled<bool>('chat.fluffy.webhook_retry_enabled', true),
+  webhookRetryAttempts<int>('chat.fluffy.webhook_retry_attempts', 5),
+  webhookRetryBackoffS<int>('chat.fluffy.webhook_retry_backoff_s', 60),
+  webhookRetryTtlH<int>('chat.fluffy.webhook_retry_ttl_h', 24),
+  webhookWifiOnly<bool>('chat.fluffy.webhook_wifi_only', false),
   // Police des bulles de message (SMS + Matrix, identique). Valeurs :
   // '' = Inter (défaut), 'Rajdhani', 'JetBrainsMono', 'Orbitron'.
   messageFontFamily<String>('chat.fluffy.message_font_family', ''),

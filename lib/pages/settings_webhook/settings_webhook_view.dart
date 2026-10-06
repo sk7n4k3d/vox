@@ -1,5 +1,6 @@
 import 'package:fluffychat/config/cyberpunk_theme_extension.dart';
 import 'package:fluffychat/config/design_tokens.dart';
+import 'package:fluffychat/utils/webhook/webhook_queue.dart';
 import 'package:fluffychat/utils/webhook/webhook_service.dart';
 import 'package:fluffychat/widgets/cyber/cyber_fx.dart';
 import 'package:fluffychat/widgets/cyber/cyber_widgets.dart';
@@ -103,6 +104,138 @@ class SettingsWebhookView extends StatelessWidget {
                     'webhook de Hermes.',
                     style: theme.textTheme.bodySmall?.copyWith(
                       color: theme.colorScheme.onSurfaceVariant,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            CyberSectionHeader("File d'attente", accent: cyber.violet),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: FluffySpacing.lg),
+              child: CyberGlass(
+                padding: const EdgeInsets.symmetric(vertical: FluffySpacing.xs),
+                child: Column(
+                  children: [
+                    CyberSettingsTile(
+                      icon: Icons.replay_outlined,
+                      accent: cyber.cyan,
+                      title: 'Réessayer un envoi raté',
+                      subtitle: 'Coché : le message repart tout seul (backoff)',
+                      trailing: Switch.adaptive(
+                        value: controller.retryEnabled,
+                        activeThumbColor: cyber.cyan,
+                        onChanged: controller.toggleRetryEnabled,
+                      ),
+                      onTap: () => controller.toggleRetryEnabled(
+                        !controller.retryEnabled,
+                      ),
+                    ),
+                    CyberSettingsTile(
+                      icon: Icons.wifi_outlined,
+                      accent: cyber.cyan,
+                      title: 'Seulement en Wi-Fi',
+                      subtitle: 'Coché : aucune tentative en données mobiles',
+                      trailing: Switch.adaptive(
+                        value: controller.wifiOnly,
+                        activeThumbColor: cyber.cyan,
+                        onChanged: controller.toggleWifiOnly,
+                      ),
+                      onTap: () =>
+                          controller.toggleWifiOnly(!controller.wifiOnly),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: FluffySpacing.lg),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Row(
+                    children: [
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            const _FieldLabel('Tentatives'),
+                            CyberField(
+                              child: TextField(
+                                controller: controller.attemptsController,
+                                keyboardType: TextInputType.number,
+                                decoration: const InputDecoration(
+                                  border: InputBorder.none,
+                                ),
+                                onChanged: controller.onAttemptsChanged,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(width: FluffySpacing.lg),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            const _FieldLabel('Délai (s)'),
+                            CyberField(
+                              child: TextField(
+                                controller: controller.backoffController,
+                                keyboardType: TextInputType.number,
+                                decoration: const InputDecoration(
+                                  border: InputBorder.none,
+                                ),
+                                onChanged: controller.onBackoffChanged,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(width: FluffySpacing.lg),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            const _FieldLabel('Durée (h)'),
+                            CyberField(
+                              child: TextField(
+                                controller: controller.ttlController,
+                                keyboardType: TextInputType.number,
+                                decoration: const InputDecoration(
+                                  border: InputBorder.none,
+                                ),
+                                onChanged: controller.onTtlChanged,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: FluffySpacing.sm),
+                  ValueListenableBuilder<int>(
+                    valueListenable: WebhookQueue.instance.pending,
+                    builder: (context, count, _) => Row(
+                      children: [
+                        Expanded(
+                          child: Text(
+                            count == 0
+                                ? 'Rien en attente'
+                                : '$count envoi(s) en attente',
+                            style: theme.textTheme.bodySmall?.copyWith(
+                              color: theme.colorScheme.onSurfaceVariant,
+                            ),
+                          ),
+                        ),
+                        TextButton(
+                          onPressed: controller.flushQueue,
+                          child: const Text('Réessayer'),
+                        ),
+                        TextButton(
+                          onPressed: count == 0 ? null : controller.clearQueue,
+                          child: const Text('Vider'),
+                        ),
+                      ],
                     ),
                   ),
                 ],

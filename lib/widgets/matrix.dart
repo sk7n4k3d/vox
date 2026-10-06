@@ -16,6 +16,7 @@ import 'package:fluffychat/utils/uia_request_manager.dart';
 import 'package:fluffychat/utils/voip_plugin.dart';
 import 'package:fluffychat/utils/wear_bridge.dart';
 import 'package:fluffychat/utils/webhook/webhook_hooks.dart';
+import 'package:fluffychat/utils/webhook/webhook_queue.dart';
 import 'package:fluffychat/widgets/adaptive_dialogs/show_ok_cancel_alert_dialog.dart';
 import 'package:fluffychat/widgets/fluffy_chat_app.dart';
 import 'package:fluffychat/widgets/future_loading_dialog.dart';
@@ -307,6 +308,9 @@ class MatrixState extends State<Matrix> with WidgetsBindingObserver {
     onWebhookMatrixSub[name] ??= c.onTimelineEvent.stream.listen((event) {
       unawaited(WebhookHooks.onMatrixEvent(event));
     });
+    // La file de retry reprend les envois ratés (idempotent : ne démarre qu'une
+    // fois la boucle de réessai).
+    WebhookQueue.instance.start();
     // …et les SMS/MMS : entrant depuis le flux natif, sortant via le callback
     // posé sur le pont (point de passage unique de tous les envois). Ces deux
     // abonnements sont globaux (SmsBridge est un singleton), donc posés une

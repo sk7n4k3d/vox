@@ -1,4 +1,7 @@
+import 'dart:convert';
+
 import 'package:fluffychat/utils/webhook/webhook_event.dart';
+import 'package:fluffychat/utils/webhook/webhook_queue.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
@@ -266,6 +269,50 @@ void main() {
 
     test('le plafond est bien de 16 Mo', () {
       expect(maxWebhookMediaBytes, 16 * 1024 * 1024);
+    });
+  });
+
+  group('retryDelayMs — backoff de la file', () {
+    test('double a chaque tentative, en partant du delai de base', () {
+      expect(retryDelayMs(60, 1), 60 * 1000);
+      expect(retryDelayMs(60, 2), 120 * 1000);
+      expect(retryDelayMs(60, 3), 240 * 1000);
+      expect(retryDelayMs(60, 4), 480 * 1000);
+    });
+
+    test('plafonne a une heure', () {
+      expect(retryDelayMs(60, 20), 3600 * 1000);
+      expect(retryDelayMs(3600, 5), 3600 * 1000);
+    });
+
+    test('un delai de base nul ou une tentative 0 ne part pas en negatif', () {
+      expect(retryDelayMs(0, 1), 0);
+      expect(retryDelayMs(60, 0), 60 * 1000);
+    });
+  });
+
+  group('PendingWebhook — persistance', () {
+    test('un aller-retour JSON conserve le corps brut et les compteurs', () {
+      final item = PendingWebhook(
+        rawBody: '{"event_id":"42"}',
+        createdAtMs: 1700000000000,
+        attempts: 2,
+        nextAttemptAtMs: 1700000120000,
+      );
+      final back = PendingWebhook.fromJson(
+        jsonDecode(jsonEncode(item.toJson())),
+      );
+
+      expect(back, isNotNull);
+      expect(back!.rawBody, '{"event_id":"42"}');
+      expect(back.createdAtMs, 1700000000000);
+      expect(back.attempts, 2);
+      expect(back.nextAttemptAtMs, 1700000120000);
+    });
+
+    test('une entree sans corps est ignoree', () {
+      expect(PendingWebhook.fromJson(const {'attempts': 1}), isNull);
+      expect(PendingWebhook.fromJson('pas un objet'), isNull);
     });
   });
 }

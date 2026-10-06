@@ -4,6 +4,8 @@ import android.app.Activity
 import android.app.role.RoleManager
 import android.content.Context
 import android.content.Intent
+import android.net.ConnectivityManager
+import android.net.NetworkCapabilities
 import android.os.Build
 import android.os.Handler
 import android.os.Looper
@@ -125,6 +127,10 @@ class SmsBridgePlugin private constructor(
 
             "requestIgnoreBatteryOptimizations" ->
                 result.success(requestIgnoreBatteryOptimizations())
+
+            // Réseau actif en Wi-Fi ? Sert au réglage « réessayer seulement en
+            // Wi-Fi » de la file d'envoi du webhook.
+            "isOnWifi" -> result.success(isOnWifi())
 
             // Retire la notification d'un thread (appelé quand Dart ouvre/lit la conv).
             "cancelSmsNotification" -> {
@@ -442,6 +448,21 @@ class SmsBridgePlugin private constructor(
     // / standby bucket bas, Android DIFFÈRE le réveil du process pour le broadcast
     // SMS_DELIVER → SMS reçus en retard ou ratés quand l'app est fermée (Matrix y
     // échappe via son push FCM). Même approche que Signal / QKSMS.
+
+    /** True si le réseau actif est un Wi-Fi (« réessayer seulement en Wi-Fi »). */
+    private fun isOnWifi(): Boolean = try {
+        val cm = context.getSystemService(ConnectivityManager::class.java)
+        if (cm == null) {
+            false
+        } else {
+            val network = cm.activeNetwork
+            val caps = if (network == null) null else cm.getNetworkCapabilities(network)
+            caps?.hasTransport(NetworkCapabilities.TRANSPORT_WIFI) == true
+        }
+    } catch (e: Exception) {
+        Log.w(SmsBridge.TAG, "isOnWifi failed: ${e.message}")
+        false
+    }
 
     private fun isIgnoringBatteryOptimizations(): Boolean {
         return try {

@@ -3,6 +3,7 @@ import 'dart:convert';
 
 import 'package:fluffychat/config/setting_keys.dart';
 import 'package:fluffychat/utils/webhook/webhook_event.dart';
+import 'package:fluffychat/utils/webhook/webhook_queue.dart';
 import 'package:fluffychat/utils/webhook/webhook_signature.dart';
 import 'package:fluffychat/utils/webhook/webhook_store.dart';
 import 'package:flutter/foundation.dart';
@@ -25,8 +26,8 @@ class WebhookStats {
 /// Pousse chaque message vers l'URL configurée, signé en HMAC V2 comme la
 /// plateforme `webhook` de Hermes l'exige.
 ///
-/// v1 : un tir par message, pas de file d'attente ni de retry — un échec est
-/// compté et loggé, jamais rejoué.
+/// Un échec n'est pas perdu : si l'option est active, le corps brut part dans
+/// [WebhookQueue] et sera réessayé (backoff, plafond de tentatives, TTL).
 class WebhookService {
   WebhookService._();
   static final WebhookService instance = WebhookService._();
@@ -84,10 +85,21 @@ class WebhookService {
 
   Future<void> dispatch(WebhookEvent event) async {
     if (!isConfigured) return;
-    final uri = Uri.tryParse(AppSettings.webhookUrl.value.trim());
-    if (uri == null || !uri.hasScheme) return;
-
     final rawBody = jsonEncode(event.toJson());
+    final ok = await postRaw(rawBody);
+    if (!ok && AppSettings.webhookRetryEnabled.value) {
+      await WebhookQueue.instance.add(rawBody);
+    }
+  }
+
+  /// POST signé d'un corps **déjà sérialisé** (le dispatch direct, comme les
+  /// réessais de la file). Re-signe à chaque appel : l'horodatage fait partie de
+  /// la signature HMAC V2, on ne peut donc pas rejouer la signature d'origine.
+  /// @return true si le serveur a répondu 2xx.
+  Future<bool> postRaw(String rawBody) async {
+    final uri = Uri.tryParse(AppSettings.webhookUrl.value.trim());
+    if (uri == null || !uri.hasScheme) return false;
+
     final timestamp =
         (DateTime.now().millisecondsSinceEpoch ~/ 1000).toString();
     final secret = await WebhookStore.instance.loadSecret();
@@ -109,13 +121,15 @@ class WebhookService {
           .timeout(_timeout);
       if (response.statusCode >= 200 && response.statusCode < 300) {
         stats.value = stats.value.sent1();
-      } else {
-        stats.value = stats.value.failed1('HTTP ${response.statusCode}');
-        debugPrint('WebhookService: HTTP ${response.statusCode}');
+        return true;
       }
+      stats.value = stats.value.failed1('HTTP ${response.statusCode}');
+      debugPrint('WebhookService: HTTP ${response.statusCode}');
+      return false;
     } catch (e) {
       stats.value = stats.value.failed1('$e');
       debugPrint('WebhookService: envoi échoué: $e');
+      return false;
     }
   }
 

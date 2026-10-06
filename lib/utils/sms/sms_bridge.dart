@@ -104,6 +104,16 @@ class SmsBridge {
     }
   }
 
+  /// True si le réseau actif est un Wi-Fi (file de retry : « n'envoyer qu'en
+  /// Wi-Fi »). False en données mobiles, hors ligne, ou en cas de doute.
+  Future<bool> isOnWifi() async {
+    try {
+      return await _channel.invokeMethod<bool>('isOnWifi') ?? false;
+    } on PlatformException {
+      return false;
+    }
+  }
+
   /// Logs [message] through the native layer (Log.i) so it shows up in logcat
   /// even in release builds — Dart's print/developer.log don't reliably reach
   /// logcat in release. Diagnostic helper, safe no-op on failure.

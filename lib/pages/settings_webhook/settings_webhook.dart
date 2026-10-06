@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:fluffychat/config/setting_keys.dart';
 import 'package:fluffychat/utils/sms/sms_bridge.dart';
 import 'package:fluffychat/utils/webhook/webhook_event.dart';
+import 'package:fluffychat/utils/webhook/webhook_queue.dart';
 import 'package:fluffychat/utils/webhook/webhook_service.dart';
 import 'package:fluffychat/utils/webhook/webhook_store.dart';
 import 'package:fluffychat/widgets/matrix.dart';
@@ -34,6 +35,18 @@ class SettingsWebhookController extends State<SettingsWebhook> {
   bool matrixAll = AppSettings.webhookMatrixAll.value;
   bool smsNewDefault = AppSettings.webhookSmsNew.value;
   bool matrixNewDefault = AppSettings.webhookMatrixNew.value;
+
+  final TextEditingController attemptsController = TextEditingController(
+    text: '${AppSettings.webhookRetryAttempts.value}',
+  );
+  final TextEditingController backoffController = TextEditingController(
+    text: '${AppSettings.webhookRetryBackoffS.value}',
+  );
+  final TextEditingController ttlController = TextEditingController(
+    text: '${AppSettings.webhookRetryTtlH.value}',
+  );
+  bool retryEnabled = AppSettings.webhookRetryEnabled.value;
+  bool wifiOnly = AppSettings.webhookWifiOnly.value;
 
   @override
   void initState() {
@@ -96,6 +109,41 @@ class SettingsWebhookController extends State<SettingsWebhook> {
     if (!mounted) return;
     setState(() => matrixNewDefault = value);
   }
+
+  /// File de retry des POST ratés : interrupteur, bornes, et « Wi-Fi seulement ».
+  Future<void> toggleRetryEnabled(bool value) async {
+    await AppSettings.webhookRetryEnabled.setItem(value);
+    if (!mounted) return;
+    setState(() => retryEnabled = value);
+  }
+
+  Future<void> toggleWifiOnly(bool value) async {
+    await AppSettings.webhookWifiOnly.setItem(value);
+    if (!mounted) return;
+    setState(() => wifiOnly = value);
+  }
+
+  void onAttemptsChanged(String value) {
+    final n = int.tryParse(value.trim());
+    if (n == null || n < 1 || n > 50) return;
+    unawaited(AppSettings.webhookRetryAttempts.setItem(n));
+  }
+
+  void onBackoffChanged(String value) {
+    final n = int.tryParse(value.trim());
+    if (n == null || n < 5 || n > 3600) return;
+    unawaited(AppSettings.webhookRetryBackoffS.setItem(n));
+  }
+
+  void onTtlChanged(String value) {
+    final n = int.tryParse(value.trim());
+    if (n == null || n < 1 || n > 720) return;
+    unawaited(AppSettings.webhookRetryTtlH.setItem(n));
+  }
+
+  Future<void> flushQueue() => WebhookQueue.instance.flush();
+
+  Future<void> clearQueue() => WebhookQueue.instance.clear();
 
   /// La conversation part-elle ? Même règle que celle appliquée aux messages.
   bool isRoomSent(String roomId) => isRoomAllowed(
@@ -168,6 +216,9 @@ class SettingsWebhookController extends State<SettingsWebhook> {
   void dispose() {
     urlController.dispose();
     secretController.dispose();
+    attemptsController.dispose();
+    backoffController.dispose();
+    ttlController.dispose();
     super.dispose();
   }
 
