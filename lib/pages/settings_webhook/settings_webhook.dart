@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:fluffychat/config/setting_keys.dart';
 import 'package:fluffychat/utils/sms/sms_bridge.dart';
+import 'package:fluffychat/utils/webhook/webhook_event.dart';
 import 'package:fluffychat/utils/webhook/webhook_service.dart';
 import 'package:fluffychat/utils/webhook/webhook_store.dart';
 import 'package:fluffychat/widgets/matrix.dart';
@@ -25,10 +26,14 @@ class SettingsWebhookController extends State<SettingsWebhook> {
   bool enabled = AppSettings.webhookEnabled.value;
   bool obscureSecret = true;
   Set<String> rooms = <String>{};
+  Set<String> excludedRooms = <String>{};
   Set<String> smsThreads = <String>{};
+  Set<String> excludedSmsThreads = <String>{};
   List<SmsConversation> smsConversations = const <SmsConversation>[];
   bool smsAll = AppSettings.webhookSmsAll.value;
   bool matrixAll = AppSettings.webhookMatrixAll.value;
+  bool smsNewDefault = AppSettings.webhookSmsNew.value;
+  bool matrixNewDefault = AppSettings.webhookMatrixNew.value;
 
   @override
   void initState() {
@@ -39,7 +44,10 @@ class SettingsWebhookController extends State<SettingsWebhook> {
   Future<void> _load() async {
     final secret = await WebhookStore.instance.loadSecret();
     final saved = await WebhookStore.instance.loadRooms();
+    final savedExcluded = await WebhookStore.instance.loadExcludedRooms();
     final savedSms = await WebhookStore.instance.loadSmsThreads();
+    final savedSmsExcluded =
+        await WebhookStore.instance.loadExcludedSmsThreads();
     var conversations = const <SmsConversation>[];
     try {
       conversations = await SmsBridge.instance.listConversations();
@@ -48,7 +56,9 @@ class SettingsWebhookController extends State<SettingsWebhook> {
     setState(() {
       secretController.text = secret;
       rooms = saved;
+      excludedRooms = savedExcluded;
       smsThreads = savedSms;
+      excludedSmsThreads = savedSmsExcluded;
       smsConversations = conversations;
     });
   }
@@ -74,6 +84,36 @@ class SettingsWebhookController extends State<SettingsWebhook> {
     setState(() => matrixAll = value);
   }
 
+  /// Interrupteur « une nouvelle conversation part par défaut ».
+  Future<void> toggleSmsNewDefault(bool value) async {
+    await AppSettings.webhookSmsNew.setItem(value);
+    if (!mounted) return;
+    setState(() => smsNewDefault = value);
+  }
+
+  Future<void> toggleMatrixNewDefault(bool value) async {
+    await AppSettings.webhookMatrixNew.setItem(value);
+    if (!mounted) return;
+    setState(() => matrixNewDefault = value);
+  }
+
+  /// La conversation part-elle ? Même règle que celle appliquée aux messages.
+  bool isRoomSent(String roomId) => isRoomAllowed(
+        rooms,
+        roomId,
+        all: matrixAll,
+        newDefault: matrixNewDefault,
+        excluded: excludedRooms,
+      );
+
+  bool isSmsSent(String threadId) => isSmsThreadAllowed(
+        smsThreads,
+        threadId,
+        all: smsAll,
+        newDefault: smsNewDefault,
+        excluded: excludedSmsThreads,
+      );
+
   void onUrlChanged(String value) =>
       unawaited(AppSettings.webhookUrl.setItem(value.trim()));
 
@@ -84,11 +124,14 @@ class SettingsWebhookController extends State<SettingsWebhook> {
     setState(() {
       if (selected) {
         rooms.add(roomId);
+        excludedRooms.remove(roomId);
       } else {
         rooms.remove(roomId);
+        excludedRooms.add(roomId);
       }
     });
     await WebhookStore.instance.saveRooms(rooms);
+    await WebhookStore.instance.saveExcludedRooms(excludedRooms);
     WebhookService.instance.invalidateFilters();
   }
 
@@ -96,11 +139,14 @@ class SettingsWebhookController extends State<SettingsWebhook> {
     setState(() {
       if (selected) {
         smsThreads.add(threadId);
+        excludedSmsThreads.remove(threadId);
       } else {
         smsThreads.remove(threadId);
+        excludedSmsThreads.add(threadId);
       }
     });
     await WebhookStore.instance.saveSmsThreads(smsThreads);
+    await WebhookStore.instance.saveExcludedSmsThreads(excludedSmsThreads);
     WebhookService.instance.invalidateFilters();
   }
 

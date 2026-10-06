@@ -35,22 +35,37 @@ class WebhookService {
 
   final ValueNotifier<WebhookStats> stats = ValueNotifier(const WebhookStats());
 
-  /// Rooms Matrix autorisées, mises en cache (le filtre est consulté à chaque
+  /// Rooms Matrix cochées, mises en cache (le filtre est consulté à chaque
   /// message). Invalidé par [invalidateFilters] quand les réglages changent.
   Set<String>? _allowedRooms;
 
-  /// Fils SMS/MMS autorisés, même principe.
+  /// Rooms Matrix explicitement décochées.
+  Set<String>? _excludedRooms;
+
+  /// Fils SMS/MMS cochés, même principe.
   Set<String>? _allowedSmsThreads;
+
+  /// Fils SMS/MMS explicitement décochés.
+  Set<String>? _excludedSmsThreads;
 
   Future<Set<String>> allowedRooms() async =>
       _allowedRooms ??= await WebhookStore.instance.loadRooms();
 
+  Future<Set<String>> excludedRooms() async =>
+      _excludedRooms ??= await WebhookStore.instance.loadExcludedRooms();
+
   Future<Set<String>> allowedSmsThreads() async =>
       _allowedSmsThreads ??= await WebhookStore.instance.loadSmsThreads();
 
+  Future<Set<String>> excludedSmsThreads() async =>
+      _excludedSmsThreads ??=
+          await WebhookStore.instance.loadExcludedSmsThreads();
+
   void invalidateFilters() {
     _allowedRooms = null;
+    _excludedRooms = null;
     _allowedSmsThreads = null;
+    _excludedSmsThreads = null;
   }
 
   /// Rien ne part tant que l'interrupteur est off ou que l'URL est vide.
@@ -62,6 +77,10 @@ class WebhookService {
   /// cochée. Lu à chaque message, sans cache : c'est un simple booléen.
   bool get smsAll => AppSettings.webhookSmsAll.value;
   bool get matrixAll => AppSettings.webhookMatrixAll.value;
+
+  /// Défaut pour une conversation jamais décidée : envoyée sans être cochée.
+  bool get smsNewDefault => AppSettings.webhookSmsNew.value;
+  bool get matrixNewDefault => AppSettings.webhookMatrixNew.value;
 
   Future<void> dispatch(WebhookEvent event) async {
     if (!isConfigured) return;

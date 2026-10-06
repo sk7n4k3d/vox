@@ -89,41 +89,83 @@ class WebhookEvent {
   }
 }
 
-/// Une room Matrix n'est poussée que si elle est explicitement cochée dans les
-/// réglages. Liste vide = aucune room (défaut sûr). [all] court-circuite la
-/// liste : tout est poussé, y compris les nouvelles conversations.
-bool isRoomAllowed(Set<String> allowedRooms, String roomId, {bool all = false}) =>
-    all || allowedRooms.contains(roomId);
+/// Règle de filtrage, commune aux SMS/MMS et aux rooms Matrix.
+///
+/// Une conversation part si :
+/// - [all] est vrai (l'interrupteur « tout envoyer » court-circuite tout), ou
+/// - elle est cochée ([allowed]), ou
+/// - elle n'a jamais été décidée et [newDefault] est vrai (nouveau contact ou
+///   nouveau salon envoyé par défaut).
+///
+/// Une conversation explicitement décochée ([excluded]) ne part pas, même si
+/// [newDefault] est vrai : sans cela le défaut la renverrait sans fin.
+bool _isAllowed(
+  Set<String> allowed,
+  String id, {
+  required bool all,
+  required bool newDefault,
+  required Set<String> excluded,
+}) {
+  if (all) return true;
+  if (allowed.contains(id)) return true;
+  if (excluded.contains(id)) return false;
+  return newDefault;
+}
 
-/// Un fil SMS/MMS n'est poussé que s'il est coché. Même sémantique que les
-/// rooms, [all] compris.
+/// Une room Matrix part si elle est cochée, si elle est nouvelle et que le
+/// défaut est actif, ou si [all].
+bool isRoomAllowed(
+  Set<String> allowedRooms,
+  String roomId, {
+  bool all = false,
+  bool newDefault = false,
+  Set<String> excluded = const <String>{},
+}) =>
+    _isAllowed(
+      allowedRooms,
+      roomId,
+      all: all,
+      newDefault: newDefault,
+      excluded: excluded,
+    );
+
+/// Un fil SMS/MMS suit exactement la même règle que les rooms Matrix.
 bool isSmsThreadAllowed(
   Set<String> allowedThreads,
   String threadId, {
   bool all = false,
+  bool newDefault = false,
+  Set<String> excluded = const <String>{},
 }) =>
-    all || allowedThreads.contains(threadId);
+    _isAllowed(
+      allowedThreads,
+      threadId,
+      all: all,
+      newDefault: newDefault,
+      excluded: excluded,
+    );
 
 /// Comparaison de numéros tolérante : le même contact peut s'écrire
 /// `+33 6 50 73 02 02`, `+33650730202` ou `06.50.73.02.02` selon la source.
 String normalizeSmsAddress(String raw) =>
     raw.replaceAll(RegExp(r'[\s\-.()]'), '');
 
-/// Un envoi part si son destinataire correspond à un fil coché. [threads] est la
-/// liste des conversations (threadId + adresse) issue du pont SMS.
+/// Un envoi sortant ne porte que le numéro : on retrouve le fil dans [threads]
+/// (couples threadId + adresse issus du pont SMS) puis on applique la règle.
 bool isSmsAddressAllowed(
   Iterable<({String threadId, String address})> threads,
   Set<String> allowedThreads,
   String address, {
   bool all = false,
+  bool newDefault = false,
+  Set<String> excluded = const <String>{},
 }) {
   if (all) return true;
   final target = normalizeSmsAddress(address);
   for (final thread in threads) {
-    if (allowedThreads.contains(thread.threadId) &&
-        normalizeSmsAddress(thread.address) == target) {
-      return true;
-    }
+    if (normalizeSmsAddress(thread.address) != target) continue;
+    if (allowedThreads.contains(thread.threadId)) return true;
+    if (excluded.contains(thread.threadId)) return false;
   }
-  return false;
+  return newDefault;
 }

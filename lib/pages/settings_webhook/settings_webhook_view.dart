@@ -124,14 +124,29 @@ class SettingsWebhookView extends StatelessWidget {
                     CyberSettingsTile(
                       icon: Icons.done_all_outlined,
                       accent: cyber.cyan,
-                      title: 'Tout envoyer, nouvelles conversations comprises',
-                      subtitle: 'Coché : la liste ci-dessous est ignorée',
+                      title: 'Tout envoyer, sans tenir compte de la liste',
+                      subtitle: 'Coché : tout part, y compris les nouveaux',
                       trailing: Switch.adaptive(
                         value: controller.smsAll,
                         activeThumbColor: cyber.cyan,
                         onChanged: controller.toggleSmsAll,
                       ),
                       onTap: () => controller.toggleSmsAll(!controller.smsAll),
+                    ),
+                    CyberSettingsTile(
+                      icon: Icons.fiber_new_outlined,
+                      accent: cyber.violet,
+                      title: 'Nouveaux fils SMS/MMS : envoyer par défaut',
+                      subtitle:
+                          'Coché : un fil jamais décidé part sans être coché',
+                      trailing: Switch.adaptive(
+                        value: controller.smsNewDefault,
+                        activeThumbColor: cyber.violet,
+                        onChanged: controller.toggleSmsNewDefault,
+                      ),
+                      onTap: () => controller.toggleSmsNewDefault(
+                        !controller.smsNewDefault,
+                      ),
                     ),
                     ..._smsTiles(controller, cyber),
                   ],
@@ -154,8 +169,8 @@ class SettingsWebhookView extends StatelessWidget {
                     CyberSettingsTile(
                       icon: Icons.done_all_outlined,
                       accent: cyber.cyan,
-                      title: 'Tout envoyer, nouvelles conversations comprises',
-                      subtitle: 'Coché : la liste ci-dessous est ignorée',
+                      title: 'Tout envoyer, sans tenir compte de la liste',
+                      subtitle: 'Coché : tout part, y compris les nouveaux',
                       trailing: Switch.adaptive(
                         value: controller.matrixAll,
                         activeThumbColor: cyber.cyan,
@@ -163,6 +178,21 @@ class SettingsWebhookView extends StatelessWidget {
                       ),
                       onTap: () =>
                           controller.toggleMatrixAll(!controller.matrixAll),
+                    ),
+                    CyberSettingsTile(
+                      icon: Icons.new_releases_outlined,
+                      accent: cyber.violet,
+                      title: 'Nouveaux salons Matrix : envoyer par défaut',
+                      subtitle:
+                          'Coché : un salon jamais décidé part sans être coché',
+                      trailing: Switch.adaptive(
+                        value: controller.matrixNewDefault,
+                        activeThumbColor: cyber.violet,
+                        onChanged: controller.toggleMatrixNewDefault,
+                      ),
+                      onTap: () => controller.toggleMatrixNewDefault(
+                        !controller.matrixNewDefault,
+                      ),
                     ),
                     ..._roomTiles(controller, cyber),
                   ],
@@ -219,16 +249,16 @@ class SettingsWebhookView extends StatelessWidget {
         .map(
           (c) => CheckboxListTile.adaptive(
             dense: true,
-            value: controller.smsThreads.contains(c.threadId),
+            value: controller.isSmsSent(c.threadId),
             activeColor: cyber.cyan,
             title: Text(c.title, maxLines: 1, overflow: TextOverflow.ellipsis),
-            subtitle: c.address == c.title
-                ? null
-                : Text(
-                    c.address,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                  ),
+            subtitle: _stateSubtitle(
+              controller.smsThreads.contains(c.threadId),
+              controller.excludedSmsThreads.contains(c.threadId),
+              controller.isSmsSent(c.threadId),
+              controller.smsAll,
+              extra: c.address == c.title ? null : c.address,
+            ),
             onChanged: (v) => controller.toggleSmsThread(c.threadId, v == true),
           ),
         )
@@ -253,17 +283,45 @@ class SettingsWebhookView extends StatelessWidget {
         .map(
           (room) => CheckboxListTile.adaptive(
             dense: true,
-            value: controller.rooms.contains(room.id),
+            value: controller.isRoomSent(room.id),
             activeColor: cyber.cyan,
             title: Text(
               room.getLocalizedDisplayname(),
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
             ),
+            subtitle: _stateSubtitle(
+              controller.rooms.contains(room.id),
+              controller.excludedRooms.contains(room.id),
+              controller.isRoomSent(room.id),
+              controller.matrixAll,
+            ),
             onChanged: (v) => controller.toggleRoom(room.id, v == true),
           ),
         )
         .toList();
+  }
+  /// Sous-titre d'une ligne : l'état n'est affiché que quand la case ne suffit
+  /// pas à le dire (exclue, ou envoyée par le défaut).
+  Widget? _stateSubtitle(
+    bool selected,
+    bool excluded,
+    bool sent,
+    bool all, {
+    String? extra,
+  }) {
+    final parts = <String>[
+      if (extra != null && extra.isNotEmpty) extra,
+    ];
+    if (!all) {
+      if (!sent && excluded) {
+        parts.add('exclue');
+      } else if (sent && !selected) {
+        parts.add('envoyée par défaut');
+      }
+    }
+    if (parts.isEmpty) return null;
+    return Text(parts.join(' · '), maxLines: 1, overflow: TextOverflow.ellipsis);
   }
 }
 

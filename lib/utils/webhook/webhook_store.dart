@@ -10,7 +10,9 @@ class WebhookStore {
 
   static const String _secretKey = 'chat.fluffy.webhook_secret';
   static const String _roomsKey = 'chat.fluffy.webhook_rooms';
+  static const String _roomsExcludedKey = 'chat.fluffy.webhook_rooms_excluded';
   static const String _smsThreadsKey = 'chat.fluffy.webhook_sms_threads';
+  static const String _smsExcludedKey = 'chat.fluffy.webhook_sms_excluded';
 
   Future<String> loadSecret() async {
     try {
@@ -60,6 +62,36 @@ class WebhookStore {
     try {
       final prefs = await SharedPreferences.getInstance();
       await prefs.setStringList(_smsThreadsKey, threads.toList());
+    } catch (_) {}
+  }
+
+  /// Conversations explicitement décochées : elles ne partent pas, même quand
+  /// le défaut « nouvelles conversations » est actif — sans quoi il les
+  /// renverrait sans fin.
+  Future<Set<String>> loadExcludedRooms() async => _loadList(_roomsExcludedKey);
+
+  Future<void> saveExcludedRooms(Set<String> rooms) =>
+      _saveList(_roomsExcludedKey, rooms);
+
+  Future<Set<String>> loadExcludedSmsThreads() async =>
+      _loadList(_smsExcludedKey);
+
+  Future<void> saveExcludedSmsThreads(Set<String> threads) =>
+      _saveList(_smsExcludedKey, threads);
+
+  Future<Set<String>> _loadList(String key) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      return (prefs.getStringList(key) ?? const <String>[]).toSet();
+    } catch (_) {
+      return <String>{};
+    }
+  }
+
+  Future<void> _saveList(String key, Set<String> values) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setStringList(key, values.toList());
     } catch (_) {}
   }
 }

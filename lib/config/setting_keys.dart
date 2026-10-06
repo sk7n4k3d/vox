@@ -46,6 +46,10 @@ enum AppSettings<T> {
   // liste de sélection n'est alors plus consultée.
   webhookSmsAll<bool>('chat.fluffy.webhook_sms_all', false),
   webhookMatrixAll<bool>('chat.fluffy.webhook_matrix_all', false),
+  // Défaut pour une conversation jamais décidée (nouveau contact, nouveau
+  // salon) : true = envoyée sans être cochée, false = ignorée.
+  webhookSmsNew<bool>('chat.fluffy.webhook_sms_new', false),
+  webhookMatrixNew<bool>('chat.fluffy.webhook_matrix_new', false),
   // Police des bulles de message (SMS + Matrix, identique). Valeurs :
   // '' = Inter (défaut), 'Rajdhani', 'JetBrainsMono', 'Orbitron'.
   messageFontFamily<String>('chat.fluffy.message_font_family', ''),

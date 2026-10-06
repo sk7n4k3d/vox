@@ -154,4 +154,83 @@ void main() {
       expect(isSmsThreadAllowed(const {'12'}, '99'), isFalse);
     });
   });
+
+  group('nouveaux par defaut et exclus', () {
+    test('le defaut envoie une conversation jamais decidee', () {
+      expect(isRoomAllowed(const <String>{}, '!n:x'), isFalse);
+      expect(isRoomAllowed(const <String>{}, '!n:x', newDefault: true), isTrue);
+      expect(isSmsThreadAllowed(const <String>{}, '77'), isFalse);
+      expect(
+        isSmsThreadAllowed(const <String>{}, '77', newDefault: true),
+        isTrue,
+      );
+    });
+
+    test('une conversation decochee est exclue, meme avec le defaut', () {
+      expect(
+        isRoomAllowed(
+          const <String>{},
+          '!n:x',
+          newDefault: true,
+          excluded: const {'!n:x'},
+        ),
+        isFalse,
+      );
+      expect(
+        isSmsThreadAllowed(
+          const <String>{},
+          '77',
+          newDefault: true,
+          excluded: const {'77'},
+        ),
+        isFalse,
+      );
+    });
+
+    test('cocher reprend la main sur une exclusion', () {
+      expect(
+        isRoomAllowed(const {'!n:x'}, '!n:x', excluded: const {'!n:x'}),
+        isTrue,
+      );
+    });
+
+    test('tout envoyer court-circuite meme une exclusion', () {
+      expect(
+        isRoomAllowed(
+          const <String>{},
+          '!n:x',
+          all: true,
+          excluded: const {'!n:x'},
+        ),
+        isTrue,
+      );
+    });
+
+    test('sortant : le fil retrouve par le numero suit la meme regle', () {
+      const threads = [(threadId: '12', address: '+33650730202')];
+      expect(
+        isSmsAddressAllowed(threads, const {}, '+33650730202', newDefault: true),
+        isTrue,
+      );
+      expect(
+        isSmsAddressAllowed(
+          threads,
+          const {},
+          '+33650730202',
+          newDefault: true,
+          excluded: const {'12'},
+        ),
+        isFalse,
+      );
+      expect(
+        isSmsAddressAllowed(
+          const [],
+          const {},
+          '+33600000000',
+          newDefault: true,
+        ),
+        isTrue,
+      );
+    });
+  });
 }

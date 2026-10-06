@@ -33,6 +33,8 @@ class WebhookHooks {
       allowed,
       room.id,
       all: WebhookService.instance.matrixAll,
+      newDefault: WebhookService.instance.matrixNewDefault,
+      excluded: await WebhookService.instance.excludedRooms(),
     )) {
       return;
     }
@@ -64,6 +66,8 @@ class WebhookHooks {
       allowed,
       sms.threadId,
       all: WebhookService.instance.smsAll,
+      newDefault: WebhookService.instance.smsNewDefault,
+      excluded: await WebhookService.instance.excludedSmsThreads(),
     )) {
       return;
     }
@@ -93,9 +97,19 @@ class WebhookHooks {
   ) async {
     if (!WebhookService.instance.isConfigured) return;
     final allowed = await WebhookService.instance.allowedSmsThreads();
+    final excluded = await WebhookService.instance.excludedSmsThreads();
     final all = WebhookService.instance.smsAll;
-    if (allowed.isEmpty && !all) return;
-    if (!await _outgoingTargetAllowed(allowed, address, all)) return;
+    final newDefault = WebhookService.instance.smsNewDefault;
+    if (!all && !newDefault && allowed.isEmpty) return;
+    if (!await _outgoingTargetAllowed(
+      allowed,
+      excluded,
+      address,
+      all: all,
+      newDefault: newDefault,
+    )) {
+      return;
+    }
     await WebhookService.instance.dispatch(
       WebhookEvent(
         source: isMms ? WebhookSource.mms : WebhookSource.sms,
@@ -124,13 +138,15 @@ class WebhookHooks {
     ];
   }
 
-  /// L'envoi vise-t-il un fil coché ? On retrouve le fil par le numéro : la
-  /// conversation native porte le couple (threadId, adresse).
+  /// L'envoi vise-t-il une conversation qui part ? On retrouve le fil par le
+  /// numéro : la conversation native porte le couple (threadId, adresse).
   static Future<bool> _outgoingTargetAllowed(
     Set<String> allowed,
-    String address,
-    bool all,
-  ) async {
+    Set<String> excluded,
+    String address, {
+    required bool all,
+    required bool newDefault,
+  }) async {
     if (all) return true;
     try {
       final conversations = await SmsBridge.instance.listConversations();
@@ -138,13 +154,16 @@ class WebhookHooks {
         conversations.map((c) => (threadId: c.threadId, address: c.address)),
         allowed,
         address,
+        newDefault: newDefault,
+        excluded: excluded,
       );
     } catch (_) {
       return false;
     }
   }
 
-  static Future<String?> _contactName(String address) async {    if (address.isEmpty) return null;
+  static Future<String?> _contactName(String address) async {
+    if (address.isEmpty) return null;
     try {
       final name = await SmsBridge.instance.resolveContactName(address);
       return (name != null && name.trim().isNotEmpty) ? name.trim() : null;
