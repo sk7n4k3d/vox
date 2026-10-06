@@ -77,3 +77,6 @@ web/native_executor.js*
 # Serena LSP tool cache
 .serena/
 .superpowers/
+
+# Triage bug-hunt : documentation locale (machine de build), pas publiee.
+/docs/bughunt-triage-*.md
