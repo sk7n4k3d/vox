@@ -56,6 +56,36 @@ visibles :**
 Les règles `SEC*` **ne sont pas** exclues : elles resteront visibles pour qu'un
 changement futur réel ne passe pas sous le radar.
 
+## Verdict finding par finding (hors `SEC*`)
+
+Tous relus dans le code le 2026-10-06. **Aucun ne décrit un défaut réel.**
+
+**Faux positifs Kotlin (l'analyse est centrée Java) :**
+- `OBL` ×3 (`SmsBridge.exportSms`, `loadMmsPart`, `sendMms`) — « OutputStream non
+  fermé » : les trois utilisent `FileOutputStream(...).use { }`. SpotBugs ne
+  comprend pas `use` (try-with-resources Kotlin).
+- `REC` ×5 — « exception attrapée alors qu'aucune n'est levée » : Kotlin n'a pas
+  d'exceptions vérifiées, `catch (e: Exception)` rattrape les `RuntimeException`
+  et reste défensif. `MmsHttpClient.postPdu`, `sniffPartMime`, `exportSms`,
+  `loadMmsPart`, `MediaExporter.insert`.
+- `BC` ×6 — « cast douteux de Collection vers List » : casts Kotlin `as List<>`
+  sur des valeurs internes (jamais d'entrée externe hétérogène).
+- `SA` ×2 — « auto-affectation » : `mime = sniffPartMime(...) ?: mime` et le
+  retour d'expression `out` en fin de `try` dans `BlockedNumbers.list`. Idiomes
+  Kotlin, pas des affectations mortes.
+- `EI`/`EI2`, `ST` — voir plus haut (exclus par `.spotbugs-exclude.xml`).
+
+**Polish mineur, non corrigé volontairement :**
+- `RV` ×9 — `File.mkdirs()` / `File.delete()` ignorent leur valeur de retour
+  (`SmsBridge` ×6, `WearBridge` ×2, `MmsPduProvider` ×1). Un échec de `mkdirs`
+  fait échouer l'écriture juste après, déjà rattrapée et loggée par le `catch`
+  englobant. Améliorer le message ne vaut pas le churn sur un toolchain fragile.
+- `USO` ×1 (`MmsNetworkManager.lock` exposé), `MS` ×1
+  (`SmsBridgePlugin.pendingSmsIntent` statique mutable) — encapsulation, sans
+  impact fonctionnel.
+- `DB` ×1 — branches identiques dans `MediaExporter.insert` **corrigé** (les deux
+  branches écrivaient la même colonne `datetaken`).
+
 ## À traiter plus tard (vrai gisement, non urgent)
 
 `detekt` — 15 `SwallowedException` : les occurrences échantillonnées

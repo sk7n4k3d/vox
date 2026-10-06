@@ -147,11 +147,9 @@ object MediaExporter {
                     put(MediaStore.MediaColumns.IS_PENDING, 0)
                     put(MediaStore.MediaColumns.DATE_ADDED, taken / 1000L)
                     put(MediaStore.MediaColumns.DATE_MODIFIED, taken / 1000L)
-                    if (isImage) {
-                        put(MediaStore.Images.Media.DATE_TAKEN, taken)
-                    } else {
-                        put(MediaStore.Video.Media.DATE_TAKEN, taken)
-                    }
+                    // « datetaken » est la même colonne pour les deux collections :
+                    // inutile de brancher sur isImage.
+                    put(MediaStore.Images.Media.DATE_TAKEN, taken)
                 },
                 null,
                 null,
