@@ -155,7 +155,9 @@ class WebhookQueue {
 
   /// Tente d'envoyer ce qui est mûr. Un échec repart avec un délai doublé,
   /// jusqu'au plafond de tentatives ou au TTL.
-  Future<void> flush() async {
+  ///
+  /// [force] ignore le délai d'attente (bouton « Réessayer » des réglages).
+  Future<void> flush({bool force = false}) async {
     await _ensureLoaded();
     if (_items.isEmpty) return;
     if (AppSettings.webhookWifiOnly.value &&
@@ -168,7 +170,7 @@ class WebhookQueue {
     final base = AppSettings.webhookRetryBackoffS.value;
 
     for (final item in List<PendingWebhook>.of(_items)) {
-      if (item.nextAttemptAtMs > now) continue;
+      if (!force && item.nextAttemptAtMs > now) continue;
       if (now - item.createdAtMs > ttlMs) {
         _items.remove(item);
         continue;

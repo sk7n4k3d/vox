@@ -141,7 +141,8 @@ class SettingsWebhookController extends State<SettingsWebhook> {
     unawaited(AppSettings.webhookRetryTtlH.setItem(n));
   }
 
-  Future<void> flushQueue() => WebhookQueue.instance.flush();
+  /// Bouton « Réessayer » : force l'envoi même si le backoff n'est pas écoulé.
+  Future<void> flushQueue() => WebhookQueue.instance.flush(force: true);
 
   Future<void> clearQueue() => WebhookQueue.instance.clear();
 
