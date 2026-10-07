@@ -1029,7 +1029,7 @@ object SmsBridge {
 
     /**
      * Enregistrements d'appels de l'app Téléphone de GrapheneOS :
-     * `{ path, name, size, modified }`, un fichier `.m4a` par appel dans
+     * `{ path, name, size, modified }`, un fichier audio par appel dans
      * `Recordings/CallRecordings` (nom = `CallRecord_<aaaammjj-hhmmss>_<numéro>`).
      * Le rapprochement avec le journal d'appels se fait côté Dart.
      */
@@ -1041,7 +1041,14 @@ object SmsBridge {
                     Environment.getExternalStorageDirectory(),
                     "Recordings/CallRecordings",
                 )
-                val files = dir.listFiles { f -> f.isFile && f.name.endsWith(".m4a") }
+                // GrapheneOS écrit en `.m4a` par défaut, mais le codec est
+                // paramétrable dans l'app Téléphone (AMR-WB = `.amr`,
+                // AAC/MPEG-4, PCM/WAV...). Filtrer sur `.m4a` seul faisait ignorer
+                // silencieusement tout enregistrement produit dans un autre codec.
+                val audioExts = arrayOf("m4a", "amr", "awb", "mp3", "ogg", "opus", "wav", "aac")
+                val files = dir.listFiles { f ->
+                    f.isFile && audioExts.any { f.name.endsWith(".$it", ignoreCase = true) }
+                }
                 if (files != null) {
                     for (f in files) {
                         out += mapOf(

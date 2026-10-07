@@ -30,9 +30,30 @@ DateTime? callRecordingStarted(String name) {
 /// Numéro porté par le nom d'un enregistrement d'appel (forme nationale ou
 /// internationale selon l'appel), ou null.
 String? callRecordingNumber(String name) {
-  final m = RegExp(r'CallRecord_\d{8}-\d{6}_(.+)\.m4a$').firstMatch(name);
+  final m = RegExp(
+    r'CallRecord_\d{8}-\d{6}_(.+)\.(m4a|amr|awb|mp3|ogg|opus|wav|aac)$',
+    caseSensitive: false,
+  ).firstMatch(name);
   final raw = m?.group(1);
   return (raw == null || raw.isEmpty) ? null : raw;
+}
+
+/// MIME audio d'un enregistrement d'appel, déduit de son extension.
+/// GrapheneOS écrit en `.m4a` par défaut, mais l'utilisateur peut choisir
+/// AMR-WB (`.amr`/`.awb`) ou un autre codec ; sans cela l'événement
+/// annoncerait `audio/mp4` pour un fichier AMR et Hermes l'archiverait mal.
+String callRecordingMime(String name) {
+  final ext = name.contains('.')
+      ? name.substring(name.lastIndexOf('.') + 1).toLowerCase()
+      : '';
+  return switch (ext) {
+    'amr' || 'awb' => 'audio/amr',
+    'mp3' => 'audio/mpeg',
+    'ogg' || 'opus' => 'audio/ogg',
+    'wav' => 'audio/wav',
+    'aac' => 'audio/aac',
+    _ => 'audio/mp4',
+  };
 }
 
 /// Libellé lisible d'un appel (corps de l'événement). [durationSeconds] = 0 pour

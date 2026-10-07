@@ -158,7 +158,7 @@ class WebhookCalls {
       final media = await WebhookHooks.fileMedia(
         recording.path,
         recording.name,
-        mimeType: 'audio/mp4',
+        mimeType: callRecordingMime(recording.name),
       );
       await WebhookService.instance.dispatch(
         WebhookEvent(
