@@ -1,5 +1,58 @@
 /// Source d'un événement poussé au webhook.
-enum WebhookSource { sms, mms, matrix }
+enum WebhookSource { sms, mms, matrix, call }
+
+/// Sens webhook d'un appel du journal Android : **seul un appel sortant** compte
+/// comme réponse. Un entrant, un manqué ou un rejeté reste `in`.
+bool callIsOutgoing(int type) => type == 2;
+
+/// Date de début d'un enregistrement d'appel, d'après son nom
+/// `CallRecord_20261006-121813_<numéro>.m4a` (heure locale de l'appareil).
+/// Null si le nom ne suit pas le schéma.
+DateTime? callRecordingStarted(String name) {
+  final m = RegExp(r'CallRecord_(\d{8})-(\d{6})_').firstMatch(name);
+  if (m == null) return null;
+  final d = m.group(1)!;
+  final t = m.group(2)!;
+  try {
+    return DateTime(
+      int.parse(d.substring(0, 4)),
+      int.parse(d.substring(4, 6)),
+      int.parse(d.substring(6, 8)),
+      int.parse(t.substring(0, 2)),
+      int.parse(t.substring(2, 4)),
+      int.parse(t.substring(4, 6)),
+    );
+  } catch (_) {
+    return null;
+  }
+}
+
+/// Numéro porté par le nom d'un enregistrement d'appel (forme nationale ou
+/// internationale selon l'appel), ou null.
+String? callRecordingNumber(String name) {
+  final m = RegExp(r'CallRecord_\d{8}-\d{6}_(.+)\.m4a$').firstMatch(name);
+  final raw = m?.group(1);
+  return (raw == null || raw.isEmpty) ? null : raw;
+}
+
+/// Libellé lisible d'un appel (corps de l'événement). [durationSeconds] = 0 pour
+/// un appel manqué/inexistant.
+String callLabel(int type, int durationSeconds) {
+  final kind = switch (type) {
+    1 => 'Appel entrant',
+    2 => 'Appel sortant',
+    3 => 'Appel manqué',
+    4 => 'Message vocal',
+    5 => 'Appel rejeté',
+    6 => 'Appel bloqué',
+    7 => 'Appel pris ailleurs',
+    _ => 'Appel',
+  };
+  if (durationSeconds <= 0) return kind;
+  final minutes = durationSeconds ~/ 60;
+  final seconds = durationSeconds % 60;
+  return minutes > 0 ? '$kind · $minutes min $seconds s' : '$kind · $seconds s';
+}
 
 /// Plafond d'un média poussé au webhook : 16 Mo de binaire (~21,3 Mo une fois
 /// encodé en base64, d'où le `client_max_body_size 32m` côté Hermes). Au-delà,
@@ -159,10 +212,23 @@ bool isSmsThreadAllowed(
       excluded: excluded,
     );
 
-/// Comparaison de numéros tolérante : le même contact peut s'écrire
-/// `+33 6 50 73 02 02`, `+33650730202` ou `06.50.73.02.02` selon la source.
-String normalizeSmsAddress(String raw) =>
-    raw.replaceAll(RegExp(r'[\s\-.()]'), '');
+/// Comparaison de numéros tolérante : le même contact s'écrit `+33 6 50 73 02 02`,
+/// `+33650730202`, `06.50.73.02.02` ou `0769558524` selon la source.
+///
+/// Le **journal d'appels** stocke souvent la forme nationale (`07 69 55 85 24`)
+/// là où les SMS stockent l'international (`+33769558524`) : sans replier l'un
+/// sur l'autre, un appel ne retombait pas dans le fil du SMS et ne comptait donc
+/// jamais comme réponse. On assume ici le plan de numérotation français (le
+/// téléphone est en France) : `0XXXXXXXXX` → `+33XXXXXXXXX`.
+String normalizeSmsAddress(String raw) {
+  final s = raw.replaceAll(RegExp(r'[\s\-.()]'), '');
+  if (s.isEmpty) return s;
+  if (s.startsWith('00')) return '+${s.substring(2)}';
+  if (!s.startsWith('+') && s.startsWith('0') && s.length == 10) {
+    return '+33${s.substring(1)}';
+  }
+  return s;
+}
 
 /// Fil (threadId) d'un numéro, à partir des conversations du pont SMS. Pur :
 /// c'est la règle de résolution utilisée pour les envois sortants, dont le

@@ -136,7 +136,7 @@ class WebhookHooks {
         media: attachmentPath == null || attachmentPath.isEmpty
             ? const <WebhookMedia>[]
             : [
-                await _fileMedia(
+                await fileMedia(
                   attachmentPath,
                   attachmentPath.split('/').last,
                   mimeType: _mimeForPath(attachmentPath),
@@ -233,7 +233,7 @@ class WebhookHooks {
           continue;
         }
         out.add(
-          await _fileMedia(path, part.fileName, mimeType: part.mimeType),
+          await fileMedia(path, part.fileName, mimeType: part.mimeType),
         );
       }
     } catch (e) {
@@ -243,8 +243,9 @@ class WebhookHooks {
   }
 
   /// Lit un fichier local et l'encode. Au-delà du plafond, ou si la lecture
-  /// échoue, on ne garde que la métadonnée.
-  static Future<WebhookMedia> _fileMedia(
+  /// échoue, on ne garde que la métadonnée. Public : sert aussi aux
+  /// enregistrements d'appels (WebhookCalls).
+  static Future<WebhookMedia> fileMedia(
     String path,
     String? fileName, {
     String mimeType = '',

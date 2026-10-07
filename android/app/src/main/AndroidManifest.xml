@@ -18,6 +18,7 @@
     <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" />
     <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
     <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
+    <uses-permission android:name="android.permission.READ_MEDIA_AUDIO" />
     <uses-permission android:name="android.permission.CAMERA" />
     <uses-permission android:name="android.permission.BLUETOOTH" />
     <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" />
@@ -42,6 +43,10 @@
          SIM (hasEmsSupport) au moment du sendMultipartTextMessage, et ce binder exige
          READ_PHONE_STATE. Sans lui, SecurityException -> messages longs jamais envoyés. -->
     <uses-permission android:name="android.permission.READ_PHONE_STATE" />
+    <!-- Journal d'appels : permis un appel sortant de compter comme réponse à un
+         SMS (« je n'ai pas répondu par SMS mais je l'ai appelé »). Permission
+         sensible, demandée explicitement depuis Réglages → Webhook. -->
+    <uses-permission android:name="android.permission.READ_CALL_LOG" />
     <!-- App SMS par défaut : exemption Doze pour que SMS_DELIVER réveille le
          process même app fermée + tel en veille profonde (sinon SMS différés/ratés). -->
     <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
@@ -49,6 +54,13 @@
     <!-- To make app compatible with tablets -->
     <uses-feature android:name="android.hardware.camera" android:required="false"/>
     <uses-feature android:name="android.hardware.microphone" android:required="false" />
+
+    <!-- Visibilité des paquets (Android 11+) : sans ça, l'app ne peut pas voir
+         l'overlay système qui marque GrapheneOS, et la détection des options
+         avancées (enregistrements d'appels) échoue silencieusement. -->
+    <queries>
+        <package android:name="android.overlay.grapheneos" />
+    </queries>
 
     <uses-sdk
             tools:overrideLibrary="io.wazo.callkeep, net.touchcapture.qr.flutterqr, com.cloudwebrtc.webrtc, org.webrtc, com.it_nomads.fluttersecurestorage, com.pichillilorenzo.flutter_inappwebview, com.example.video_compress, com.otaliastudios.transcoder, com.otaliastudios.opengl, com.kineapps.flutter_file_dialog, com.llfbandit.record, com.pravera.flutter_foreground_task"/>

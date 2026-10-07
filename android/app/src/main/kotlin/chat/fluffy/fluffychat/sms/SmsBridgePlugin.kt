@@ -4,6 +4,7 @@ import android.app.Activity
 import android.app.role.RoleManager
 import android.content.Context
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.net.ConnectivityManager
 import android.net.NetworkCapabilities
 import android.os.Build
@@ -11,6 +12,8 @@ import android.os.Handler
 import android.os.Looper
 import android.provider.Telephony
 import android.util.Log
+import androidx.core.app.ActivityCompat
+import androidx.core.content.ContextCompat
 import chat.fluffy.fluffychat.media.MediaExporter
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.EventChannel
@@ -131,6 +134,33 @@ class SmsBridgePlugin private constructor(
             // Réseau actif en Wi-Fi ? Sert au réglage « réessayer seulement en
             // Wi-Fi » de la file d'envoi du webhook.
             "isOnWifi" -> result.success(isOnWifi())
+
+            // Journal d'appels (permission sensible READ_CALL_LOG) : un appel
+            // sortant doit pouvoir compter comme réponse à un SMS.
+            "isCallLogGranted" -> result.success(isCallLogGranted())
+            "requestCallLogPermission" -> result.success(requestCallLogPermission())
+
+            // Journal d'appels : { id, number, name, type, date, duration }.
+            "listCalls" -> launchReply(result) {
+                val sinceMs = call.longArg("sinceMs") ?: 0L
+                val limit = (call.longArg("limit") ?: 200L).toInt().coerceIn(1, 1000)
+                SmsBridge.listCalls(context, sinceMs, limit)
+            }
+
+            // Options avancées GrapheneOS : détection + enregistrements d'appels.
+            "isGrapheneOs" -> {
+                val graphene = isGrapheneOs()
+                val dialer = defaultDialerPackage()
+                Log.i(
+                    SmsBridge.TAG,
+                    "options avancees: graphene=$graphene dialer=$dialer",
+                )
+                result.success(graphene)
+            }
+            "defaultDialerPackage" -> result.success(defaultDialerPackage())
+            "listCallRecordings" -> launchReply(result) {
+                SmsBridge.listCallRecordings(context)
+            }
 
             // Retire la notification d'un thread (appelé quand Dart ouvre/lit la conv).
             "cancelSmsNotification" -> {
@@ -449,6 +479,55 @@ class SmsBridgePlugin private constructor(
     // SMS_DELIVER → SMS reçus en retard ou ratés quand l'app est fermée (Matrix y
     // échappe via son push FCM). Même approche que Signal / QKSMS.
 
+    /**
+     * GrapheneOS ? L'overlay système `android.overlay.grapheneos` n'existe que
+     * là — c'est le marqueur fiable (les props de build ne suffisent pas).
+     * Sert à n'afficher les options avancées (enregistrements d'appels) que sur
+     * un appareil où l'app Téléphone d'origine sait enregistrer.
+     */
+    private fun isGrapheneOs(): Boolean = try {
+        context.packageManager.getPackageInfo("android.overlay.grapheneos", 0)
+        true
+    } catch (e: Exception) {
+        false
+    }
+
+    /** Paquet de l'application Téléphone par défaut (null si indéterminé). */
+    private fun defaultDialerPackage(): String? = try {
+        context.getSystemService(android.telecom.TelecomManager::class.java)?.defaultDialerPackage
+    } catch (e: Exception) {
+        Log.w(SmsBridge.TAG, "defaultDialerPackage failed: ${e.message}")
+        null
+    }
+
+    /** True si le journal d'appels est lisible (permission accordée). */    private fun isCallLogGranted(): Boolean = try {
+        ContextCompat.checkSelfPermission(context, android.Manifest.permission.READ_CALL_LOG) ==
+            PackageManager.PERMISSION_GRANTED
+    } catch (e: Exception) {
+        Log.w(SmsBridge.TAG, "isCallLogGranted failed: ${e.message}")
+        false
+    }
+
+    /**
+     * Lance la demande système de READ_CALL_LOG. Retourne false si aucune
+     * activité n'est branchée (rien à afficher). La réponse est ensuite lue via
+     * [isCallLogGranted] : l'utilisateur peut mettre quelques secondes.
+     */
+    private fun requestCallLogPermission(): Boolean {
+        val act = activity ?: return false
+        return try {
+            ActivityCompat.requestPermissions(
+                act,
+                arrayOf(android.Manifest.permission.READ_CALL_LOG),
+                REQ_CALL_LOG,
+            )
+            true
+        } catch (e: Exception) {
+            Log.w(SmsBridge.TAG, "requestCallLogPermission failed: ${e.message}")
+            false
+        }
+    }
+
     /** True si le réseau actif est un Wi-Fi (« réessayer seulement en Wi-Fi »). */
     private fun isOnWifi(): Boolean = try {
         val cm = context.getSystemService(ConnectivityManager::class.java)
@@ -552,6 +631,9 @@ class SmsBridgePlugin private constructor(
         }
     }
 }
+
+/** Code de requête de la permission « journal d'appels » (valeur stable, arbitraire). */
+private const val REQ_CALL_LOG = 4211
 
 /** Extrait un argument numérique de thread (Dart envoie int ou long selon la taille). */
 private fun MethodCall.longArg(name: String): Long? {

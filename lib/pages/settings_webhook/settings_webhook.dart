@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:fluffychat/config/setting_keys.dart';
 import 'package:fluffychat/utils/sms/sms_bridge.dart';
+import 'package:fluffychat/utils/webhook/webhook_calls.dart';
 import 'package:fluffychat/utils/webhook/webhook_event.dart';
 import 'package:fluffychat/utils/webhook/webhook_queue.dart';
 import 'package:fluffychat/utils/webhook/webhook_service.dart';
@@ -47,6 +48,20 @@ class SettingsWebhookController extends State<SettingsWebhook> {
   );
   bool retryEnabled = AppSettings.webhookRetryEnabled.value;
   bool wifiOnly = AppSettings.webhookWifiOnly.value;
+  bool callsEnabled = AppSettings.webhookCallsEnabled.value;
+
+  /// Options avancées : seulement sur GrapheneOS avec l'app Téléphone d'origine
+  /// (c'est elle qui enregistre les appels).
+  bool grapheneOs = false;
+  String? dialerPackage;
+  bool recordingsEnabled = AppSettings.webhookRecordings.value;
+  int recordingCount = 0;
+
+  bool get advancedAvailable =>
+      grapheneOs && dialerPackage == 'com.android.dialer';
+
+  /// Message affiché sous l'interrupteur des appels (permission refusée…).
+  String? callsHint;
 
   @override
   void initState() {
@@ -65,6 +80,16 @@ class SettingsWebhookController extends State<SettingsWebhook> {
     try {
       conversations = await SmsBridge.instance.listConversations();
     } catch (_) {}
+    var graphene = false;
+    String? dialer;
+    var recordings = 0;
+    try {
+      graphene = await SmsBridge.instance.isGrapheneOs();
+      dialer = await SmsBridge.instance.defaultDialerPackage();
+      if (graphene) {
+        recordings = (await SmsBridge.instance.listCallRecordings()).length;
+      }
+    } catch (_) {}
     if (!mounted) return;
     setState(() {
       secretController.text = secret;
@@ -73,6 +98,9 @@ class SettingsWebhookController extends State<SettingsWebhook> {
       smsThreads = savedSms;
       excludedSmsThreads = savedSmsExcluded;
       smsConversations = conversations;
+      grapheneOs = graphene;
+      dialerPackage = dialer;
+      recordingCount = recordings;
     });
   }
 
@@ -145,6 +173,63 @@ class SettingsWebhookController extends State<SettingsWebhook> {
   Future<void> flushQueue() => WebhookQueue.instance.flush(force: true);
 
   Future<void> clearQueue() => WebhookQueue.instance.clear();
+
+  /// Journal d'appels : activer demande la permission READ_CALL_LOG, puis lance
+  /// le premier import (48 h) pour que les appels passés comptent.
+  Future<void> toggleCalls(bool value) async {
+    if (!value) {
+      await AppSettings.webhookCallsEnabled.setItem(false);
+      if (!mounted) return;
+      setState(() {
+        callsEnabled = false;
+        callsHint = null;
+      });
+      return;
+    }
+    var granted = await SmsBridge.instance.isCallLogGranted();
+    if (!granted) {
+      await SmsBridge.instance.requestCallLogPermission();
+      // La réponse système arrive de façon asynchrone : on sonde un peu.
+      for (var i = 0; i < 20 && !granted; i++) {
+        await Future<void>.delayed(const Duration(milliseconds: 500));
+        granted = await SmsBridge.instance.isCallLogGranted();
+      }
+    }
+    if (!mounted) return;
+    if (!granted) {
+      setState(
+        () => callsHint =
+            'Permission refusée : autorise « Appels » pour VOX dans les '
+            'réglages Android, puis réessaie.',
+      );
+      return;
+    }
+    await AppSettings.webhookCallsEnabled.setItem(true);
+    WebhookCalls.instance.start();
+    if (!mounted) return;
+    setState(() {
+      callsEnabled = true;
+      callsHint = null;
+    });
+    unawaited(WebhookCalls.instance.sync());
+  }
+
+  Future<void> syncCallsNow() => WebhookCalls.instance.sync();
+
+  /// Enregistrements d'appels (GrapheneOS) : archivés côté Hermes, jamais purgés.
+  Future<void> toggleRecordings(bool value) async {
+    await AppSettings.webhookRecordings.setItem(value);
+    if (!mounted) return;
+    setState(() => recordingsEnabled = value);
+    if (value) unawaited(WebhookCalls.instance.sync());
+  }
+
+  Future<void> syncRecordingsNow() async {
+    await WebhookCalls.instance.sync();
+    final recordings = await SmsBridge.instance.listCallRecordings();
+    if (!mounted) return;
+    setState(() => recordingCount = recordings.length);
+  }
 
   /// La conversation part-elle ? Même règle que celle appliquée aux messages.
   bool isRoomSent(String roomId) => isRoomAllowed(

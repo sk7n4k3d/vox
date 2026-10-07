@@ -129,8 +129,16 @@ void main() {
   group('normalizeSmsAddress / smsThreadIdForAddress', () {
     test('espaces, tirets et points ne changent pas le numero', () {
       expect(normalizeSmsAddress('+33 6 50 73 02 02'), '+33650730202');
-      expect(normalizeSmsAddress('06.50.73.02.02'), '0650730202');
       expect(normalizeSmsAddress('+33-(6)-50-73-02-02'), '+33650730202');
+      expect(normalizeSmsAddress('00336050730202'), '+336050730202');
+    });
+
+    test('la forme nationale rejoint la forme internationale (journal d appels)', () {
+      expect(normalizeSmsAddress('06.50.73.02.02'), '+33650730202');
+      expect(normalizeSmsAddress('0769558524'), '+33769558524');
+      expect(normalizeSmsAddress('+33769558524'), '+33769558524');
+      // Un numéro étranger n'est pas touché.
+      expect(normalizeSmsAddress('+447860042009'), '+447860042009');
     });
 
     test('un envoi retrouve son fil malgre la mise en forme du numero', () {
@@ -245,6 +253,45 @@ void main() {
 
     test('le plafond est bien de 16 Mo', () {
       expect(maxWebhookMediaBytes, 16 * 1024 * 1024);
+    });
+  });
+
+  group('journal d appels', () {
+    test('seul un appel sortant compte comme reponse', () {
+      expect(callIsOutgoing(2), isTrue);
+      expect(callIsOutgoing(1), isFalse); // entrant
+      expect(callIsOutgoing(3), isFalse); // manque
+      expect(callIsOutgoing(5), isFalse); // rejete
+    });
+
+    test('le libelle dit le sens et la duree', () {
+      expect(callLabel(2, 0), 'Appel sortant');
+      expect(callLabel(3, 0), 'Appel manqué');
+      expect(callLabel(2, 45), 'Appel sortant · 45 s');
+      expect(callLabel(1, 60), 'Appel entrant · 1 min 0 s');
+      expect(callLabel(1, 132), 'Appel entrant · 2 min 12 s');
+    });
+
+    test('le nom d un enregistrement donne la date de debut et le numero', () {
+      final t = callRecordingStarted(
+        'CallRecord_20261006-121813_0769558524.m4a',
+      );
+      expect(t, isNotNull);
+      expect([t!.year, t.month, t.day], [2026, 10, 6]);
+      expect([t.hour, t.minute, t.second], [12, 18, 13]);
+      expect(
+        callRecordingNumber('CallRecord_20261006-121813_0769558524.m4a'),
+        '0769558524',
+      );
+      expect(
+        callRecordingNumber('CallRecord_20260924-095322_+33661391190.m4a'),
+        '+33661391190',
+      );
+    });
+
+    test('un nom hors schema est ignore', () {
+      expect(callRecordingStarted('autre.m4a'), isNull);
+      expect(callRecordingNumber('autre.m4a'), isNull);
     });
   });
 

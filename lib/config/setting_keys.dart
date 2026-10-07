@@ -58,6 +58,12 @@ enum AppSettings<T> {
   webhookRetryBackoffS<int>('chat.fluffy.webhook_retry_backoff_s', 60),
   webhookRetryTtlH<int>('chat.fluffy.webhook_retry_ttl_h', 24),
   webhookWifiOnly<bool>('chat.fluffy.webhook_wifi_only', false),
+  // Journal d'appels poussé vers la boîte Hermes : un appel sortant compte
+  // comme réponse à un SMS. Nécessite READ_CALL_LOG (demande explicite).
+  webhookCallsEnabled<bool>('chat.fluffy.webhook_calls', false),
+  // Enregistrements d'appels (app Téléphone de GrapheneOS) poussés comme média
+  // de l'appel correspondant. Jamais purgés côté Hermes (archive).
+  webhookRecordings<bool>('chat.fluffy.webhook_recordings', false),
   // Police des bulles de message (SMS + Matrix, identique). Valeurs :
   // '' = Inter (défaut), 'Rajdhani', 'JetBrainsMono', 'Orbitron'.
   messageFontFamily<String>('chat.fluffy.message_font_family', ''),

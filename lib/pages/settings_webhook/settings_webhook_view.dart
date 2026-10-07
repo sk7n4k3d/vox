@@ -241,6 +241,91 @@ class SettingsWebhookView extends StatelessWidget {
                 ],
               ),
             ),
+            CyberSectionHeader('Appels', accent: cyber.cyan),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: FluffySpacing.lg),
+              child: CyberGlass(
+                padding: const EdgeInsets.symmetric(
+                  vertical: FluffySpacing.xs,
+                ),
+                child: Column(
+                  children: [
+                    CyberSettingsTile(
+                      icon: Icons.phone_callback_outlined,
+                      accent: cyber.cyan,
+                      title: "Journal d'appels",
+                      subtitle:
+                          'Un appel sortant compte comme réponse à un SMS',
+                      trailing: Switch.adaptive(
+                        value: controller.callsEnabled,
+                        activeThumbColor: cyber.cyan,
+                        onChanged: controller.toggleCalls,
+                      ),
+                      onTap: () =>
+                          controller.toggleCalls(!controller.callsEnabled),
+                    ),
+                    if (controller.callsHint != null)
+                      Padding(
+                        padding: const EdgeInsets.fromLTRB(
+                          FluffySpacing.lg,
+                          FluffySpacing.sm,
+                          FluffySpacing.lg,
+                          FluffySpacing.sm,
+                        ),
+                        child: Text(
+                          controller.callsHint!,
+                          style: theme.textTheme.bodySmall?.copyWith(
+                            color: theme.colorScheme.error,
+                          ),
+                        ),
+                      ),
+                    if (controller.callsEnabled)
+                      TextButton(
+                        onPressed: controller.syncCallsNow,
+                        child: const Text('Importer les appels maintenant'),
+                      ),
+                    if (controller.advancedAvailable) ...[
+                      Padding(
+                        padding: const EdgeInsets.fromLTRB(
+                          FluffySpacing.lg,
+                          FluffySpacing.md,
+                          FluffySpacing.lg,
+                          FluffySpacing.sm,
+                        ),
+                        child: Text(
+                          'GrapheneOS · app Téléphone d\'origine : les appels sont '
+                          'enregistrés, on peut les archiver aussi.',
+                          style: theme.textTheme.bodySmall?.copyWith(
+                            color: theme.colorScheme.onSurfaceVariant,
+                          ),
+                        ),
+                      ),
+                      CyberSettingsTile(
+                        icon: Icons.mic_none_outlined,
+                        accent: cyber.violet,
+                        title: "Envoyer les enregistrements d'appels",
+                        subtitle:
+                            '${controller.recordingCount} fichier(s) trouvé(s) · '
+                            'archivés, jamais purgés',
+                        trailing: Switch.adaptive(
+                          value: controller.recordingsEnabled,
+                          activeThumbColor: cyber.violet,
+                          onChanged: controller.toggleRecordings,
+                        ),
+                        onTap: () => controller.toggleRecordings(
+                          !controller.recordingsEnabled,
+                        ),
+                      ),
+                      if (controller.recordingsEnabled)
+                        TextButton(
+                          onPressed: controller.syncRecordingsNow,
+                          child: const Text('Envoyer les enregistrements'),
+                        ),
+                    ],
+                  ],
+                ),
+              ),
+            ),
             CyberSectionHeader(
               'Conversations SMS/MMS (${controller.smsThreads.length} cochée'
               '${controller.smsThreads.length > 1 ? 's' : ''})',

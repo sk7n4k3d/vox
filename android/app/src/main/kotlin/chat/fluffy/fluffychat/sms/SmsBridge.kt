@@ -10,6 +10,7 @@ import android.graphics.BitmapFactory
 import android.net.Uri
 import android.os.Build
 import android.os.Environment
+import android.provider.CallLog
 import android.provider.ContactsContract
 import android.provider.Telephony
 import android.telephony.SmsManager
@@ -975,6 +976,87 @@ object SmsBridge {
      */
     suspend fun listMmsParts(context: Context, mmsId: Long): List<Map<String, Any?>> =
         withContext(Dispatchers.IO) { mmsParts(context, mmsId).second }
+
+    /**
+     * Journal d'appels (CallLog.Calls) : `{ id, number, name, type, date,
+     * duration }`, du plus récent au plus ancien.
+     *
+     * `type` reprend les constantes Android : 1 entrant, 2 sortant, 3 manqué,
+     * 4 boîte vocale, 5 rejeté, 6 bloqué. La couche webhook en déduit le sens
+     * (`out` seulement pour un appel sortant) et un libellé.
+     *
+     * @param sinceMs ne renvoyer que les appels postérieurs à cette date epoch-ms.
+     * @param limit borne le nombre de lignes (certaines ROMs OEM ignorent LIMIT,
+     *              donc on coupe aussi en Kotlin).
+     */
+    suspend fun listCalls(
+        context: Context,
+        sinceMs: Long,
+        limit: Int,
+    ): List<Map<String, Any?>> = withContext(Dispatchers.IO) {
+        val out = ArrayList<Map<String, Any?>>()
+        try {
+            context.contentResolver.query(
+                CallLog.Calls.CONTENT_URI,
+                arrayOf(
+                    CallLog.Calls._ID,
+                    CallLog.Calls.NUMBER,
+                    CallLog.Calls.CACHED_NAME,
+                    CallLog.Calls.TYPE,
+                    CallLog.Calls.DATE,
+                    CallLog.Calls.DURATION,
+                ),
+                "${CallLog.Calls.DATE} >= ?",
+                arrayOf(sinceMs.toString()),
+                "${CallLog.Calls.DATE} DESC",
+            )?.use { c ->
+                while (c.moveToNext() && out.size < limit) {
+                    out += mapOf(
+                        "id" to c.getLong(0),
+                        "number" to (c.getString(1) ?: ""),
+                        "name" to c.getString(2),
+                        "type" to c.getInt(3),
+                        "date" to c.getLong(4),
+                        "duration" to c.getLong(5),
+                    )
+                }
+            }
+        } catch (e: Exception) {
+            Log.w(TAG, "listCalls failed: ${e.message}")
+        }
+        out
+    }
+
+    /**
+     * Enregistrements d'appels de l'app Téléphone de GrapheneOS :
+     * `{ path, name, size, modified }`, un fichier `.m4a` par appel dans
+     * `Recordings/CallRecordings` (nom = `CallRecord_<aaaammjj-hhmmss>_<numéro>`).
+     * Le rapprochement avec le journal d'appels se fait côté Dart.
+     */
+    suspend fun listCallRecordings(context: Context): List<Map<String, Any?>> =
+        withContext(Dispatchers.IO) {
+            val out = ArrayList<Map<String, Any?>>()
+            try {
+                val dir = File(
+                    Environment.getExternalStorageDirectory(),
+                    "Recordings/CallRecordings",
+                )
+                val files = dir.listFiles { f -> f.isFile && f.name.endsWith(".m4a") }
+                if (files != null) {
+                    for (f in files) {
+                        out += mapOf(
+                            "path" to f.absolutePath,
+                            "name" to f.name,
+                            "size" to f.length(),
+                            "modified" to f.lastModified(),
+                        )
+                    }
+                }
+            } catch (e: Exception) {
+                Log.w(TAG, "listCallRecordings failed: ${e.message}")
+            }
+            out
+        }
 
     suspend fun loadMmsPart(context: Context, partId: Long): String? =
         withContext(Dispatchers.IO) {

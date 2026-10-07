@@ -32,7 +32,13 @@ class WebhookService {
   WebhookService._();
   static final WebhookService instance = WebhookService._();
 
-  static const Duration _timeout = Duration(seconds: 10);
+  /// Délai d'envoi adapté à la taille du corps. Un média de plusieurs Mo sur un
+  /// lien montant mobile met bien plus de 10 s : mesuré, les 4 plus gros
+  /// enregistrements d'appels (1 à 2,6 Mo → 1,4 à 3,5 Mo en base64) partaient en
+  /// échec de timeout et tombaient dans la file de retry. On accorde ~1 s par
+  /// 100 Ko, plafonné à 2 min.
+  static Duration timeoutFor(int bodyBytes) =>
+      Duration(seconds: (10 + bodyBytes ~/ 100000).clamp(10, 120));
 
   final ValueNotifier<WebhookStats> stats = ValueNotifier(const WebhookStats());
 
@@ -118,7 +124,7 @@ class WebhookService {
     try {
       final response = await http
           .post(uri, headers: headers, body: rawBody)
-          .timeout(_timeout);
+          .timeout(timeoutFor(rawBody.length));
       if (response.statusCode >= 200 && response.statusCode < 300) {
         stats.value = stats.value.sent1();
         return true;

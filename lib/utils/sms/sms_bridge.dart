@@ -114,6 +114,74 @@ class SmsBridge {
     }
   }
 
+  /// Le journal d'appels est-il lisible ? (permission READ_CALL_LOG)
+  Future<bool> isCallLogGranted() async {
+    try {
+      return await _channel.invokeMethod<bool>('isCallLogGranted') ?? false;
+    } on PlatformException {
+      return false;
+    }
+  }
+
+  /// Lance la demande système. False si aucune activité n'est branchée.
+  /// La réponse se lit ensuite avec [isCallLogGranted].
+  Future<bool> requestCallLogPermission() async {
+    try {
+      return await _channel.invokeMethod<bool>('requestCallLogPermission') ??
+          false;
+    } on PlatformException {
+      return false;
+    }
+  }
+
+  /// Journal d'appels depuis [sinceMs], du plus récent au plus ancien.
+  Future<List<SmsCall>> listCalls({required int sinceMs, int limit = 200}) async {
+    try {
+      final raw = await _channel.invokeMethod<List<dynamic>>('listCalls', {
+        'sinceMs': sinceMs,
+        'limit': limit,
+      });
+      return (raw ?? [])
+          .map((e) => SmsCall.fromMap(Map<String, dynamic>.from(e)))
+          .toList();
+    } on PlatformException {
+      return const [];
+    }
+  }
+
+  /// GrapheneOS ? L'overlay système n'existe que là. Conditionne l'affichage des
+  /// options avancées (enregistrements d'appels de l'app Téléphone d'origine).
+  Future<bool> isGrapheneOs() async {
+    try {
+      return await _channel.invokeMethod<bool>('isGrapheneOs') ?? false;
+    } on PlatformException {
+      return false;
+    }
+  }
+
+  /// Paquet de l'application Téléphone par défaut (ex. `com.android.dialer`).
+  Future<String?> defaultDialerPackage() async {
+    try {
+      return await _channel.invokeMethod<String>('defaultDialerPackage');
+    } on PlatformException {
+      return null;
+    }
+  }
+
+  /// Enregistrements d'appels écrits par l'app Téléphone (GrapheneOS).
+  Future<List<CallRecording>> listCallRecordings() async {
+    try {
+      final raw = await _channel.invokeMethod<List<dynamic>>(
+        'listCallRecordings',
+      );
+      return (raw ?? [])
+          .map((e) => CallRecording.fromMap(Map<String, dynamic>.from(e)))
+          .toList();
+    } on PlatformException {
+      return const [];
+    }
+  }
+
   /// Logs [message] through the native layer (Log.i) so it shows up in logcat
   /// even in release builds — Dart's print/developer.log don't reliably reach
   /// logcat in release. Diagnostic helper, safe no-op on failure.
@@ -476,6 +544,62 @@ class SmsBridge {
       return const {};
     }
   }
+}
+
+/// Un appel du journal Android. [type] reprend les constantes CallLog : 1
+/// entrant, 2 sortant, 3 manqué, 4 boîte vocale, 5 rejeté, 6 bloqué.
+class SmsCall {
+  final int id;
+  final String number;
+  final String? name;
+  final int type;
+  final int date;
+  final int duration;
+
+  const SmsCall({
+    required this.id,
+    required this.number,
+    required this.name,
+    required this.type,
+    required this.date,
+    required this.duration,
+  });
+
+  factory SmsCall.fromMap(Map<String, dynamic> m) => SmsCall(
+        id: (m['id'] as num?)?.toInt() ?? 0,
+        number: '${m['number'] ?? ''}',
+        name: m['name'] as String?,
+        type: (m['type'] as num?)?.toInt() ?? 0,
+        date: (m['date'] as num?)?.toInt() ?? 0,
+        duration: (m['duration'] as num?)?.toInt() ?? 0,
+      );
+
+  String get title => (name?.isNotEmpty == true) ? name! : number;
+}
+
+/// Un enregistrement d'appel écrit par l'app Téléphone (GrapheneOS) :
+/// `Recordings/CallRecordings/CallRecord_<aaaammjj-hhmmss>_<numéro>.m4a`.
+class CallRecording {
+  final String path;
+  final String name;
+  final int size;
+
+  /// Date de dernière modification (epoch ms) : la fin de l'appel.
+  final int modified;
+
+  const CallRecording({
+    required this.path,
+    required this.name,
+    required this.size,
+    required this.modified,
+  });
+
+  factory CallRecording.fromMap(Map<String, dynamic> m) => CallRecording(
+        path: '${m['path'] ?? ''}',
+        name: '${m['name'] ?? ''}',
+        size: (m['size'] as num?)?.toInt() ?? 0,
+        modified: (m['modified'] as num?)?.toInt() ?? 0,
+      );
 }
 
 class SmsAttachment {
