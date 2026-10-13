@@ -434,7 +434,7 @@ class _SmsChatPageState extends State<SmsChatPage> with WidgetsBindingObserver {
       final index = _messages.indexWhere((m) => m.id == optimistic.id);
       if (index == -1) return;
       _messages[index] = SmsMessage(
-        id: rowId != null ? '$rowId' : optimistic.id,
+        id: rowId != null && rowId > 0 ? '$rowId' : optimistic.id,
         address: optimistic.address,
         body: optimistic.body,
         date: optimistic.date,
@@ -449,7 +449,7 @@ class _SmsChatPageState extends State<SmsChatPage> with WidgetsBindingObserver {
 
     // Disappearing messages: arm expiry for the sent SMS/MMS if a policy (or a
     // one-shot per-message override) is active for this thread.
-    if (rowId != null) {
+    if (rowId != null && rowId > 0) {
       final override = _pendingEphemeralOverride;
       await EphemeralMessages.instance.trackSmsMessage(
         widget.threadId,

@@ -97,8 +97,8 @@ object LlmSuggestions {
         return try {
             val prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
             if (!prefs.getBoolean(KEY_ENABLED, false)) return null
+            // Clé facultative (serveur local type Ollama/llama.cpp sans auth).
             val apiKey = prefs.getString(KEY_API_KEY, null)?.trim().orEmpty()
-            if (apiKey.isEmpty()) return null
             val baseUrl = prefs.getString(KEY_BASE_URL, DEFAULT_BASE_URL)
                 ?.trim()?.trimEnd('/')?.takeIf { it.isNotEmpty() } ?: DEFAULT_BASE_URL
             val model = prefs.getString(KEY_MODEL, DEFAULT_MODEL)
@@ -109,7 +109,11 @@ object LlmSuggestions {
         }
     }
 
-    private fun request(settings: Settings, transcript: String): List<String> {
+    private fun request(
+        settings: Settings,
+        transcript: String,
+        disableThinking: Boolean = true,
+    ): List<String> {
         val url = URL("${settings.baseUrl}/chat/completions")
         val body = JSONObject().apply {
             put("model", settings.model)
@@ -122,9 +126,12 @@ object LlmSuggestions {
             )
             put("max_tokens", MAX_TOKENS)
             put("temperature", TEMPERATURE)
-            // Modeles hybrides (Qwen3.5) : sans ce flag, content revient vide
-            // et la reponse part dans reasoning_content.
-            put("chat_template_kwargs", JSONObject().put("enable_thinking", false))
+            // Modeles hybrides (Qwen3.5 via vLLM/SGLang) : sans ce flag, content
+            // revient vide. Extension non standard refusee (400) par l'API OpenAI
+            // officielle -> second essai sans (cf. request()).
+            if (disableThinking) {
+                put("chat_template_kwargs", JSONObject().put("enable_thinking", false))
+            }
         }.toString().toByteArray(Charsets.UTF_8)
 
         var connection: HttpURLConnection? = null
@@ -135,7 +142,9 @@ object LlmSuggestions {
                 connectTimeout = CONNECT_TIMEOUT_MS
                 readTimeout = READ_TIMEOUT_MS
                 setRequestProperty("Content-Type", "application/json")
-                setRequestProperty("Authorization", "Bearer ${settings.apiKey}")
+                if (settings.apiKey.isNotEmpty()) {
+                    setRequestProperty("Authorization", "Bearer ${settings.apiKey}")
+                }
                 setFixedLengthStreamingMode(body.size)
             }
             BufferedOutputStream(connection.outputStream).use { out ->
@@ -143,6 +152,10 @@ object LlmSuggestions {
                 out.flush()
             }
             val code = connection.responseCode
+            if (code == 400 && disableThinking) {
+                connection.disconnect()
+                return request(settings, transcript, disableThinking = false)
+            }
             if (code / 100 != 2) {
                 Log.w(SmsBridge.TAG, "LlmSuggestions: LLM répond HTTP $code")
                 return emptyList()

@@ -33,7 +33,9 @@ import kotlinx.coroutines.withContext
  *   - listMessages(threadId: Int|Long)          -> List<Map> {id,address,body,date,isFromMe,type,status,read,
  *                                                              isMms:Bool, attachments:List<{partId,mimeType,fileName}>}
  *                                                  (SMS + MMS fusionnés, triés par date ; attachments vide pour les SMS)
- *   - sendSms(address: String, body: String)    -> Long? (rowId) | null si échec
+ *   - sendSms(address: String, body: String)    -> Long? rowId (0 = soumis mais non persisté) | null si non soumis
+ *   - scheduleSms / cancelScheduledSms / takeScheduledSmsResults
+ *   - scheduleSmsDelete / cancelScheduledSmsDelete  (cf. ScheduledSmsAlarms)
  *   - sendMms(address: String, body: String?, imagePath: String?)
  *                                               -> Long? (mmsId Outbox) | null si échec. Best-effort carrier.
  *   - loadMmsPart(partId: Int|Long)             -> String? (path du fichier cache écrit) | null si échec
@@ -175,6 +177,52 @@ class SmsBridgePlugin private constructor(
                     return
                 }
                 launchReply(result) { SmsBridge.sendSms(context, address, body) }
+            }
+
+            "scheduleSms" -> {
+                val id = call.argument<String>("id")
+                val address = call.argument<String>("address")
+                val body = call.argument<String>("body")
+                val sendAt = call.longArg("sendAt")
+                if (id.isNullOrEmpty() || address.isNullOrEmpty() || body == null || sendAt == null) {
+                    result.error("BAD_ARGS", "id, address, body or sendAt missing", null)
+                    return
+                }
+                launchReply(result) { ScheduledSmsAlarms.scheduleSend(context, id, address, body, sendAt) }
+            }
+
+            "cancelScheduledSms" -> {
+                val id = call.argument<String>("id")
+                if (id.isNullOrEmpty()) {
+                    result.error("BAD_ARGS", "id missing", null)
+                    return
+                }
+                launchReply(result) { ScheduledSmsAlarms.cancelSend(context, id) }
+            }
+
+            "takeScheduledSmsResults" -> {
+                launchReply(result) { ScheduledSmsAlarms.takeResults(context) }
+            }
+
+            "scheduleSmsDelete" -> {
+                val id = call.argument<String>("id")
+                val messageId = call.longArg("messageId")
+                val isMms = call.argument<Boolean>("isMms") ?: false
+                val at = call.longArg("at")
+                if (id.isNullOrEmpty() || messageId == null || at == null) {
+                    result.error("BAD_ARGS", "id, messageId or at missing", null)
+                    return
+                }
+                launchReply(result) { ScheduledSmsAlarms.scheduleDelete(context, id, messageId, isMms, at) }
+            }
+
+            "cancelScheduledSmsDelete" -> {
+                val id = call.argument<String>("id")
+                if (id.isNullOrEmpty()) {
+                    result.error("BAD_ARGS", "id missing", null)
+                    return
+                }
+                launchReply(result) { ScheduledSmsAlarms.cancelDelete(context, id) }
             }
 
             "markRead" -> {

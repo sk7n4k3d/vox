@@ -81,17 +81,18 @@ class SettingsIaController extends State<SettingsIa> {
 
   Future<void> testConnection() async {
     final key = keyController.text.trim();
-    if (key.isEmpty) return;
+    if (urlController.text.trim().isEmpty) return;
     setState(() {
       testStatus = LlmTestStatus.loading;
       testMessage = null;
     });
+    final client = LlmClient(
+      baseUrl: urlController.text.trim(),
+      apiKey: key,
+      model: modelController.text.trim(),
+    );
     try {
-      final models = await LlmClient(
-        baseUrl: urlController.text.trim(),
-        apiKey: key,
-        model: modelController.text.trim(),
-      ).fetchModels();
+      final models = await client.fetchModels();
       if (!mounted) return;
       setState(() {
         testStatus = LlmTestStatus.success;
@@ -110,6 +111,8 @@ class SettingsIaController extends State<SettingsIa> {
         testStatus = LlmTestStatus.error;
         testMessage = 'Serveur injoignable';
       });
+    } finally {
+      client.close();
     }
   }
 

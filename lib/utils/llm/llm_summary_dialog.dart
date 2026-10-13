@@ -20,7 +20,7 @@ Future<void> showLlmSummary({
   required String transcript,
 }) async {
   if (!AppSettings.llmEnabled.value ||
-      AppSettings.llmApiKey.value.trim().isEmpty) {
+      AppSettings.llmBaseUrl.value.trim().isEmpty) {
     await _showEnableDialog(context);
     return;
   }
@@ -87,10 +87,16 @@ class _LlmSummaryDialogState extends State<_LlmSummaryDialog> {
     }
     setState(() => _loading = true);
     try {
-      final summary = await LlmClient.fromSettings().chat([
-        {'role': 'system', 'content': kLlmSummarySystemPrompt},
-        {'role': 'user', 'content': transcript},
-      ]);
+      final client = LlmClient.fromSettings();
+      final String summary;
+      try {
+        summary = await client.chat([
+          {'role': 'system', 'content': kLlmSummarySystemPrompt},
+          {'role': 'user', 'content': transcript},
+        ]);
+      } finally {
+        client.close();
+      }
       if (!mounted) return;
       setState(() {
         _loading = false;
@@ -137,10 +143,7 @@ class _LlmSummaryDialogState extends State<_LlmSummaryDialog> {
           SizedBox(
             width: 18,
             height: 18,
-            child: CircularProgressIndicator(
-              strokeWidth: 2,
-              color: cyber.cyan,
-            ),
+            child: CircularProgressIndicator(strokeWidth: 2, color: cyber.cyan),
           ),
           const SizedBox(width: FluffySpacing.md),
           const Flexible(child: Text('Analyse de la conversation…')),

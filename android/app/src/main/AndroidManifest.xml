@@ -40,6 +40,10 @@
     <!-- App SMS par défaut : exemption Doze pour que SMS_DELIVER réveille le
          process même app fermée + tel en veille profonde (sinon SMS différés/ratés). -->
     <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
+    <!-- SMS programmés / éphémères exécutés par AlarmManager (ScheduledSmsAlarms) :
+         alarme exacte si l'utilisateur l'autorise, sinon repli inexact ; ré-armement au boot. -->
+    <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM" />
+    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
 
     <!-- To make app compatible with tablets -->
     <uses-feature android:name="android.hardware.camera" android:required="false"/>
@@ -293,6 +297,22 @@
             android:exported="false">
             <intent-filter>
                 <action android:name="eu.devlabz.vox.MMS_SENT" />
+            </intent-filter>
+        </receiver>
+
+        <!-- SMS programmés + suppressions éphémères SMS (AlarmManager, PendingIntent explicite) -->
+        <receiver
+            android:name=".sms.ScheduledSmsReceiver"
+            android:exported="false" />
+
+        <!-- Ré-arme les alarmes ci-dessus après reboot / mise à jour -->
+        <receiver
+            android:name=".sms.ScheduledSmsBootReceiver"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.BOOT_COMPLETED" />
+                <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
+                <action android:name="android.app.action.SCHEDULE_EXACT_ALARM_PERMISSION_STATE_CHANGED" />
             </intent-filter>
         </receiver>
 
