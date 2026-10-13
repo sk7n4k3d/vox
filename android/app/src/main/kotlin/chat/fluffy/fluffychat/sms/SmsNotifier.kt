@@ -146,7 +146,9 @@ object SmsNotifier {
         val recentMsgs = synchronized(msgs) {
             msgs.add(HistoryEntry(timestamp, shownBody, body, isLocal = false))
             while (msgs.size > 8) msgs.removeAt(0)
-            msgs.toList()
+            // Verrouillé : masquer aussi les aperçus déjà en clair dans l'historique
+            // (notifications reçues avant le verrouillage).
+            if (locked) msgs.map { it.copy(displayBody = "Nouveau message") } else msgs.toList()
         }
 
         val person = Person.Builder()

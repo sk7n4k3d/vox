@@ -181,15 +181,16 @@ object MmsHttpClient {
 
     /**
      * POSTs [pdu] (an m-send-req) to [mmscUrl] over [network], optionally through
-     * [proxyHost]:[proxyPort]. Returns the response bytes (m-send-conf) on a 2xx,
-     * or null on any failure.
+     * [proxyHost]:[proxyPort]. [PostResult.UNKNOWN] means the PDU was fully
+     * written but no answer was read: the MMSC may have accepted it, so callers
+     * must not resubmit automatically.
      */
     fun postPdu(
         mmscUrl: String,
         proxyHost: String?,
         proxyPort: Int,
         pdu: ByteArray,
-    ): ByteArray? {
+    ): PostResult {
         // Defense-in-depth: the MMSC URL comes from the system APN (carrier
         // config), but a stale/injected APN could point the POST at an internal
         // address (cloud metadata 169.254.169.254, loopback…). Validate scheme +
@@ -197,18 +198,19 @@ object MmsHttpClient {
         val url = runCatching { URL(mmscUrl) }.getOrNull()
         if (url == null || url.protocol !in listOf("http", "https")) {
             Log.e(SmsBridge.TAG, "MmsHttpClient: schéma MMSC invalide: $mmscUrl")
-            return null
+            return PostResult.NOT_SENT
         }
         if (isBlockedHost(url.host)) {
             Log.e(SmsBridge.TAG, "MmsHttpClient: hôte MMSC bloqué (loopback/link-local): ${url.host}")
-            return null
+            return PostResult.NOT_SENT
         }
         if (!proxyHost.isNullOrBlank() && isBlockedHost(proxyHost)) {
             Log.e(SmsBridge.TAG, "MmsHttpClient: proxy bloqué: $proxyHost")
-            return null
+            return PostResult.NOT_SENT
         }
 
         var connection: HttpURLConnection? = null
+        var written = false
         return try {
             val useProxy = !proxyHost.isNullOrBlank() && proxyPort > 0
             // The CALLER has already bound this process to the MMS network
@@ -255,11 +257,12 @@ object MmsHttpClient {
                 out.write(pdu)
                 out.flush()
             }
+            written = true
 
             val code = connection.responseCode
             if (code / 100 != 2) {
                 Log.e(SmsBridge.TAG, "MmsHttpClient: MMSC répond HTTP $code")
-                return null
+                return PostResult.REJECTED
             }
             val body = BufferedInputStream(connection.inputStream).use { input ->
                 val buf = ByteArrayOutputStream()
@@ -282,18 +285,20 @@ object MmsHttpClient {
                     SmsBridge.TAG,
                     "MmsHttpClient: MMS REJETÉ par le MMSC: \"$status\" (HTTP $code) m-send-conf=[$hex]",
                 )
-                return null
+                return PostResult.REJECTED
             }
             Log.i(
                 SmsBridge.TAG,
                 "MmsHttpClient: MMS accepté \"$status\" (HTTP $code, ${body.size} o)",
             )
-            body
+            PostResult.ACCEPTED
         } catch (e: Exception) {
-            Log.e(SmsBridge.TAG, "MmsHttpClient.postPdu failed: ${e.message}")
-            null
+            Log.e(SmsBridge.TAG, "MmsHttpClient.postPdu failed (written=$written): ${e.message}")
+            if (written) PostResult.UNKNOWN else PostResult.NOT_SENT
         } finally {
             connection?.disconnect()
         }
     }
+
+    enum class PostResult { ACCEPTED, REJECTED, NOT_SENT, UNKNOWN }
 }
