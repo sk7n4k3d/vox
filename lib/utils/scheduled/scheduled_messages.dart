@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 
 import 'package:fluffychat/utils/sms/sms_bridge.dart';
+import 'package:flutter/foundation.dart';
 import 'package:matrix/matrix.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -21,59 +22,144 @@ class ScheduledMessage {
   /// Epoch millis at which to send.
   final int sendAt;
 
+  /// Failed send attempts so far.
+  final int attempts;
+
+  /// Retries exhausted: kept in the queue (not silently dropped) until the user
+  /// edits (retries) or cancels it.
+  final bool failed;
+
   const ScheduledMessage({
     required this.id,
     required this.body,
     required this.sendAt,
     this.roomId,
     this.smsAddress,
+    this.attempts = 0,
+    this.failed = false,
   });
 
   bool get isSms => smsAddress != null;
   DateTime get sendAtTime => DateTime.fromMillisecondsSinceEpoch(sendAt);
 
+  ScheduledMessage copyWith({
+    String? body,
+    int? sendAt,
+    int? attempts,
+    bool? failed,
+  }) => ScheduledMessage(
+    id: id,
+    roomId: roomId,
+    smsAddress: smsAddress,
+    body: body ?? this.body,
+    sendAt: sendAt ?? this.sendAt,
+    attempts: attempts ?? this.attempts,
+    failed: failed ?? this.failed,
+  );
+
   Map<String, dynamic> toJson() => {
-        'id': id,
-        'roomId': roomId,
-        'smsAddress': smsAddress,
-        'body': body,
-        'sendAt': sendAt,
-      };
+    'id': id,
+    'roomId': roomId,
+    'smsAddress': smsAddress,
+    'body': body,
+    'sendAt': sendAt,
+    'attempts': attempts,
+    'failed': failed,
+  };
 
   factory ScheduledMessage.fromJson(Map<String, dynamic> j) => ScheduledMessage(
-        id: '${j['id']}',
-        roomId: j['roomId'] as String?,
-        smsAddress: j['smsAddress'] as String?,
-        body: '${j['body'] ?? ''}',
-        sendAt: (j['sendAt'] as num?)?.toInt() ?? 0,
-      );
+    id: '${j['id']}',
+    roomId: j['roomId'] as String?,
+    smsAddress: j['smsAddress'] as String?,
+    body: '${j['body'] ?? ''}',
+    sendAt: (j['sendAt'] as num?)?.toInt() ?? 0,
+    attempts: (j['attempts'] as num?)?.toInt() ?? 0,
+    failed: j['failed'] == true,
+  );
 }
 
-/// Persists scheduled messages and fires them at their due time. Local-only
-/// (no server delayed-event dependency) so it works identically for Matrix and
-/// SMS. Due-while-offline messages are flushed on the next [start].
+/// Transport used by [ScheduledMessages] for SMS (injectable for tests).
+class ScheduledSmsBackend {
+  const ScheduledSmsBackend();
+
+  /// Native AlarmManager scheduling (Android only).
+  bool get supportsNative => defaultTargetPlatform == TargetPlatform.android;
+
+  /// true once the SMS has been handed to the modem (even if the provider
+  /// insert failed — it must then never be resent).
+  Future<bool> submit(String address, String body) async =>
+      await SmsBridge.instance.sendSms(address, body) != null;
+
+  Future<bool> scheduleNative(ScheduledMessage m) =>
+      SmsBridge.instance.scheduleNativeSms(
+        id: m.id,
+        address: m.smsAddress!,
+        body: m.body,
+        sendAt: m.sendAt,
+      );
+
+  Future<bool> cancelNative(String id) =>
+      SmsBridge.instance.cancelNativeSms(id);
+
+  Future<Map<String, String>> takeNativeResults() =>
+      SmsBridge.instance.takeNativeSmsResults();
+}
+
+/// Persists scheduled messages and fires them at their due time.
 ///
-/// Limitation (documented): if the device is fully powered off at the exact due
-/// time, the message is sent when the app next runs [start] — same behaviour as
-/// most "schedule send" implementations without a server-side queue.
+/// SMS are handed to the native AlarmManager on Android (sent even if the app
+/// is killed or the phone dozes); results are pulled back with
+/// [syncNativeResults]. Matrix messages need a live client, so they fire from
+/// Dart timers while the app runs, and overdue ones are flushed on [start].
 class ScheduledMessages {
-  ScheduledMessages._();
-  static final ScheduledMessages instance = ScheduledMessages._();
+  ScheduledMessages._(this._backend);
+  static final ScheduledMessages instance = ScheduledMessages._(
+    const ScheduledSmsBackend(),
+  );
+
+  @visibleForTesting
+  factory ScheduledMessages.forTesting(ScheduledSmsBackend backend) =>
+      ScheduledMessages._(backend);
 
   static const String _prefsKey = 'chat.fluffy.scheduled_messages';
 
+  /// Dart-side attempts before a message is marked [ScheduledMessage.failed].
+  static const int maxAttempts = 5;
+
+  final ScheduledSmsBackend _backend;
   final List<ScheduledMessage> _queue = [];
   final Map<String, Timer> _timers = {};
+
+  /// Bumped on every (re)arm / cancel: a timer only fires if its generation
+  /// is still current, so a cancelled or edited message can't go out.
+  final Map<String, int> _generation = {};
+  final Set<String> _inFlight = {};
+
+  /// SMS ids currently owned by the native AlarmManager.
+  final Set<String> _native = {};
+  Timer? _nativePoll;
+
   Client? _client;
   bool _started = false;
+
+  @visibleForTesting
+  Duration overdueDelay = const Duration(seconds: 1);
+
+  @visibleForTesting
+  Duration Function(int attempts) retryDelay = (attempts) =>
+      Duration(minutes: 1 << (attempts - 1).clamp(0, 6));
+
+  @visibleForTesting
+  Duration nativePollInterval = const Duration(seconds: 30);
 
   final StreamController<void> _changes = StreamController<void>.broadcast();
 
   /// Emits whenever the queue changes (add / cancel / fire).
   Stream<void> get changes => _changes.stream;
 
-  List<ScheduledMessage> get all =>
-      List.unmodifiable(_queue..sort((a, b) => a.sendAt.compareTo(b.sendAt)));
+  List<ScheduledMessage> get all => List.unmodifiable(
+    List.of(_queue)..sort((a, b) => a.sendAt.compareTo(b.sendAt)),
+  );
 
   List<ScheduledMessage> forRoom(String roomId) =>
       _queue.where((m) => m.roomId == roomId).toList();
@@ -83,7 +169,7 @@ class ScheduledMessages {
 
   /// Loads the persisted queue and arms timers. Idempotent; call once the
   /// Matrix client is available (needed to send Matrix messages).
-  Future<void> start(Client client) async {
+  Future<void> start(Client? client) async {
     _client = client;
     if (_started) return;
     _started = true;
@@ -93,13 +179,15 @@ class ScheduledMessages {
       ..clear()
       ..addAll(
         raw.map(
-          (s) => ScheduledMessage.fromJson(
-            jsonDecode(s) as Map<String, dynamic>,
-          ),
+          (s) =>
+              ScheduledMessage.fromJson(jsonDecode(s) as Map<String, dynamic>),
         ),
       );
+    // Apply native results first: re-scheduling an SMS the AlarmManager
+    // already sent would send it twice.
+    await syncNativeResults();
     for (final m in List<ScheduledMessage>.from(_queue)) {
-      _arm(m);
+      await _arm(m);
     }
     _changes.add(null);
   }
@@ -107,78 +195,156 @@ class ScheduledMessages {
   Future<void> schedule(ScheduledMessage message) async {
     _queue.add(message);
     await _persist();
-    _arm(message);
+    await _arm(message);
     _changes.add(null);
   }
 
-  Future<void> cancel(String id) async {
-    _timers.remove(id)?.cancel();
+  /// Returns false (and does nothing) if the message is already being sent.
+  Future<bool> cancel(String id) async {
+    if (_inFlight.contains(id)) return false;
+    if (_native.contains(id) && !await _backend.cancelNative(id)) {
+      // The alarm already fired: let its result decide.
+      await syncNativeResults();
+      return false;
+    }
+    _disarm(id);
     _queue.removeWhere((m) => m.id == id);
     await _persist();
     _changes.add(null);
+    return true;
   }
 
   /// Edits a pending scheduled message in place: changes its [body] and/or
-  /// [sendAt] while keeping the same id (so the row never disappears from the
-  /// manage sheet, unlike a cancel+recreate). Re-arms the timer and persists.
-  /// No-op if the id is unknown or the message has already fired.
-  Future<void> reschedule(String id, {String? body, int? sendAt}) async {
+  /// [sendAt] while keeping the same id. Also retries a failed message.
+  /// Returns false if the id is unknown or the message is already being sent.
+  Future<bool> reschedule(String id, {String? body, int? sendAt}) async {
+    if (_inFlight.contains(id)) return false;
+    if (!_queue.any((m) => m.id == id)) return false;
+    if (_native.contains(id) && !await _backend.cancelNative(id)) {
+      await syncNativeResults();
+      return false;
+    }
+    _disarm(id);
     final i = _queue.indexWhere((m) => m.id == id);
-    if (i < 0) return;
-    final old = _queue[i];
-    final updated = ScheduledMessage(
-      id: old.id,
-      roomId: old.roomId,
-      smsAddress: old.smsAddress,
-      body: body ?? old.body,
-      sendAt: sendAt ?? old.sendAt,
+    if (i < 0) return false;
+    final updated = _queue[i].copyWith(
+      body: body,
+      sendAt: sendAt,
+      attempts: 0,
+      failed: false,
     );
     _queue[i] = updated;
     await _persist();
-    _arm(updated);
+    await _arm(updated);
     _changes.add(null);
+    return true;
   }
 
-  void _arm(ScheduledMessage m) {
-    _timers.remove(m.id)?.cancel();
-    final delay = m.sendAtTime.difference(DateTime.now());
-    if (delay.isNegative) {
-      // Overdue (queued while offline) — fire as soon as possible.
-      _timers[m.id] = Timer(const Duration(seconds: 1), () => _fire(m));
-    } else {
-      _timers[m.id] = Timer(delay, () => _fire(m));
+  /// Pulls the outcome of natively sent SMS and updates the queue.
+  Future<void> syncNativeResults() async {
+    if (!_backend.supportsNative) return;
+    final results = await _backend.takeNativeResults();
+    if (results.isEmpty) return;
+    var changed = false;
+    results.forEach((id, result) {
+      _native.remove(id);
+      final i = _queue.indexWhere((m) => m.id == id);
+      if (i < 0) return;
+      changed = true;
+      if (result == 'sent') {
+        _queue.removeAt(i);
+      } else {
+        _queue[i] = _queue[i].copyWith(failed: true);
+      }
+    });
+    if (_native.isEmpty) {
+      _nativePoll?.cancel();
+      _nativePoll = null;
+    }
+    if (changed) {
+      await _persist();
+      _changes.add(null);
     }
   }
 
-  Future<void> _fire(ScheduledMessage m) async {
-    _timers.remove(m.id);
+  void _disarm(String id) {
+    _generation[id] = (_generation[id] ?? 0) + 1;
+    _timers.remove(id)?.cancel();
+    _native.remove(id);
+  }
+
+  Future<void> _arm(ScheduledMessage m) async {
+    _disarm(m.id);
+    if (m.failed) return;
+    final gen = _generation[m.id]!;
+    if (m.isSms && _backend.supportsNative) {
+      final ok = await _backend.scheduleNative(m);
+      if (_generation[m.id] != gen) return;
+      if (ok) {
+        _native.add(m.id);
+        _nativePoll ??= Timer.periodic(
+          nativePollInterval,
+          (_) => syncNativeResults(),
+        );
+        return;
+      }
+    }
+    final delay = m.sendAtTime.difference(DateTime.now());
+    _timers[m.id] = Timer(
+      delay < overdueDelay ? overdueDelay : delay,
+      () => _fire(m.id, gen),
+    );
+  }
+
+  Future<void> _fire(String id, int gen) async {
+    if (_generation[id] != gen) return;
+    _timers.remove(id);
+    final m = _queue.where((e) => e.id == id).firstOrNull;
+    if (m == null || m.failed) return;
+
+    _inFlight.add(id);
     var sent = false;
+    var countsAsAttempt = true;
     try {
       if (m.isSms) {
-        // sendSms returns the inserted rowId, or null on failure (not default
-        // SMS app, no SIM, invalid number). Only treat a non-null id as sent —
-        // otherwise the message would be silently dropped from the queue.
-        final rowId = await SmsBridge.instance.sendSms(m.smsAddress!, m.body);
-        sent = rowId != null;
+        sent = await _backend.submit(m.smsAddress!, m.body);
       } else if (m.roomId != null) {
         final room = _client?.getRoomById(m.roomId!);
         if (room != null) {
           await room.sendTextEvent(m.body);
           sent = true;
+        } else {
+          // Client not synced yet (cold start): no send happened, so no
+          // duplicate risk — just wait without burning an attempt.
+          countsAsAttempt = false;
         }
-        // room == null: client not synced yet (cold start). Leave queued and
-        // re-arm shortly rather than dropping the message.
       }
     } catch (e) {
-      // Network/SDK failure: keep the message and retry later.
       sent = false;
+    } finally {
+      _inFlight.remove(id);
     }
+
+    final i = _queue.indexWhere((e) => e.id == id);
     if (sent) {
-      _queue.removeWhere((e) => e.id == m.id);
+      if (i >= 0) _queue.removeAt(i);
       await _persist();
-    } else {
-      // Re-arm a short retry so a transient failure doesn't lose the message.
-      _timers[m.id] = Timer(const Duration(minutes: 1), () => _fire(m));
+    } else if (i >= 0) {
+      final attempts = countsAsAttempt ? m.attempts + 1 : m.attempts;
+      final updated = m.copyWith(
+        attempts: attempts,
+        failed: attempts >= maxAttempts,
+      );
+      _queue[i] = updated;
+      await _persist();
+      if (!updated.failed) {
+        _disarm(id);
+        final next = _generation[id]!;
+        _timers[id] = Timer(
+          retryDelay(attempts == 0 ? 1 : attempts),
+          () => _fire(id, next),
+        );
+      }
     }
     _changes.add(null);
   }

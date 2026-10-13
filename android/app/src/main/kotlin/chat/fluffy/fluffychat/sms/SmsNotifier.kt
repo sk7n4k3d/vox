@@ -56,7 +56,8 @@ object SmsNotifier {
     private const val KEY_ENABLED = "flutter.chat.fluffy.sms_notifications_enabled"
     private const val KEY_PREVIEW = "flutter.chat.fluffy.sms_notifications_preview"
     private const val KEY_SOUND = "flutter.chat.fluffy.sms_notifications_sound"
-    private const val KEY_LOCKED = "flutter.chat.fluffy.locked_conversations"
+    // Miroir écrit par ConversationLock (Dart) : JSON array des ids `sms:<threadId>`.
+    private const val KEY_LOCKED = "flutter.chat.fluffy.locked_sms_threads"
 
     private const val MAX_CONTEXT_MESSAGES = 8
     private const val MAX_SUGGESTIONS = 3
@@ -522,12 +523,7 @@ object SmsNotifier {
         return try {
             val raw = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
                 .getString(KEY_LOCKED, null) ?: return false
-            // Dart persiste une List<String> sérialisée JSON par flutter_secure_storage
-            // OU SharedPreferences ; ici on gère le cas JSON array de String.
-            val cleaned = raw.removePrefix("!").let {
-                if (it.startsWith("[")) it else "[]"
-            }
-            val arr = JSONArray(cleaned)
+            val arr = JSONArray(raw)
             val target = "sms:$threadId"
             (0 until arr.length()).any { arr.optString(it) == target }
         } catch (e: Exception) {

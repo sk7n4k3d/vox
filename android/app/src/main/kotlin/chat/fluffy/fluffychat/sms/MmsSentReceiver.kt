@@ -32,6 +32,8 @@ class MmsSentReceiver : BroadcastReceiver() {
             Log.i(SmsBridge.TAG, "MMS submitted to MMSC (mmsId=$mmsId)")
         }
 
+        SmsBridge.onMmsSendResult?.invoke(mapOf("mmsId" to mmsId, "ok" to ok))
+
         if (mmsId <= 0L) return
         try {
             val uri = ContentUris.withAppendedId(Telephony.Mms.CONTENT_URI, mmsId)

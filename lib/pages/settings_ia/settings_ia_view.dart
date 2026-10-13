@@ -145,7 +145,7 @@ class SettingsIaView extends StatelessWidget {
                     label: 'Tester la connexion',
                     icon: Icons.wifi_tethering,
                     loading: controller.testStatus == LlmTestStatus.loading,
-                    onPressed: controller.keyController.text.trim().isEmpty
+                    onPressed: controller.urlController.text.trim().isEmpty
                         ? null
                         : controller.testConnection,
                   ),

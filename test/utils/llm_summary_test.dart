@@ -45,7 +45,11 @@ void main() {
         _sms(id: '2', body: 'ok', fromMe: false, date: 0),
       ], 'Alice');
 
-      expect(transcript, 'Alice (01:00): ok');
+      final local = DateTime.fromMillisecondsSinceEpoch(0);
+      final hhmm =
+          '${local.hour.toString().padLeft(2, '0')}:'
+          '${local.minute.toString().padLeft(2, '0')}';
+      expect(transcript, 'Alice ($hhmm): ok');
     });
 
     test('returns empty string for no usable message', () {
