@@ -29,6 +29,7 @@ class SmsSentReceiver : BroadcastReceiver() {
                 val ok = resultCode == Activity.RESULT_OK
                 val type = if (ok) Telephony.Sms.MESSAGE_TYPE_SENT else Telephony.Sms.MESSAGE_TYPE_FAILED
                 updateType(context, uri, type, rowId, ok)
+                ScheduledSmsAlarms.onSmsSent(context.applicationContext, rowId, ok)
                 if (!ok) Log.w(SmsBridge.TAG, "SMS send FAILED (row=$rowId, code=$resultCode)")
             }
             SmsBridge.ACTION_SMS_DELIVERED -> {

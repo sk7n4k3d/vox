@@ -863,6 +863,10 @@ object SmsBridge {
      *  - < 31    : SmsManager.getDefault().
      */
     @Suppress("DEPRECATION")
+    /** Nombre de parts (donc de callbacks SENT) pour [body]. */
+    internal fun partCount(context: Context, body: String): Int =
+        runCatching { obtainSmsManager(context).divideMessage(body).size }.getOrDefault(1)
+
     private fun obtainSmsManager(context: Context): SmsManager =
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
             context.getSystemService(SmsManager::class.java)
@@ -1255,25 +1259,34 @@ object SmsBridge {
                 sendViaSystemMmsOrFail(app, pduName, mmsId, txn)
                 return@execute
             }
-            val ok = MmsNetworkManager.withNetwork(app) { _ ->
+            val result = MmsNetworkManager.withNetwork(app) { _ ->
                 Log.i(TAG, "MMS network acquis → POST MMSC (proxy=${if (proxyHost.isNullOrBlank()) "non" else "oui"})")
                 // The process is already bound to the MMS network by the manager,
                 // so a plain HTTP connection routes over cellular MMS.
-                val resp = MmsHttpClient.postPdu(
+                MmsHttpClient.postPdu(
                     mmscUrl = mmscUrl,
                     proxyHost = proxyHost,
                     proxyPort = proxyPort,
                     pdu = pdu,
                 )
-                resp != null
-            } ?: false
-            Log.i(TAG, "MMS POST result ok=$ok (mmsId=$mmsId)")
-            if (ok) {
-                markMmsSent(app, mmsId)
-                onMmsSendResult?.invoke(mapOf("mmsId" to mmsId, "ok" to true))
-            } else {
-                Log.w(TAG, "MMS POST direct en échec → repli service MMS système")
-                sendViaSystemMmsOrFail(app, pduName, mmsId, txn)
+            } ?: MmsHttpClient.PostResult.NOT_SENT
+            Log.i(TAG, "MMS POST result=$result (mmsId=$mmsId)")
+            when (result) {
+                MmsHttpClient.PostResult.ACCEPTED -> {
+                    markMmsSent(app, mmsId)
+                    onMmsSendResult?.invoke(mapOf("mmsId" to mmsId, "ok" to true))
+                }
+                MmsHttpClient.PostResult.UNKNOWN -> {
+                    // PDU parti sans accusé : le MMSC a pu l'accepter, un repli
+                    // l'enverrait en double. Échec visible, renvoi manuel.
+                    Log.w(TAG, "MMS POST sans réponse → pas de repli (risque de doublon)")
+                    markMmsFailed(app, mmsId)
+                    onMmsSendResult?.invoke(mapOf("mmsId" to mmsId, "ok" to false))
+                }
+                else -> {
+                    Log.w(TAG, "MMS POST direct non accepté → repli service MMS système")
+                    sendViaSystemMmsOrFail(app, pduName, mmsId, txn)
+                }
             }
         }
     }
