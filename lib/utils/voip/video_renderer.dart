@@ -48,6 +48,7 @@ class _VideoRendererState extends State<VideoRenderer> {
     _streamChangeSubscription = widget.stream?.onStreamChanged.stream.listen((
       stream,
     ) {
+      if (!mounted) return;
       setState(() {
         _renderer?.srcObject = stream;
       });
@@ -58,7 +59,42 @@ class _VideoRendererState extends State<VideoRenderer> {
 
   Future<void> setupRenderer() async {
     await _initializeRenderer();
-    setState(() => _rendererReady = true);
+    // Le widget peut avoir ete retire entre-temps : setState sans mounted leve
+    // une exception qui tue le frame de l'appel.
+    if (mounted) setState(() => _rendererReady = true);
+  }
+
+  /// Le flux WebRTC arrive presque TOUJOURS apres le premier dessin : la camera
+  /// s'ouvre, puis le MediaStream est enregistre dans la session. Sans cette
+  /// methode, initState s'abonnait a `widget.stream?.onStreamChanged` — donc sur
+  /// null — et le renderer restait sur un srcObject nul pour tout l'appel.
+  /// Symptome : audio parfait, ecran noir, log `setVideoTrack to null`.
+  @override
+  void didUpdateWidget(VideoRenderer oldWidget) {
+    super.didUpdateWidget(oldWidget);
+
+    if (!identical(oldWidget.stream, widget.stream)) {
+      _streamChangeSubscription?.cancel();
+      _streamChangeSubscription = widget.stream?.onStreamChanged.stream.listen((
+        stream,
+      ) {
+        if (!mounted) return;
+        setState(() => _renderer?.srcObject = stream);
+      });
+
+      // Le flux peut deja etre rempli : appliquer immediatement plutot que
+      // d'attendre un nouvel evenement qui ne viendra pas.
+      final current = mediaStream;
+      if (current != null) {
+        _renderer?.srcObject = current;
+      } else {
+        _renderer?.srcObject = null;
+      }
+    }
+
+    if (oldWidget.mirror != widget.mirror || oldWidget.fit != widget.fit) {
+      if (mounted) setState(() {});
+    }
   }
 
   @override
@@ -69,7 +105,7 @@ class _VideoRendererState extends State<VideoRenderer> {
   }
 
   @override
-  Widget build(BuildContext context) => !_rendererReady
+  Widget build(BuildContext context) => !_rendererReady || _renderer == null
       ? Container()
       : Builder(
           key: widget.key,
