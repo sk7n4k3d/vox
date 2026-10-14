@@ -86,7 +86,7 @@ class VoipPlugin with WidgetsBindingObserver implements WebRTCDelegate {
         fullscreenDialog: true,
       ),
     );
-    Logs().i('[VOIP] écran d\'appel affiché');
+    Logs().w('[VOIP] écran d\'appel affiché');
   }
 
   /// Retire tous les écrans d'appel empilés (entrant + en cours).
@@ -170,7 +170,7 @@ class VoipPlugin with WidgetsBindingObserver implements WebRTCDelegate {
     if (outgoing) {
       // C'est NOUS qui appelons : pas de sonnerie (le vibeur en boucle venait de
       // là) et pas d'écran « répondre/refuser » — l'appelant attend la réponse.
-      Logs().i('[VOIP] appel sortant vers ${controller.remoteName}');
+      Logs().w('[VOIP] appel sortant vers ${controller.remoteName}');
       // Focus audio + capteur de proximite aussi cote sortant : c'est lui qui
       // declenche l'ecoute du capteur (VoipBridge.acquireAudioFocus -> startProximityWatch).
       await _bridge.acquireAudioFocus();
@@ -184,7 +184,7 @@ class VoipPlugin with WidgetsBindingObserver implements WebRTCDelegate {
     await _bridge.startRinging(video: call.type == CallType.kVideo);
 
     final callerName = call.remoteUserId ?? call.room.getLocalizedDisplayname();
-    Logs().i('[VOIP] appel entrant de $callerName (${call.type})');
+    Logs().w('[VOIP] appel entrant de $callerName (${call.type})');
 
     _showOverlay(
       () => IncomingCallPage(

@@ -12,7 +12,12 @@ import 'package:matrix/matrix.dart';
 class VoipCallController extends CallController {
   VoipCallController(this.session, {VoipBridge? bridge})
     : _bridge = bridge ?? VoipBridge() {
-    session.onCallStateChanged.stream.listen((_) => notifyListeners());
+    session.onCallStateChanged.stream.listen((s) {
+      // .w et pas .i : en release le SDK matrix coupe les niveaux info/verbose, un
+      // log de diagnostic en .i est invisible (perdu des heures sur ça le 2026-10-15).
+      Logs().w('[VOIP] état: ${s.name}');
+      notifyListeners();
+    });
     _listenStreams();
   }
 

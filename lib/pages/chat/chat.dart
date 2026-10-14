@@ -1541,10 +1541,10 @@ class ChatController extends State<ChatPageWithRoom>
       }
       return;
     }
-    Logs().i("[VOIP] inviteToCall room=${room.id} type=$effectiveType");
+    Logs().w("[VOIP] inviteToCall room=${room.id} type=$effectiveType");
     try {
       await voipPlugin.voip.inviteToCall(room, effectiveType);
-      Logs().i("[VOIP] inviteToCall envoye");
+      Logs().w("[VOIP] inviteToCall envoye");
     } catch (e, st) {
       Logs().e("[VOIP] inviteToCall a echoue: $e", st);
       if (mounted) {
