@@ -1,5 +1,8 @@
 import 'package:fluffychat/config/cyberpunk_theme_extension.dart';
 import 'package:fluffychat/pages/call/call_theme.dart';
+import 'package:fluffychat/utils/voip/video_renderer.dart';
+import 'package:flutter_webrtc/flutter_webrtc.dart' hide VideoRenderer;
+import 'package:matrix/matrix.dart' show WrappedMediaStream;
 import 'package:flutter/material.dart';
 
 /// Ce que [ActiveCallPage] a besoin de savoir d'une session d'appel.
@@ -22,6 +25,10 @@ abstract class CallController extends ChangeNotifier {
   /// Vrai quand l'autre côté a décroché et que l'audio circule.
   bool get connected;
 
+  /// Flux vidéo local (ma webcam) et distant (l'interlocuteur).
+  WrappedMediaStream? get localStream;
+  WrappedMediaStream? get remoteStream;
+
   void toggleMic();
   void toggleCamera();
   void flipCamera();
@@ -34,7 +41,7 @@ abstract class CallController extends ChangeNotifier {
 /// Le rendu vidéo est fourni par l'appelant (`remoteVideo` / `localVideo`) plutôt
 /// que construit ici : c'est le `RTCVideoRenderer` qui a la durée de vie, et il
 /// belongs au `CallSession`.
-class ActiveCallPage extends StatelessWidget {
+class ActiveCallPage extends StatefulWidget {
   const ActiveCallPage({
     required this.controller,
     this.remoteVideo,
@@ -43,8 +50,24 @@ class ActiveCallPage extends StatelessWidget {
   });
 
   final CallController controller;
+
+  /// Rendus fournis par l'appelant (tests) ; sinon la page construit les siens
+  /// a partir des flux du contrôleur.
   final Widget? remoteVideo;
   final Widget? localVideo;
+
+  @override
+  State<ActiveCallPage> createState() => _ActiveCallPageState();
+}
+
+class _ActiveCallPageState extends State<ActiveCallPage> {
+  CallController get controller => widget.controller;
+
+  /// Inverse l'image de l'interlocuteur et la mienne. Simple preference
+  /// d'affichage : rien ne change côté WebRTC.
+  bool _swapped = false;
+
+  void _swap() => setState(() => _swapped = !_swapped);
 
   @override
   Widget build(BuildContext context) {
@@ -53,6 +76,25 @@ class ActiveCallPage extends StatelessWidget {
     return AnimatedBuilder(
       animation: controller,
       builder: (context, _) {
+        // L'image de l'interlocuteur est principale par defaut. Le mirror
+        // (retournement horizontal) n'est mis que sur MA vue, sinon celle de
+        // l'autre sortirait inversée.
+        final mainStream = _swapped ? controller.localStream : controller.remoteStream;
+        final pipStream = _swapped ? controller.remoteStream : controller.localStream;
+
+        final mainVideo =
+            widget.remoteVideo ??
+            VideoRenderer(
+              mainStream,
+              mirror: _swapped,
+              fit: RTCVideoViewObjectFit.RTCVideoViewObjectFitCover,
+            );
+        final pipVideo =
+            widget.localVideo ?? VideoRenderer(pipStream, mirror: !_swapped);
+
+        final noVideoAtAll =
+            controller.remoteStream == null && controller.localStream == null;
+
         return Scaffold(
           backgroundColor: CallTheme.background,
           body: SafeArea(
@@ -63,23 +105,31 @@ class ActiveCallPage extends StatelessWidget {
                   child: Stack(
                     children: [
                       Positioned.fill(
-                        child: controller.isVideo
-                            ? (remoteVideo ?? _NoVideoPlaceholder(cyber: cyber))
-                            : Center(
+                        child: !controller.isVideo
+                            ? Center(
                                 child: _CallerBadge(name: controller.remoteName),
-                              ),
+                              )
+                            : noVideoAtAll
+                            ? _NoVideoPlaceholder(cyber: cyber)
+                            : mainVideo,
                       ),
-                      if (controller.isVideo)
+                      if (controller.isVideo && !noVideoAtAll)
                         Positioned(
                           right: 16,
                           bottom: 16,
-                          child: _Pip(child: localVideo),
+                          child: GestureDetector(
+                            onTap: _swap,
+                            child: _Pip(child: pipVideo),
+                          ),
                         ),
                     ],
                   ),
                 ),
                 if (controller.reconnecting) const _ReconnectingBanner(),
-                _Controls(controller: controller),
+                _Controls(
+                  controller: controller,
+                  onSwap: controller.isVideo ? _swap : null,
+                ),
               ],
             ),
           ),
@@ -151,9 +201,12 @@ class _TopBar extends StatelessWidget {
 }
 
 class _Controls extends StatelessWidget {
-  const _Controls({required this.controller});
+  const _Controls({required this.controller, this.onSwap});
 
   final CallController controller;
+
+  /// Inverse les deux images d'un appel vidéo. Absent en appel vocal.
+  final VoidCallback? onSwap;
 
   @override
   Widget build(BuildContext context) {
@@ -193,6 +246,13 @@ class _Controls extends StatelessWidget {
               icon: Icons.cameraswitch_outlined,
               label: 'Retourner la caméra',
               onTap: controller.flipCamera,
+            ),
+          if (onSwap != null)
+            _Control(
+              key: const Key('call-swap-video'),
+              icon: Icons.flip_camera_android_outlined,
+              label: 'Inverser les vues',
+              onTap: onSwap!,
             ),
           _Control(
             key: const Key('call-toggle-speaker'),

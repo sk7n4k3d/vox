@@ -1,5 +1,6 @@
 import 'package:fluffychat/pages/call/active_call_page.dart';
 import 'package:flutter/material.dart';
+import 'package:matrix/matrix.dart' show WrappedMediaStream;
 import 'package:flutter_test/flutter_test.dart';
 
 class FakeController extends CallController {
@@ -21,6 +22,12 @@ class FakeController extends CallController {
   bool connecting = false;
   @override
   bool connected = true;
+
+  /// Les tests d'UI passent leurs propres rendus : les flux restent nuls.
+  @override
+  WrappedMediaStream? localStream;
+  @override
+  WrappedMediaStream? remoteStream;
 
   int micToggles = 0;
   int cameraToggles = 0;
@@ -174,6 +181,34 @@ void main() {
 
     expect(find.text('Sonnerie…'), findsNothing);
     expect(find.text('Connecté'), findsOneWidget);
+  });
+
+  testWidgets('en video, le bouton d inversion des vues est present', (
+    tester,
+  ) async {
+    await tester.pumpWidget(page(FakeController(isVideo: true)));
+
+    expect(find.byKey(const Key('call-swap-video')), findsOneWidget);
+  });
+
+  testWidgets('appuyer sur le bouton d inversion ne casse pas l appel', (
+    tester,
+  ) async {
+    final c = FakeController(isVideo: true);
+    await tester.pumpWidget(page(c));
+
+    await tester.tap(find.byKey(const Key('call-swap-video')));
+    await tester.pump();
+
+    // L'appel tient toujours : l'inversion est purement visuelle.
+    expect(find.byKey(const Key('call-hangup')), findsOneWidget);
+    expect(c.hangs, 0);
+  });
+
+  testWidgets('pas de bouton d inversion en appel vocal', (tester) async {
+    await tester.pumpWidget(page(FakeController()));
+
+    expect(find.byKey(const Key('call-swap-video')), findsNothing);
   });
 
   testWidgets('le statut affiche la reconnexion avant connecté', (

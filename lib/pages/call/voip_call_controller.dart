@@ -13,6 +13,7 @@ class VoipCallController extends CallController {
   VoipCallController(this.session, {VoipBridge? bridge})
     : _bridge = bridge ?? VoipBridge() {
     session.onCallStateChanged.stream.listen((_) => notifyListeners());
+    _listenStreams();
   }
 
   final CallSession session;
@@ -54,6 +55,19 @@ class VoipCallController extends CallController {
 
   @override
   bool get connected => session.state == CallState.kConnected;
+
+  /// Flux vidéo local (ma webcam). Expose tel quel : [VideoRenderer] sait lire un
+  /// WrappedMediaStream et suivre ses changements.
+  WrappedMediaStream? get localStream => session.localUserMediaStream;
+
+  /// Flux vidéo distant (l'autre interlocuteur).
+  WrappedMediaStream? get remoteStream => session.remoteUserMediaStream;
+
+  /// Recalcule l'UI quand un flux apparrive ou disparait — c'est le cas typique
+  /// quand l'autre active sa caméra en plein appel.
+  void _listenStreams() {
+    session.onCallStreamsChanged.stream.listen((_) => notifyListeners());
+  }
 
   @override
   void toggleMic() {
