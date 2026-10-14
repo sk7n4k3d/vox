@@ -104,16 +104,29 @@ Déjà déclarées dans le manifest : `RECORD_AUDIO`, `CAMERA`, `MODIFY_AUDIO_SE
 
 ## 8. Tests
 
-| Jalon | Contenu | Preuve |
-|---|---|---|
-| 1 | Les 3 trous Dart + squelette du pont Kotlin + service permanent au boot | APK compile, service visible dans `dumpsys`, survit au swipe |
-| 2 | Sortant audio 1:1 | Appel vers Element Web, audio bidirectionnel |
-| 3 | Entrant, app au premier plan | Élément appelle VOX, l'écran s'affiche |
-| 4 | Entrant, app swipée / écran éteint | Sonnerie + full-screen intent au-dessus du lockscreen |
-| 5 | Vidéo | Self-view + remote view, bascule caméra avant/arrière |
-| 6 | Audio & finitions | Bluetooth, écouteurs filaires, haut-parleur, appel manqué, barre flottante |
+| Jalon | Contenu | Preuve | État |
+|---|---|---|---|
+| 1 | Les 3 trous Dart + journal des appels manqués | 8 tests verts, `flutter analyze` propre | fait — `f987c2fb0` |
+| 2 | Service permanent Kotlin + boot receiver + routage audio | `compileDebugKotlin` OK, manifest fusionné vérifié | fait — `4fb3b9c0d` |
+| 3 | Pont Kotlin↔Dart (MethodChannel/EventChannel) | `compileDebugKotlin` OK | fait — `717dd4b64` |
+| 4 | Client Dart du pont | 14 tests verts (canaux, exceptions, events) | fait — `be28fb024` |
+| 5 | Écran d'appel entrant + thème VOX | 6 tests verts (dont double-tap) | fait — `d1f8af5f3` |
+| 6 | Écran d'appel en cours + barre flottante | 8 tests verts (micro, caméra, reconnexion) | fait — `b9daa39ba` |
+| 7 | Branchement dans `VoipPlugin` + suppression du dialer mort | 36 tests verts, −1816 lignes | fait — `23fa8075d` |
+| 8 | Permissions runtime + APK signé | 36 tests verts ; build debug OK ; install bloquée sur signature | en cours — `59c72fd9a` |
 
-Référence de test : vieux téléphone avec Element (pilote humain), Element Web en complément.
+### Prérequis non vérifiés tant qu'aucun appel réel n'a été passé
+
+Ces points ne peuvent pas être prouvés par un test automatique et demandent un
+vrai interlocuteur (vieux téléphone sous Element) :
+
+- que l'audio bidirectionnel fonctionne sur un réseau distant via `turn.sk7.sh`
+- que l'appel entrant remonte au-dessus du lockscreen écran éteint
+- que le service permanent survit réellement au swipe de l'app sur GrapheneOS
+- que la bascule Bluetooth en plein appel est fluide
+- que `turn.sk7.sh:5349` (TURNS/TLS) n'est pas nécessaire en usage réel
+
+Référence de test : vieux téléphone avec Element, Element Web en complément.
 
 ## 9. Décisions prises
 
