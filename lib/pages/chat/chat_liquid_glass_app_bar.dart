@@ -25,6 +25,8 @@ import '../../utils/stream_extension.dart';
 /// (typing > last seen > member count) to avoid the legacy "3-line stack".
 /// Detects bridged rooms (mautrix-gmessages, signal, whatsapp, …) and shows
 /// a compact identifier pill next to the room name.
+bool _voipBtnLogged = false;
+
 class ChatLiquidGlassAppBar extends StatelessWidget
     implements PreferredSizeWidget {
   final ChatController controller;
@@ -143,10 +145,18 @@ class ChatLiquidGlassAppBar extends StatelessWidget
     final isEncrypted = room.encrypted;
     final bridgeLabel = _detectBridgeLabel(room);
 
-    final canPlaceCall =
-        AppSettings.experimentalVoip.value &&
-        Matrix.of(context).voipPlugin != null &&
-        isDirectChat;
+    final voipOk = AppSettings.experimentalVoip.value;
+    final pluginOk = Matrix.of(context).voipPlugin != null;
+    final canPlaceCall = voipOk && pluginOk && isDirectChat;
+    // Log unique : dit POURQUOI le bouton d appelle VoIP est cache. Sans ca,
+    // canPlaceCall false = aucun bouton, aucune trace, impossible a diagnostiquer.
+    if (!_voipBtnLogged) {
+      _voipBtnLogged = true;
+      Logs().i(
+        "[VOIP] bouton: reglages=$voipOk plugin=$pluginOk dm=$isDirectChat "
+        "=> affiche=$canPlaceCall (room=${room.id})",
+      );
+    }
 
     return Row(
       children: [
