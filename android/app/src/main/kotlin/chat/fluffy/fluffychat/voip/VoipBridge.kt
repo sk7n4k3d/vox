@@ -179,6 +179,75 @@ object VoipBridge {
         onAudioRouteChanged?.invoke(currentAudioRoute(context))
     }
 
+    // ── Capteur de proximite ────────────────────────────────────────────────
+
+    private var proximitySensor: android.hardware.Sensor? = null
+    private var proximityRegistered = false
+
+    /** Contexte conserve au demarrage : le listener le reference et il n'en a pas. */
+    @Volatile
+    private var proximityContext: Context? = null
+
+    private val proximityListener = object : android.hardware.SensorEventListener {
+        override fun onSensorChanged(event: android.hardware.SensorEvent) {
+            // Valeur < 1 cm = phone contre l'oreille.
+            val ctx = proximityContext ?: return
+            val near = event.values.getOrNull(0)?.let { it < 1f } ?: false
+            val route = if (near) "earpiece" else "speaker"
+            if (setAudioRoute(ctx, route)) {
+                onAudioRouteChanged?.invoke(route)
+            }
+        }
+
+        override fun onAccuracyChanged(sensor: android.hardware.Sensor?, accuracy: Int) = Unit
+    }
+
+    /**
+     * Ecoute le capteur de proximite pendant un appel : contre-oreille quand le
+     * telephone est colle a la tete, haut-parleur quand il s'en eloigne.
+     *
+     * Registre UNIQUEMENT en appel — le service tourne en permanence, et laisser ce
+     * capteur actif en dehors d'un appel consumerait de la batterie pour rien.
+     *
+     * @return false si le capteur n'existe pas sur l'appareil (l'appel reste utilisable).
+     */
+    @Synchronized
+    fun startProximityWatch(context: Context): Boolean {
+        if (proximityRegistered) return true
+        return try {
+            val sm = context.getSystemService(android.content.Context.SENSOR_SERVICE)
+                as? android.hardware.SensorManager ?: return false
+            proximitySensor = sm.getDefaultSensor(android.hardware.Sensor.TYPE_PROXIMITY)
+            val sensor = proximitySensor ?: return false
+            proximityContext = context
+            proximityRegistered = sm.registerListener(
+                proximityListener,
+                sensor,
+                android.hardware.SensorManager.SENSOR_DELAY_NORMAL,
+            )
+            Log.i(TAG, "capteur de proximite ecoute")
+            proximityRegistered
+        } catch (e: Exception) {
+            Log.e(TAG, "startProximityWatch failed: ${e.message}")
+            false
+        }
+    }
+
+    /** Arrete l'ecoute du capteur. Idempotent. */
+    @Synchronized
+    fun stopProximityWatch(context: Context) {
+        if (!proximityRegistered) return
+        try {
+            val sm = context.getSystemService(android.content.Context.SENSOR_SERVICE)
+                as? android.hardware.SensorManager
+            sm?.unregisterListener(proximityListener)
+            proximityRegistered = false
+            proximityContext = null
+        } catch (e: Exception) {
+            Log.e(TAG, "stopProximityWatch failed: ${e.message}")
+        }
+    }
+
     // ── Focus audio ──────────────────────────────────────────────────────────
 
     private var focusRequest: AudioFocusRequest? = null
@@ -188,6 +257,9 @@ object VoipBridge {
      * @return true si le focus est obtenu (ou déjà tenu par nous).
      */
     fun acquireAudioFocus(context: Context): Boolean = try {
+        // Le focus audio marque le debut d'un appel : c'est le bon moment pour
+        // ecouter le capteur de proximite (et le seul).
+        startProximityWatch(context)
         val am = context.getSystemService(AudioManager::class.java) ?: return false
         val result = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             val req = AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN_TRANSIENT)
@@ -218,6 +290,7 @@ object VoipBridge {
     fun abandonAudioFocus(context: Context) {
         try {
             val am = context.getSystemService(AudioManager::class.java) ?: return
+            stopProximityWatch(context)
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
                 focusRequest?.let { am.abandonAudioFocusRequest(it) }
                 focusRequest = null

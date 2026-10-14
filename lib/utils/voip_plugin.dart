@@ -171,6 +171,9 @@ class VoipPlugin with WidgetsBindingObserver implements WebRTCDelegate {
       // C'est NOUS qui appelons : pas de sonnerie (le vibeur en boucle venait de
       // là) et pas d'écran « répondre/refuser » — l'appelant attend la réponse.
       Logs().i('[VOIP] appel sortant vers ${controller.remoteName}');
+      // Focus audio + capteur de proximite aussi cote sortant : c'est lui qui
+      // declenche l'ecoute du capteur (VoipBridge.acquireAudioFocus -> startProximityWatch).
+      await _bridge.acquireAudioFocus();
       _showOverlay(() => ActiveCallPage(controller: controller));
       return;
     }
