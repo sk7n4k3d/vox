@@ -210,8 +210,14 @@ class _Controls extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // Six controles en video : libelles de 74 dp sous chaque bouton, soit ~490 dp
+    // de contenu pour 312 dp disponibles sur un phone. Le raccrocher (a droite)
+    // sortait entierement de l'ecran : mesure 394..468 sur 360 dp.
+    final compact = controller.isVideo;
     return Container(
-      padding: const EdgeInsets.fromLTRB(24, 16, 24, 32),
+      padding: compact
+          ? const EdgeInsets.fromLTRB(8, 12, 8, 24)
+          : const EdgeInsets.fromLTRB(24, 16, 24, 32),
       decoration: BoxDecoration(
         color: Colors.black.withValues(alpha: 0.35),
         border: Border(
@@ -224,6 +230,7 @@ class _Controls extends StatelessWidget {
         mainAxisAlignment: MainAxisAlignment.spaceEvenly,
         children: [
           _Control(
+            compact: compact,
             key: const Key('call-toggle-mic'),
             icon: controller.micMuted ? Icons.mic_off : Icons.mic,
             label: controller.micMuted ? 'Micro coupé' : 'Couper le micro',
@@ -232,6 +239,7 @@ class _Controls extends StatelessWidget {
           ),
           if (controller.isVideo)
             _Control(
+              compact: compact,
               key: const Key('call-toggle-camera'),
               icon: controller.cameraOff
                   ? Icons.videocam_off
@@ -242,6 +250,7 @@ class _Controls extends StatelessWidget {
             ),
           if (controller.isVideo)
             _Control(
+              compact: compact,
               key: const Key('call-flip-camera'),
               icon: Icons.cameraswitch_outlined,
               label: 'Retourner la caméra',
@@ -249,12 +258,14 @@ class _Controls extends StatelessWidget {
             ),
           if (onSwap != null)
             _Control(
+              compact: compact,
               key: const Key('call-swap-video'),
               icon: Icons.flip_camera_android_outlined,
               label: 'Inverser les vues',
               onTap: onSwap!,
             ),
           _Control(
+            compact: compact,
             key: const Key('call-toggle-speaker'),
             icon: controller.speakerOn
                 ? Icons.volume_up
@@ -264,6 +275,7 @@ class _Controls extends StatelessWidget {
             onTap: controller.toggleSpeaker,
           ),
           _Control(
+            compact: compact,
             key: const Key('call-hangup'),
             icon: Icons.call_end,
             label: 'Raccrocher',
@@ -283,6 +295,7 @@ class _Control extends StatelessWidget {
     required this.onTap,
     this.active = false,
     this.danger = false,
+    this.compact = false,
     super.key,
   });
 
@@ -291,6 +304,11 @@ class _Control extends StatelessWidget {
   final VoidCallback onTap;
   final bool active;
   final bool danger;
+
+  /// Mode video : six controles sur un ecran de phone ne tiennent pas avec un
+  /// libelle de 74 dp sous chaque bouton — le raccrocher, a droite, sortait
+  /// completement de l'ecran (mesure: left=394 sur un 360 dp).
+  final bool compact;
 
   @override
   Widget build(BuildContext context) {
@@ -312,25 +330,31 @@ class _Control extends StatelessWidget {
               customBorder: const CircleBorder(),
               onTap: onTap,
               child: SizedBox(
-                width: CallTheme.controlRadius * 1.7,
-                height: CallTheme.controlRadius * 1.7,
-                child: Icon(icon, color: color, size: 26),
+                width: compact
+                    ? CallTheme.controlRadius * 1.2
+                    : CallTheme.controlRadius * 1.7,
+                height: compact
+                    ? CallTheme.controlRadius * 1.2
+                    : CallTheme.controlRadius * 1.7,
+                child: Icon(icon, color: color, size: compact ? 22 : 26),
               ),
             ),
           ),
         ),
-        const SizedBox(height: 6),
-        SizedBox(
-          width: 74,
-          child: Text(
-            label,
-            textAlign: TextAlign.center,
-            maxLines: 2,
-            style: Theme.of(
-              context,
-            ).textTheme.bodySmall?.copyWith(color: Colors.white70),
+        if (!compact) ...[
+          const SizedBox(height: 6),
+          SizedBox(
+            width: 74,
+            child: Text(
+              label,
+              textAlign: TextAlign.center,
+              maxLines: 2,
+              style: Theme.of(
+                context,
+              ).textTheme.bodySmall?.copyWith(color: Colors.white70),
+            ),
           ),
-        ),
+        ],
       ],
     );
   }
