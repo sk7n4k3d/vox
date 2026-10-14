@@ -103,6 +103,7 @@ git commit -m "fix(voip): branche handleMissedCall + keyProvider (les 2 trous qu
 
 **Files:**
 - Create: `android/app/src/main/kotlin/chat/fluffy/fluffychat/voip/VoipBridge.kt`
+- Create: `android/app/src/main/kotlin/chat/fluffy/fluffychat/voip/VoipBridgeService.kt`
 - Create: `android/app/src/main/kotlin/chat/fluffy/fluffychat/voip/VoipBootReceiver.kt`
 - Modify: `android/app/src/main/AndroidManifest.xml`
 
@@ -140,8 +141,8 @@ Expected: `BUILD SUCCESSFUL`. Un manifest mal formé ne se voit qu'ici.
 
 - [ ] **Step 5 : Vérifier par le manifest fusionné**
 
-Run: `grep -i "specialUse\|VoipBootReceiver" app/build/intermediates/merged_manifest/debug/processDebugMainManifest/AndroidManifest.xml`
-Expected: service et receiver présents avec leurs intent-filters.
+Run: `grep -A 4 "VoipBridgeService" build/app/intermediates/merged_manifests/debug/processDebugManifest/AndroidManifest.xml`
+Expected: service avec `foregroundServiceType="specialUse"` + `<property ... PROPERTY_SPECIAL_USE_FGS_SUBTYPE>`, receiver présent, `FOREGROUND_SERVICE_SPECIAL_USE` dans les permissions.
 
 - [ ] **Step 6 : Commit**
 
