@@ -41,17 +41,8 @@ class VoipPlugin with WidgetsBindingObserver implements WebRTCDelegate {
         state == AppLifecycleState.paused);
   }
 
-  /// Contexte sous lequel poser l'overlay d'appel.
-  ///
-  /// On passe par la clé du Navigator : `matrix.context` peut pointer un parent du
-  /// MaterialApp, sans Overlay, et `Overlay.of()` y planterait sur un null (bug connu
-  /// de Flutter 3.41 que le code d'origine documentait déjà).
-  BuildContext get _overlayContext =>
-      FluffyChatApp.router.routerDelegate.navigatorKey.currentContext ?? context;
-
-  /// L'overlay d'appel entrant (puis d'appel en cours). Un seul à la fois : un
-  /// deuxième appel entrant pendant un appel en cours est refusé plus bas.
-  OverlayEntry? _overlay;
+  /// Nom de route des écrans d'appel : [closeCall] nettoie tout en un seul appel.
+  static const String _callRoute = '/__voip_call';
 
   CallSession? _session;
   VoipCallController? _controller;
@@ -60,24 +51,47 @@ class VoipPlugin with WidgetsBindingObserver implements WebRTCDelegate {
 
   CallSession? get session => _session;
 
-  /// Pose (ou remplace) l'overlay racine d'appel. Aucun-op si aucun Overlay n'est
-  /// encore monté (démarrage à froid) — l'appel reste alors joignable depuis la
-  /// barre flottante une fois le Navigator prêt.
-  void _showOverlay(Widget Function() builder) {
-    final overlay = Overlay.maybeOf(_overlayContext, rootOverlay: true);
-    _overlay?.remove();
-    _overlay = null;
-    if (overlay == null) {
-      Logs().w('[VOIP] pas d\'Overlay racine disponible, écran d\'appel différé');
-      return;
+  /// Navigator racine du GoRouter.
+  ///
+  /// On n'utilise PAS `Overlay.maybeOf()` : `matrix.context` peut pointer un
+  /// parent du MaterialApp et n'a alors aucun Overlay au-dessus — cas constaté en
+  /// prod le 2026-10-14 (« pas d'Overlay racine disponible, écran d'appel différé »),
+  /// qui empêchait TOUT écran d'appel sortant. `navigatorKey.currentState` existe
+  /// dès que le router est monté et n'a pas besoin d'un ancêtre Overlay.
+  NavigatorState? get _nav {
+    final key = FluffyChatApp.router.routerDelegate.navigatorKey;
+    if (key.currentState != null) return key.currentState;
+    try {
+      return Navigator.of(_overlayContext, rootNavigator: true);
+    } catch (_) {
+      return null;
     }
-    _overlay = OverlayEntry(builder: (_) => builder());
-    overlay.insert(_overlay!);
   }
 
+  BuildContext get _overlayContext =>
+      FluffyChatApp.router.routerDelegate.navigatorKey.currentContext ?? context;
+
+  /// Pousse l'écran d'appel. Un échec est loggé mais ne casse jamais l'appel :
+  /// mieux vaut un appel sans écran qu'un appel qui meurt.
+  void _showOverlay(Widget Function() builder) {
+    final nav = _nav;
+    if (nav == null) {
+      Logs().w('[VOIP] Navigator indisponible, écran d\'appel non affiché');
+      return;
+    }
+    nav.push(
+      MaterialPageRoute<void>(
+        builder: (_) => builder(),
+        settings: const RouteSettings(name: _callRoute),
+        fullscreenDialog: true,
+      ),
+    );
+    Logs().i('[VOIP] écran d\'appel affiché');
+  }
+
+  /// Retire tous les écrans d'appel empilés (entrant + en cours).
   void _clearOverlay() {
-    _overlay?.remove();
-    _overlay = null;
+    _nav?.popUntil((route) => route.settings.name != _callRoute);
   }
 
   /// Abonne les événements natifs une seule fois pour toute la vie du plugin :
