@@ -17,6 +17,10 @@ class FakeController extends CallController {
   bool speakerOn = false;
   @override
   bool reconnecting = false;
+  @override
+  bool connecting = false;
+  @override
+  bool connected = true;
 
   int micToggles = 0;
   int cameraToggles = 0;
@@ -152,5 +156,32 @@ void main() {
     await tester.pumpWidget(page(FakeController(remoteName: 'Alice Martin')));
 
     expect(find.text('AM'), findsOneWidget);
+  });
+
+  testWidgets('affiche Sonnerie… tant que l\'autre côté n\'a pas décroché', (
+    tester,
+  ) async {
+    final c = FakeController()..connecting = true;
+    await tester.pumpWidget(page(c));
+
+    expect(find.text('Sonnerie…'), findsOneWidget);
+    expect(find.text('Connecté'), findsNothing);
+
+    c.connecting = false;
+    c.connected = true;
+    c.notifyListeners();
+    await tester.pump();
+
+    expect(find.text('Sonnerie…'), findsNothing);
+    expect(find.text('Connecté'), findsOneWidget);
+  });
+
+  testWidgets('le statut affiche la reconnexion avant connecté', (
+    tester,
+  ) async {
+    final c = FakeController()..reconnecting = true;
+    await tester.pumpWidget(page(c));
+
+    expect(find.text('Connexion perdue…'), findsOneWidget);
   });
 }

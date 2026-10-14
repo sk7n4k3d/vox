@@ -16,6 +16,12 @@ abstract class CallController extends ChangeNotifier {
   bool get speakerOn;
   bool get reconnecting;
 
+  /// Invitation envoyée, réponse de l'autre côté pas encore reçue.
+  bool get connecting;
+
+  /// Vrai quand l'autre côté a décroché et que l'audio circule.
+  bool get connected;
+
   void toggleMic();
   void toggleCamera();
   void flipCamera();
@@ -88,6 +94,12 @@ class _TopBar extends StatelessWidget {
 
   final CallController controller;
 
+  String get _status {
+    if (controller.reconnecting) return 'Connexion perdue…';
+    if (controller.connecting) return 'Sonnerie…';
+    return 'Connecté';
+  }
+
   @override
   Widget build(BuildContext context) {
     final cyber = CallTheme.of(context);
@@ -103,16 +115,34 @@ class _TopBar extends StatelessWidget {
               context,
             ).textTheme.titleMedium?.copyWith(color: Colors.white),
           ),
-          const SizedBox(height: 4),
-          Container(
-            width: 8,
-            height: 8,
-            decoration: BoxDecoration(
-              shape: BoxShape.circle,
-              color: controller.micMuted
-                  ? CallTheme.decline
-                  : cyber.success,
-            ),
+          const SizedBox(height: 6),
+          Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                width: 8,
+                height: 8,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: controller.reconnecting
+                      ? cyber.warn
+                      : controller.connecting
+                      ? cyber.cyan
+                      : cyber.success,
+                ),
+              ),
+              const SizedBox(width: 8),
+              Text(
+                _status,
+                style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                  color: controller.reconnecting
+                      ? cyber.warn
+                      : controller.connecting
+                      ? cyber.cyan
+                      : cyber.success,
+                ),
+              ),
+            ],
           ),
         ],
       ),

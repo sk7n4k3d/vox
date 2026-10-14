@@ -41,7 +41,19 @@ class VoipCallController extends CallController {
 
   @override
   bool get reconnecting =>
-      session.pc?.connectionState == RTCPeerConnectionState.RTCPeerConnectionStateConnecting;
+      session.pc?.connectionState == RTCPeerConnectionState.RTCPeerConnectionStateDisconnected;
+
+  /// Invitation envoyée ou reçue, flux WebRTC pas encore établi.
+  @override
+  bool get connecting =>
+      session.state == CallState.kInviteSent ||
+      session.state == CallState.kWaitLocalMedia ||
+      session.state == CallState.kCreateOffer ||
+      session.state == CallState.kCreateAnswer ||
+      session.state == CallState.kConnecting;
+
+  @override
+  bool get connected => session.state == CallState.kConnected;
 
   @override
   void toggleMic() {

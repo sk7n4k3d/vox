@@ -150,6 +150,17 @@ class VoipPlugin with WidgetsBindingObserver implements WebRTCDelegate {
       }
     }
 
+    final controller = _controller!;
+    final outgoing = call.isOutgoing;
+
+    if (outgoing) {
+      // C'est NOUS qui appelons : pas de sonnerie (le vibeur en boucle venait de
+      // là) et pas d'écran « répondre/refuser » — l'appelant attend la réponse.
+      Logs().i('[VOIP] appel sortant vers ${controller.remoteName}');
+      _showOverlay(() => ActiveCallPage(controller: controller));
+      return;
+    }
+
     // Focus audio + sonnerie AVANT de poser l'overlay : sinon le premier « dring »
     // est avalé par la construction de l'écran.
     await _bridge.acquireAudioFocus();
