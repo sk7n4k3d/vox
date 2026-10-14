@@ -102,8 +102,12 @@ object VoipBridge {
                 "wired" -> am.availableCommunicationDevices.firstOrNull { it.type ==
                     android.media.AudioDeviceInfo.TYPE_WIRED_HEADPHONES ||
                     it.type == android.media.AudioDeviceInfo.TYPE_WIRED_HEADSET }
-                else -> am.availableCommunicationDevices.firstOrNull { it.type ==
+                "speaker" -> am.availableCommunicationDevices.firstOrNull { it.type ==
                     android.media.AudioDeviceInfo.TYPE_BUILTIN_SPEAKER }
+                // Contre-oreille : la route d'un appel telephonique normal. C est elle
+                // qui manquait, ce qui forcait tout le reste a retomber sur le speaker.
+                else -> am.availableCommunicationDevices.firstOrNull { it.type ==
+                    android.media.AudioDeviceInfo.TYPE_BUILTIN_EARPIECE }
             }
             if (device != null) {
                 am.clearCommunicationDevice()
@@ -127,10 +131,16 @@ object VoipBridge {
                     am.isBluetoothScoOn = false
                     am.isSpeakerphoneOn = false
                 }
-                else -> {
+                "speaker" -> {
                     am.stopBluetoothSco()
                     am.isBluetoothScoOn = false
                     am.isSpeakerphoneOn = true
+                }
+                // Contre-oreille : haut-parleur coupe, c est la route par defaut.
+                else -> {
+                    am.stopBluetoothSco()
+                    am.isBluetoothScoOn = false
+                    am.isSpeakerphoneOn = false
                 }
             }
             Log.i(TAG, "setAudioRoute($route) (legacy)")
@@ -151,15 +161,17 @@ object VoipBridge {
                 android.media.AudioDeviceInfo.TYPE_BLUETOOTH_A2DP -> "bluetooth"
                 android.media.AudioDeviceInfo.TYPE_WIRED_HEADPHONES,
                 android.media.AudioDeviceInfo.TYPE_WIRED_HEADSET -> "wired"
-                else -> "speaker"
+                android.media.AudioDeviceInfo.TYPE_BUILTIN_SPEAKER -> "speaker"
+                // Contre-oreille et tout le reste : la route d un appel normal.
+                else -> "earpiece"
             }
         } else {
             @Suppress("DEPRECATION")
-            if (am?.isBluetoothScoOn == true) "bluetooth" else if (am?.isSpeakerphoneOn == true) "speaker" else "wired"
+            if (am?.isBluetoothScoOn == true) "bluetooth" else if (am?.isSpeakerphoneOn == true) "speaker" else "earpiece"
         }
     } catch (e: Exception) {
         Log.e(TAG, "currentAudioRoute failed: ${e.message}")
-        "speaker"
+        "earpiece"
     }
 
     /** Repousse la route courante vers Dart (appelé par le receiver SCO / A2DP). */

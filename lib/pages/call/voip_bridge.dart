@@ -3,10 +3,15 @@ import 'dart:async';
 import 'package:flutter/services.dart';
 import 'package:matrix/matrix.dart' show Logs;
 
-/// Les trois sorties audio gérées par [VoipBridge]. `wireName` est exactement la
+/// Les sorties audio gérées par [VoipBridge]. `wireName` est exactement la
 /// chaîne attendue par `VoipBridge.setAudioRoute` côté Kotlin.
+///
+/// [earpiece] est la route d'un appel téléphonique normal (contre-oreille) : c'est
+/// la position de départ d'un appel discret, et la seule alternative au speaker
+/// quand aucun casque n'est branché.
 enum AudioRoute {
   speaker('speaker'),
+  earpiece('earpiece'),
   wired('wired'),
   bluetooth('bluetooth');
 
@@ -94,9 +99,9 @@ class VoipBridge {
 
   Future<String> currentAudioRoute() async => await _invoke(
         'currentAudioRoute',
-        fallback: 'speaker',
+        fallback: AudioRoute.earpiece.wireName,
       ) ??
-      'speaker';
+      AudioRoute.earpiece.wireName;
 
   Future<bool> acquireAudioFocus() => _invokeBool('acquireAudioFocus');
 

@@ -274,6 +274,9 @@ class VoipPlugin with WidgetsBindingObserver implements WebRTCDelegate {
     // Matrix connecté, donc l'invite arrive par le socket et arrive jusqu'ici. Le seul
     // vrai travail est de brancher le routage audio natif sur la session.
     _listenNativeEvents();
-    await _bridge.setAudioRoute(AudioRoute.speaker);
+    // On ne force PAS de route ici : le SDK Android part deja sur le
+    // contre-oreille, et forcer le speaker a chaque appel rendait l'appel
+    // impossible a mener discretement (bug signale le 2026-10-14).
+    await _bridge.currentAudioRoute();
   }
 }

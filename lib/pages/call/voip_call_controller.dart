@@ -112,10 +112,13 @@ class VoipCallController extends CallController {
   @override
   void toggleSpeaker() {
     _speakerOn = !_speakerOn;
+    // Haut-parleur <-> contre-oreille : seule alternative reelle sans filaire.
+    // Passer par "wired" trouvait aucun device et retombait en silence sur le
+    // speaker, d'oie le haut-parleur obligatoire (bug 2026-10-14).
     // En Bluetooth le mode téléphone est le défaut ; le haut-parleur est un choix.
     unawaited(
       _bridge.setAudioRoute(
-        _speakerOn ? AudioRoute.speaker : AudioRoute.wired,
+        _speakerOn ? AudioRoute.speaker : AudioRoute.earpiece,
       ),
     );
     notifyListeners();

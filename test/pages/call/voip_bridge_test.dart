@@ -52,7 +52,7 @@ void main() {
         expect(calls.single.arguments['route'], route.wireName);
       }
       expect(AudioRoute.values.map((r) => r.wireName),
-          ['speaker', 'wired', 'bluetooth']);
+          ['speaker', 'earpiece', 'wired', 'bluetooth']);
     });
 
     test('currentAudioRoute relit la valeur du natif', () async {
@@ -95,12 +95,12 @@ void main() {
       expect(await VoipBridge().stopPersistentService(), isFalse);
     });
 
-    test('un currentAudioRoute qui échoue retombe sur speaker', () async {
+    test('un currentAudioRoute qui échoue retombe sur le contre-oreille', () async {
       mockNative(
         handler: (call) async => throw PlatformException(code: 'X'),
       );
 
-      expect(await VoipBridge().currentAudioRoute(), 'speaker');
+      expect(await VoipBridge().currentAudioRoute(), 'earpiece');
     });
   });
 
