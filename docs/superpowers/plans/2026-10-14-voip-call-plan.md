@@ -18,7 +18,7 @@
 - Aucune dépendance Play Services (contrainte GrapheneOS).
 - Les tests Dart tournent sur edge-01 : `flutter test`. **Il n'y a aucun test Kotlin** (`android/app/src/test/` vide, pas de `testImplementation`) → le code Kotlin se prouve par compilation + `adb shell dumpsys`, pas par test unitaire.
 - L'API `m.call.*` et `flutter_webrtc` ne se modifient pas. Tout passe par les delegates `WebRTCDelegate` de `VoipPlugin`.
-- Pas de push FCM dans VOX (bloc neutralisé par `//<GOOGLE_SERVICES>`) → le process doit vivre, d'où le service permanent.
+- Le push de VOX est **UnifiedPush/ntfy** (FCM volontairement désactivé), mais `push_helper.dart:122` se contente de filtrer l'affichage et ne démarre aucun appel. Le service permanent reste donc nécessaire : c'est lui qui garde le client connecté et fournit un contexte à `handleNewCall`.
 - Domaine : tout ce qui est réseau s'écrit `sk7.sh`.
 
 ## Review Focus

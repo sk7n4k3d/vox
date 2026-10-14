@@ -38,11 +38,15 @@ Vérifié le 2026-10-14 sur le TrueNAS (10.8.0.101) :
 
 **Conclusion : tout le travail est côté application Android.**
 
-## 3. Contrainte structurante — pas de push
+## 3. Contrainte structurante — le push existe, mais ne suffit pas
 
-VOX n'embarque **pas** de push FCM : le bloc est neutralisé par le flag de build `//<GOOGLE_SERVICES>` dans `lib/utils/background_push.dart`, et `FcmPushService.kt` n'est alimenté par aucun token.
+VOX ne pousse **pas** via FCM : le bloc est neutralisé par le flag de build `//<GOOGLE_SERVICES>` dans `lib/utils/background_push.dart`, et `FcmPushService.kt` reste enveloppé dans des marqueurs de commentaire. `scripts/add-firebase-messaging.sh` est le script qui réactiverait FCM — il n'est pas passé.
 
-Conséquence : un `m.call.invite` n'atteint VOX que si **le process Dart tourne**. D'où la décision : un **service foreground permanent démarré au boot** (`RECEIVE_BOOT_COMPLETED` est déjà dans le manifest), pas un service lancé à l'appel comme aujourd'hui (`dialer.dart:299`).
+Le push réel est **UnifiedPush** : `lib/utils/background_push.dart:38` importe `package:unifiedpush`, et l'endpoint enregistré est `https://matrix.gateway.unifiedpush.org/_matrix/push/v1/notify`. Côté serveur, tuwunel n'a ni pusher ni gateway custom (vérifié sur `/mnt/pools/apps/matrix/tuwunel/config.yaml`) : la chaîne est donc tuwunel → gateway public matrix.org → distributeur ntfy → Pixel.
+
+Un `m.call.invite` peut donc réveiller une app tuée. Mais `lib/utils/push_helper.dart:122` ne fait, pour `m.call.*`, que passer `client.backgroundSync = true` puis **filtrer l'affichage** — il ne démarre aucun appel. Et démarrer une session WebRTC depuis l'isolate de fond n'a pas de `MatrixState`, donc pas de contexte sur lequel afficher l'écran d'appel.
+
+D'où la décision, qui reste la bonne mais pour une autre raison : un **service foreground permanent démarré au boot** (`RECEIVE_BOOT_COMPLETED` est déjà dans le manifest), pas un service lancé à l'appel comme aujourd'hui (`dialer.dart:299`). Le client reste connecté, l'invite arrive par le socket, `handleNewCall` a un contexte, et l'UI peut se construire normalement.
 
 Risques assumés : consommation batterie, comportement à valider sur GrapheneOS, et la mort du process en cas de *force-stop* explicite.
 
