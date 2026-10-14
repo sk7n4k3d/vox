@@ -94,6 +94,7 @@ dependencies:
   lottie: ^3.3.3
   youtube_player_iframe: ^6.0.2
   webview_flutter: ^4.14.1
+  livekit_client: ^2.13.1
 
 dev_dependencies:
   dart_code_linter: ^3.2.1
