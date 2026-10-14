@@ -1526,12 +1526,32 @@ class ChatController extends State<ChatPageWithRoom>
     }
 
     final voipPlugin = Matrix.of(context).voipPlugin;
+    // voipPlugin est null quand le reglage experimentalVoip est off : le `!` du code
+    // initial declenchait un Null check operator (un Error, sans toLocalizedString),
+    // que le catch suivant recrachait en 2e exception. Resultat : aucune trace, aucun
+    // ecran, aucun appel — symptomatique du 2026-10-14.
+    if (voipPlugin == null) {
+      Logs().e("[VOIP] inviteToCall refuse: voipPlugin non cree (reglage expérimental off ?)");
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text("VoIP non active — activez Appels video experimentaux dans Reglages."),
+          ),
+        );
+      }
+      return;
+    }
+    Logs().i("[VOIP] inviteToCall room=${room.id} type=$effectiveType");
     try {
-      await voipPlugin!.voip.inviteToCall(room, effectiveType);
-    } catch (e) {
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text(e.toLocalizedString(context))));
+      await voipPlugin.voip.inviteToCall(room, effectiveType);
+      Logs().i("[VOIP] inviteToCall envoye");
+    } catch (e, st) {
+      Logs().e("[VOIP] inviteToCall a echoue: $e", st);
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text("$e")));
+      }
     }
   }
 
