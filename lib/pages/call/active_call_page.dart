@@ -1,7 +1,6 @@
-import 'package:flutter/foundation.dart';
-import 'package:flutter/material.dart';
-import 'package:fluffychat/pages/call/call_theme.dart';
 import 'package:fluffychat/config/cyberpunk_theme_extension.dart';
+import 'package:fluffychat/pages/call/call_theme.dart';
+import 'package:flutter/material.dart';
 
 /// Ce que [ActiveCallPage] a besoin de savoir d'une session d'appel.
 ///
