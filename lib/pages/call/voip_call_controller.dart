@@ -12,6 +12,7 @@ import 'package:matrix/matrix.dart';
 class VoipCallController extends CallController {
   VoipCallController(this.session, {VoipBridge? bridge})
     : _bridge = bridge ?? VoipBridge() {
+    _logStreams();
     session.onCallStateChanged.stream.listen((s) {
       // .w et pas .i : en release le SDK matrix coupe les niveaux info/verbose, un
       // log de diagnostic en .i est invisible (perdu des heures sur ça le 2026-10-15).
@@ -71,17 +72,33 @@ class VoipCallController extends CallController {
   /// Recalcule l'UI quand un flux apparrive ou disparait — c'est le cas typique
   /// quand l'autre active sa caméra en plein appel.
   void _listenStreams() {
-    session.onCallStreamsChanged.stream.listen((_) => notifyListeners());
+    session.onCallStreamsChanged.stream.listen((_) {
+      _logStreams();
+      notifyListeners();
+    });
+  }
+
+  /// Etat reel des flux : c'est le point de bascule de toute la partie video et
+  /// des boutons micro/camera. Un flux absent = aucun rendu et des boutons inertes.
+  void _logStreams() {
+    final local = session.localUserMediaStream;
+    final remote = session.remoteUserMediaStream;
+    Logs().w(
+      '[VOIP] flux local=${local != null} '
+      'mediaStream=${local?.stream != null} videoMuted=${local?.isVideoMuted()} | '
+      'distant=${remote != null} mediaStream=${remote?.stream != null}',
+    );
   }
 
   @override
   void toggleMic() {
     final stream = session.localUserMediaStream;
     if (stream == null) {
-      Logs().w('[VOIP] toggleMic sans flux local');
+      Logs().w('[VOIP] toggleMic SANS flux local - bouton inerte');
       return;
     }
     stream.setAudioMuted(!session.isMicrophoneMuted);
+    Logs().w('[VOIP] micro coupe=${session.isMicrophoneMuted}');
     notifyListeners();
   }
 
@@ -90,10 +107,11 @@ class VoipCallController extends CallController {
     if (!isVideo) return;
     final stream = session.localUserMediaStream;
     if (stream == null) {
-      Logs().w('[VOIP] toggleCamera sans flux local');
+      Logs().w('[VOIP] toggleCamera SANS flux local - bouton inerte');
       return;
     }
     stream.setVideoMuted(!session.isLocalVideoMuted);
+    Logs().w('[VOIP] camera coupe=${session.isLocalVideoMuted}');
     notifyListeners();
   }
 
