@@ -1,5 +1,6 @@
 import 'dart:core';
 
+import 'package:fluffychat/pages/call/missed_call_store.dart';
 import 'package:fluffychat/pages/chat_list/chat_list.dart';
 import 'package:fluffychat/pages/dialer/dialer.dart';
 import 'package:fluffychat/utils/platform_infos.dart';
@@ -170,18 +171,28 @@ class VoipPlugin with WidgetsBindingObserver implements WebRTCDelegate {
   }
 
   @override
-  // TODO: implement canHandleNewCall
   bool get canHandleNewCall =>
       voip.currentCID == null && voip.currentGroupCID == null;
 
   @override
   Future<void> handleMissedCall(CallSession session) async {
-    // TODO: implement handleMissedCall
+    await MissedCallStore(matrix.store).add(
+      MissedCall(
+        callId: session.callId,
+        roomId: session.room.id,
+        callerName: session.remoteUserId ?? session.room.getLocalizedDisplayname(),
+        video: session.type == CallType.kVideo,
+        at: DateTime.now(),
+      ),
+    );
   }
 
+  /// VOX ne chiffre pas les appels (spec § 7) : on renvoie null pour que le
+  /// SDK n'exige pas de clé. L'upstream renvoyait `throw
+  /// UnimplementedError()`, qui faisait planter tout appel proposant un
+  /// chiffrement avant même l'établissement du flux.
   @override
-  // TODO: implement keyProvider
-  EncryptionKeyProvider? get keyProvider => throw UnimplementedError();
+  EncryptionKeyProvider? get keyProvider => null;
 
   @override
   Future<void> registerListeners(CallSession session) async {
