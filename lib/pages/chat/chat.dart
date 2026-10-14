@@ -9,6 +9,7 @@ import 'package:file_picker/file_picker.dart';
 import 'package:fluffychat/config/setting_keys.dart';
 import 'package:fluffychat/config/themes.dart';
 import 'package:fluffychat/l10n/l10n.dart';
+import 'package:fluffychat/pages/call/voip_bridge.dart';
 import 'package:fluffychat/pages/chat/chat_view.dart';
 import 'package:fluffychat/pages/chat/event_info_dialog.dart';
 import 'package:fluffychat/pages/chat/start_poll_bottom_sheet.dart';
@@ -1493,9 +1494,40 @@ class ChatController extends State<ChatPageWithRoom>
     if (callType == null) return;
     if (!mounted) return;
 
+    // Permissions runtime AVANT de lancer la session WebRTC. Le micro refusé doit
+    // produire un dialogue clair, pas une exception dans flutter_webrtc (Review
+    // Focus n°2). La caméra refusée, elle, dégrade proprement en appel vocal.
+    final bridge = VoipBridge();
+    if (!await bridge.isCallPermissionGranted("audio")) {
+      await bridge.requestCallPermissions();
+      if (!await bridge.isCallPermissionGranted("audio")) {
+        await showOkAlertDialog(
+          context: context,
+          title: L10n.of(context).warning,
+          message: "Le micro est refuse. VOX ne peut pas passer d appel sans "
+              "micro — accorde la permission dans les reglages du systeme.",
+          okLabel: L10n.of(context).close,
+        );
+        return;
+      }
+    }
+    var effectiveType = callType;
+    if (callType == CallType.kVideo &&
+        !await bridge.isCallPermissionGranted("camera")) {
+      await bridge.requestCallPermissions();
+      if (!await bridge.isCallPermissionGranted("camera")) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text("Camera refusee — appel audio lance."),
+          ),
+        );
+        effectiveType = CallType.kVoice;
+      }
+    }
+
     final voipPlugin = Matrix.of(context).voipPlugin;
     try {
-      await voipPlugin!.voip.inviteToCall(room, callType);
+      await voipPlugin!.voip.inviteToCall(room, effectiveType);
     } catch (e) {
       ScaffoldMessenger.of(
         context,
