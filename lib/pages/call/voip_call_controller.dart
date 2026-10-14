@@ -17,6 +17,7 @@ class VoipCallController extends CallController {
       // .w et pas .i : en release le SDK matrix coupe les niveaux info/verbose, un
       // log de diagnostic en .i est invisible (perdu des heures sur ça le 2026-10-15).
       Logs().w('[VOIP] état: ${s.name}');
+      if (s.name == 'kConnected') unawaited(_logSdp());
       notifyListeners();
     });
     _listenStreams();
@@ -80,6 +81,46 @@ class VoipCallController extends CallController {
 
   /// Etat reel des flux : c'est le point de bascule de toute la partie video et
   /// des boutons micro/camera. Un flux absent = aucun rendu et des boutons inertes.
+  /// Contenu video reellement annonce et recu. C'est LA preuve qui manque :
+  /// sans elle on devine entre « VOX n'annonce pas de video » et « le distant
+  /// n'en envoie pas ». On resume le SDP au lieu de le dumper (des KiB).
+  Future<void> _logSdp() async {
+    try {
+      final pc = session.pc;
+      if (pc == null) {
+        Logs().w('[VOIP] SDP: pas de peer connection');
+        return;
+      }
+      String summarize(String? sdp, String who) {
+        if (sdp == null) return '$who SDP=null';
+        final m = RegExp(r'^m=(audio|video).*\$', multiLine: true)
+            .allMatches(sdp)
+            .map((e) => e.group(1))
+            .join('+');
+        final dir = RegExp(r'^a=(sendrecv|sendonly|recvonly|inactive)\$', multiLine: true)
+                .allMatches(sdp)
+                .map((e) => e.group(1))
+                .toList();
+        final codec = RegExp(r'VP8|VP9|H264|AV1')
+                .allMatches(sdp.toUpperCase())
+                .map((e) => e.group(0))
+                .toSet()
+                .join('/');
+        return '$who media=[$m] directions=[${dir.join(",")}] codecs=[$codec]';
+      }
+
+      Logs().w('[VOIP] ' + summarize((await pc.getLocalDescription())?.sdp, 'local'));
+      Logs().w('[VOIP] ' + summarize((await pc.getRemoteDescription())?.sdp, 'distant'));
+      final receivers = await pc.getReceivers();
+      Logs().w(
+        '[VOIP] tracks distants=${receivers.where((r) => r.track != null).length} '
+        'types=${receivers.map((r) => r.track?.kind ?? "?").toSet().join(",")}',
+      );
+    } catch (e) {
+      Logs().w('[VOIP] SDP illisible: $e');
+    }
+  }
+
   void _logStreams() {
     final local = session.localUserMediaStream;
     final remote = session.remoteUserMediaStream;
