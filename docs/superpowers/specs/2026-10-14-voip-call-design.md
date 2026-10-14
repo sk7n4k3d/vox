@@ -113,7 +113,7 @@ Déjà déclarées dans le manifest : `RECORD_AUDIO`, `CAMERA`, `MODIFY_AUDIO_SE
 | 5 | Écran d'appel entrant + thème VOX | 6 tests verts (dont double-tap) | fait — `d1f8af5f3` |
 | 6 | Écran d'appel en cours + barre flottante | 8 tests verts (micro, caméra, reconnexion) | fait — `b9daa39ba` |
 | 7 | Branchement dans `VoipPlugin` + suppression du dialer mort | 36 tests verts, −1816 lignes | fait — `23fa8075d` |
-| 8 | Permissions runtime + APK signé | 36 tests verts ; build debug OK ; install bloquée sur signature | en cours — `59c72fd9a` |
+| 8 | Permissions runtime + APK signé | installé sur le Pixel (`Success`, 07:17) ; `VoipBridgeService` `isForeground=true` `types=0x40000000` (specialUse) ; relance auto au boot confirmée dans logcat | fait — `59c72fd9a` |
 
 ### Prérequis non vérifiés tant qu'aucun appel réel n'a été passé
 
