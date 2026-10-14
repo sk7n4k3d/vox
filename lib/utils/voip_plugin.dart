@@ -1,8 +1,11 @@
+import 'dart:async';
 import 'dart:core';
 
+import 'package:fluffychat/pages/call/active_call_page.dart';
+import 'package:fluffychat/pages/call/incoming_call_page.dart';
 import 'package:fluffychat/pages/call/missed_call_store.dart';
-import 'package:fluffychat/pages/chat_list/chat_list.dart';
-import 'package:fluffychat/pages/dialer/dialer.dart';
+import 'package:fluffychat/pages/call/voip_bridge.dart';
+import 'package:fluffychat/pages/call/voip_call_controller.dart';
 import 'package:fluffychat/utils/platform_infos.dart';
 import 'package:fluffychat/widgets/fluffy_chat_app.dart';
 import 'package:flutter/foundation.dart';
@@ -29,7 +32,6 @@ class VoipPlugin with WidgetsBindingObserver implements WebRTCDelegate {
   bool background = false;
   bool speakerOn = false;
   late VoIP voip;
-  OverlayEntry? overlayEntry;
   BuildContext get context => matrix.context;
 
   @override
@@ -39,50 +41,54 @@ class VoipPlugin with WidgetsBindingObserver implements WebRTCDelegate {
         state == AppLifecycleState.paused);
   }
 
-  void addCallingOverlay(String callId, CallSession call) {
-    // Prefer the navigator key context — it always sits under a Navigator
-    // so Overlay.of() resolves. matrix.context can point to a parent of
-    // the MaterialApp without an Overlay, leading to a "Null check operator
-    // used on a null value" crash inside Overlay.of() (Flutter 3.41 bug).
-    final navContext =
-        FluffyChatApp.router.routerDelegate.navigatorKey.currentContext;
-    final context = kIsWeb
-        ? ChatList.contextForVoip!
-        : (navContext ?? this.context);
+  /// Contexte sous lequel poser l'overlay d'appel.
+  ///
+  /// On passe par la clé du Navigator : `matrix.context` peut pointer un parent du
+  /// MaterialApp, sans Overlay, et `Overlay.of()` y planterait sur un null (bug connu
+  /// de Flutter 3.41 que le code d'origine documentait déjà).
+  BuildContext get _overlayContext =>
+      FluffyChatApp.router.routerDelegate.navigatorKey.currentContext ?? context;
 
-    if (overlayEntry != null) {
-      Logs().e('[VOIP] addCallingOverlay: The call session already exists?');
-      overlayEntry!.remove();
+  /// L'overlay d'appel entrant (puis d'appel en cours). Un seul à la fois : un
+  /// deuxième appel entrant pendant un appel en cours est refusé plus bas.
+  OverlayEntry? _overlay;
+
+  CallSession? _session;
+  VoipCallController? _controller;
+  final VoipBridge _bridge = VoipBridge();
+  StreamSubscription<VoipEvent>? _nativeEvents;
+
+  CallSession? get session => _session;
+
+  /// Pose (ou remplace) l'overlay racine d'appel. Aucun-op si aucun Overlay n'est
+  /// encore monté (démarrage à froid) — l'appel reste alors joignable depuis la
+  /// barre flottante une fois le Navigator prêt.
+  void _showOverlay(Widget Function() builder) {
+    final overlay = Overlay.maybeOf(_overlayContext, rootOverlay: true);
+    _overlay?.remove();
+    _overlay = null;
+    if (overlay == null) {
+      Logs().w('[VOIP] pas d\'Overlay racine disponible, écran d\'appel différé');
+      return;
     }
-    // Fallback to a dialog when no Overlay ancestor is reachable (web, or
-    // cold-start before the router has mounted its navigator).
-    final overlay = Overlay.maybeOf(context, rootOverlay: true);
-    if (kIsWeb || overlay == null) {
-      showDialog(
-        context: context,
-        builder: (context) => Calling(
-          context: context,
-          client: client,
-          callId: callId,
-          call: call,
-          onClear: () => Navigator.of(context).pop(),
-        ),
-      );
-    } else {
-      overlayEntry = OverlayEntry(
-        builder: (_) => Calling(
-          context: context,
-          client: client,
-          callId: callId,
-          call: call,
-          onClear: () {
-            overlayEntry?.remove();
-            overlayEntry = null;
-          },
-        ),
-      );
-      overlay.insert(overlayEntry!);
-    }
+    _overlay = OverlayEntry(builder: (_) => builder());
+    overlay.insert(_overlay!);
+  }
+
+  void _clearOverlay() {
+    _overlay?.remove();
+    _overlay = null;
+  }
+
+  /// Abonne les événements natifs une seule fois pour toute la vie du plugin :
+  /// une bascule Bluetooth en plein appel doit reaching l'UI même si l'appel a été
+  /// posé depuis le service permanent.
+  void _listenNativeEvents() {
+    _nativeEvents ??= _bridge.eventStream.listen((event) {
+      if (event.kind == VoipEventKind.audioRoute && event.route != null) {
+        _controller?.onNativeRouteChanged(event.route!);
+      }
+    });
   }
 
   @override
@@ -119,10 +125,21 @@ class VoipPlugin with WidgetsBindingObserver implements WebRTCDelegate {
 
   @override
   Future<void> handleNewCall(CallSession call) async {
+    // Ligne occupée : on raccroche l'appel entrant au lieu de laisser l'utilisateur
+    // croire qu'il sonne. Une seule session VoIP à la fois, pas de file d'attente.
+    if (!canHandleNewCall) {
+      Logs().w('[VOIP] appel entrant refusé, ligne déjà occupée');
+      await call.hangup(reason: CallErrorCode.userHangup);
+      return;
+    }
+
+    _session = call;
+    _controller = VoipCallController(call);
+    _listenNativeEvents();
+
     if (PlatformInfos.isAndroid) {
       try {
         final wasForeground = await FlutterForegroundTask.isAppOnForeground;
-
         await matrix.store.setString(
           'wasForeground',
           wasForeground == true ? 'true' : 'false',
@@ -133,21 +150,51 @@ class VoipPlugin with WidgetsBindingObserver implements WebRTCDelegate {
       } catch (e) {
         Logs().e('VOIP foreground failed $e');
       }
-      // use fallback flutter call pages for outgoing and video calls.
-      addCallingOverlay(call.callId, call);
-    } else {
-      addCallingOverlay(call.callId, call);
     }
+
+    // Focus audio + sonnerie AVANT de poser l'overlay : sinon le premier « dring »
+    // est avalé par la construction de l'écran.
+    await _bridge.acquireAudioFocus();
+    await _bridge.startRinging(video: call.type == CallType.kVideo);
+
+    final callerName = call.remoteUserId ?? call.room.getLocalizedDisplayname();
+    Logs().i('[VOIP] appel entrant de $callerName (${call.type})');
+
+    _showOverlay(
+      () => IncomingCallPage(
+        callId: call.callId,
+        roomId: call.room.id,
+        callerName: callerName,
+        video: call.type == CallType.kVideo,
+        onAnswer: _answer,
+        onDecline: _decline,
+      ),
+    );
+  }
+
+  void _answer() {
+    final call = _session;
+    final controller = _controller;
+    if (call == null || controller == null) return;
+    unawaited(_bridge.stopRinging());
+    _showOverlay(() => ActiveCallPage(controller: controller));
+  }
+
+  void _decline() {
+    final call = _session;
+    if (call == null) return;
+    call.hangup(reason: CallErrorCode.userHangup);
   }
 
   @override
   Future<void> handleCallEnded(CallSession session) async {
-    try {
-      overlayEntry?.remove();
-    } catch (e) {
-      Logs().w('[VOIP] handleCallEnded: failed to remove overlay: $e');
-    }
-    overlayEntry = null;
+    unawaited(_bridge.stopRinging());
+    unawaited(_bridge.abandonAudioFocus());
+    _clearOverlay();
+    _controller?.dispose();
+    _controller = null;
+    _session = null;
+
     if (PlatformInfos.isAndroid) {
       try {
         FlutterForegroundTask.setOnLockScreenVisibility(false);
@@ -196,11 +243,14 @@ class VoipPlugin with WidgetsBindingObserver implements WebRTCDelegate {
 
   @override
   Future<void> registerListeners(CallSession session) async {
-    // Listeners are propagated through onCallStateChanged / onCallEventChanged
-    // streams already consumed by the Calling widget. Upstream FluffyChat
-    // removed its CallKeep wiring (CHANGELOG: "Remove broken callkeep
-    // implementation") without restoring a fallback, so incoming calls would
-    // hit this method and crash the call before handleNewCall could fire.
-    return;
+    // C'était le stub qui tuait l'appel entrant : le SDK appelle cette méthode avant
+    // handleNewCall, et l'upstream y avait retiré CallKeep sans rien mettre à la
+    // place (« Remove broken callkeep implementation »).
+    //
+    // VOX n'a pas de CallKeep : le service permanent VoipBridgeService garde le client
+    // Matrix connecté, donc l'invite arrive par le socket et arrive jusqu'ici. Le seul
+    // vrai travail est de brancher le routage audio natif sur la session.
+    _listenNativeEvents();
+    await _bridge.setAudioRoute(AudioRoute.speaker);
   }
 }
