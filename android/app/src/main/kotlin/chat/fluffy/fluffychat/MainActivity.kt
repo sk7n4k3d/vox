@@ -9,6 +9,7 @@ import android.os.Bundle
 
 import chat.fluffy.fluffychat.wear.WearBridgePlugin
 import chat.fluffy.fluffychat.sms.SmsBridgePlugin
+import chat.fluffy.fluffychat.voip.VoipBridgePlugin
 
 class MainActivity : FlutterFragmentActivity() {
 
@@ -33,6 +34,7 @@ class MainActivity : FlutterFragmentActivity() {
         super.configureFlutterEngine(flutterEngine)
         WearBridgePlugin.register(applicationContext, flutterEngine)
         SmsBridgePlugin.register(applicationContext, flutterEngine)
+        VoipBridgePlugin.register(applicationContext, flutterEngine)
     }
 
     override fun onNewIntent(intent: Intent) {
@@ -68,10 +70,13 @@ class MainActivity : FlutterFragmentActivity() {
         // Donne au plugin SMS l'Activity courante pour startActivityForResult
         // (RoleManager.createRequestRoleIntent / ACTION_CHANGE_DEFAULT).
         SmsBridgePlugin.attachActivity(this)
+        // Idem pour le VoIP : RECORD_AUDIO + CAMERA sont demandées au runtime.
+        VoipBridgePlugin.attachActivity(this)
     }
 
     override fun onPause() {
         SmsBridgePlugin.attachActivity(null)
+        VoipBridgePlugin.attachActivity(null)
         super.onPause()
     }
 
