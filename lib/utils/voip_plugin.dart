@@ -125,14 +125,12 @@ class VoipPlugin with WidgetsBindingObserver implements WebRTCDelegate {
 
   @override
   Future<void> handleNewCall(CallSession call) async {
-    // Ligne occupée : on raccroche l'appel entrant au lieu de laisser l'utilisateur
-    // croire qu'il sonne. Une seule session VoIP à la fois, pas de file d'attente.
-    if (!canHandleNewCall) {
-      Logs().w('[VOIP] appel entrant refusé, ligne déjà occupée');
-      await call.hangup(reason: CallErrorCode.userHangup);
-      return;
-    }
-
+    // On ne re-teste PAS « ligne occupée » ici : le SDK l'a déjà fait avant de nous
+    // appeler (voip.dart:507, qui déclenche handleMissedCall si occupé). Ici,
+    // voip.currentCID pointe DÉJÀ vers cet appel lui-même (assigné ligne 539) :
+    // tout test de canHandleNewCall dans cette méthode se juge occupé et
+    // raccroche chaque appel, sortant comme entrant. Cause racine du « aucun
+    // appel ne sort ni ne rentre » du 2026-10-14.
     _session = call;
     _controller = VoipCallController(call);
     _listenNativeEvents();
