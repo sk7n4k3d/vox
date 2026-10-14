@@ -226,6 +226,19 @@ class EphemeralMessages extends ChangeNotifier {
 
   void _arm(_PendingExpiry e) {
     _timers.remove(e.id)?.cancel();
+    // Native AlarmManager backup: the Dart timer dies with the app, the SMS
+    // must still disappear on time. A double delete is a harmless no-op.
+    final smsId = e.isSms ? int.tryParse(e.messageRef) : null;
+    if (smsId != null) {
+      unawaited(
+        SmsBridge.instance.scheduleNativeSmsDelete(
+          id: e.id,
+          messageId: smsId,
+          isMms: e.smsIsMms,
+          at: e.expiresAt,
+        ),
+      );
+    }
     final delay = DateTime.fromMillisecondsSinceEpoch(e.expiresAt)
         .difference(DateTime.now());
     _timers[e.id] = Timer(
@@ -241,6 +254,7 @@ class EphemeralMessages extends ChangeNotifier {
         final smsId = int.tryParse(e.messageRef);
         if (smsId != null) {
           await SmsBridge.instance.deleteMessage(smsId, isMms: e.smsIsMms);
+          await SmsBridge.instance.cancelNativeSmsDelete(e.id);
         }
       } else if (e.roomId != null) {
         final room = _client?.getRoomById(e.roomId!);

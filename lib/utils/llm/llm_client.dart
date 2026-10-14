@@ -31,6 +31,7 @@ class LlmClient {
   final String model;
   final Duration timeout;
   final http.Client _http;
+  final bool _ownsHttp;
 
   LlmClient({
     required this.baseUrl,
@@ -38,7 +39,13 @@ class LlmClient {
     required this.model,
     http.Client? httpClient,
     this.timeout = const Duration(seconds: 30),
-  }) : _http = httpClient ?? http.Client();
+  }) : _http = httpClient ?? http.Client(),
+       _ownsHttp = httpClient == null;
+
+  /// Libère le client HTTP interne (no-op si un client a été injecté).
+  void close() {
+    if (_ownsHttp) _http.close();
+  }
 
   /// Construit un client depuis les réglages persistés.
   factory LlmClient.fromSettings({http.Client? httpClient}) => LlmClient(
@@ -80,21 +87,21 @@ class LlmClient {
     int maxTokens = 1024,
     double temperature = 0.4,
   }) async {
-    final response = await _withTimeout(
-      () => _http.post(
-        _endpoint('chat/completions'),
-        headers: _headers,
-        body: jsonEncode({
-          'model': model.trim().isEmpty ? 'qwen3.5-titan1-16x' : model.trim(),
-          'messages': messages,
-          'max_tokens': maxTokens,
-          'temperature': temperature,
-          // Modeles hybrides (Qwen3.5) : couper le raisonnement intermediaire,
-          // sinon content revient vide et la reponse part dans reasoning_content.
-          'chat_template_kwargs': {'enable_thinking': false},
-        }),
-      ),
-    );
+    final payload = <String, dynamic>{
+      'model': model.trim().isEmpty ? 'qwen3.5-titan1-16x' : model.trim(),
+      'messages': messages,
+      'max_tokens': maxTokens,
+      'temperature': temperature,
+      // Modeles hybrides (Qwen3.5 via vLLM/SGLang) : couper le raisonnement,
+      // sinon content revient vide. Extension non standard : l'API OpenAI
+      // officielle la refuse (400), d'ou le second essai sans.
+      'chat_template_kwargs': {'enable_thinking': false},
+    };
+    var response = await _postChat(payload);
+    if (response.statusCode == 400) {
+      payload.remove('chat_template_kwargs');
+      response = await _postChat(payload);
+    }
     if (response.statusCode != 200) _throwForStatus(response);
     final decoded = _decodeBody(response);
     final choices = decoded['choices'];
@@ -105,17 +112,27 @@ class LlmClient {
         if (content is String && content.trim().isNotEmpty) {
           return content.trim();
         }
-        // Filet de securite si le serveur ignore enable_thinking :
-        // la reponse utile est alors dans reasoning_content.
-        final reasoning = message['reasoning_content'] ??
-            message['reasoning'];
+        // Jamais de repli sur reasoning_content : ce serait afficher la
+        // chaine de raisonnement brute du modele comme si c'etait la reponse.
+        final reasoning = message['reasoning_content'] ?? message['reasoning'];
         if (reasoning is String && reasoning.trim().isNotEmpty) {
-          return reasoning.trim();
+          throw const LlmException(
+            'Le modèle n\'a renvoyé que son raisonnement (désactive le mode '
+            '« thinking » côté serveur)',
+          );
         }
       }
     }
     throw const LlmException('Réponse vide du serveur');
   }
+
+  Future<http.Response> _postChat(Map<String, dynamic> payload) => _withTimeout(
+    () => _http.post(
+      _endpoint('chat/completions'),
+      headers: _headers,
+      body: jsonEncode(payload),
+    ),
+  );
 
   Future<http.Response> _withTimeout(
     Future<http.Response> Function() send,

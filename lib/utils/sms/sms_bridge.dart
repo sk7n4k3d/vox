@@ -284,6 +284,9 @@ class SmsBridge {
       onMessageSent;
 
   /// Sends an SMS. Returns the provider row id (or null on failure).
+  /// Sends an SMS. Returns null only if it was NOT handed to the modem; a
+  /// non-null value means submitted: the provider rowId, or 0 when the SMS left
+  /// but could not be persisted in the provider (never resend in that case).
   Future<int?> sendSms(String address, String body) async {
     try {
       final rowId = await _channel.invokeMethod<int>('sendSms', {
@@ -306,6 +309,65 @@ class SmsBridge {
       });
     } on PlatformException {
       return null;
+    }
+  }
+
+  /// Hands a scheduled SMS to the native AlarmManager so it is sent even if the
+  /// app is killed / in Doze. false if unsupported or refused (already sent).
+  Future<bool> scheduleNativeSms({
+    required String id,
+    required String address,
+    required String body,
+    required int sendAt,
+  }) => _invokeBool('scheduleSms', {
+    'id': id,
+    'address': address,
+    'body': body,
+    'sendAt': sendAt,
+  });
+
+  /// false if the native job was no longer pending (already fired).
+  Future<bool> cancelNativeSms(String id) =>
+      _invokeBool('cancelScheduledSms', {'id': id});
+
+  /// Results of natively fired scheduled SMS since the last call:
+  /// id -> `sent` | `failed`.
+  Future<Map<String, String>> takeNativeSmsResults() async {
+    try {
+      final res = await _channel.invokeMethod<Map>('takeScheduledSmsResults');
+      return {
+        for (final e in (res ?? const {}).entries) '${e.key}': '${e.value}',
+      };
+    } on PlatformException {
+      return const {};
+    } on MissingPluginException {
+      return const {};
+    }
+  }
+
+  /// Native backup of an ephemeral SMS deletion (runs even if the app is dead).
+  Future<bool> scheduleNativeSmsDelete({
+    required String id,
+    required int messageId,
+    required bool isMms,
+    required int at,
+  }) => _invokeBool('scheduleSmsDelete', {
+    'id': id,
+    'messageId': messageId,
+    'isMms': isMms,
+    'at': at,
+  });
+
+  Future<bool> cancelNativeSmsDelete(String id) =>
+      _invokeBool('cancelScheduledSmsDelete', {'id': id});
+
+  Future<bool> _invokeBool(String method, Map<String, Object?> args) async {
+    try {
+      return await _channel.invokeMethod<bool>(method, args) ?? false;
+    } on PlatformException {
+      return false;
+    } on MissingPluginException {
+      return false;
     }
   }
 

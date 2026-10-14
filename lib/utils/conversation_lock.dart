@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:fluffychat/utils/biometric_auth.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 /// Per-conversation lock for VOX.
 ///
@@ -24,6 +25,12 @@ class ConversationLock extends ChangeNotifier {
   static final ConversationLock instance = ConversationLock._();
 
   static const _storageKey = 'chat.fluffy.locked_conversations';
+
+  /// Mirror of the locked SMS thread ids in plain SharedPreferences, read by
+  /// the native SmsNotifier (it cannot read FlutterSecureStorage). Only SMS ids
+  /// (`sms:<threadId>`) are mirrored; Matrix room ids stay in secure storage.
+  @visibleForTesting
+  static const nativeSmsMirrorKey = 'chat.fluffy.locked_sms_threads';
   final FlutterSecureStorage _storage = const FlutterSecureStorage();
 
   /// Persisted: ids that are locked. Loaded once at [load].
@@ -54,6 +61,7 @@ class ConversationLock extends ChangeNotifier {
       // throwing — a missing lock is recoverable, a crash at startup is not.
       debugPrint('ConversationLock load failed: $e');
     }
+    await _writeNativeMirror();
     _loaded = true;
     notifyListeners();
   }
@@ -67,6 +75,25 @@ class ConversationLock extends ChangeNotifier {
     } catch (e) {
       debugPrint('ConversationLock persist failed: $e');
     }
+    await _writeNativeMirror();
+  }
+
+  Future<void> _writeNativeMirror() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final smsIds = _locked.where((id) => id.startsWith('sms:')).toList()
+        ..sort();
+      await prefs.setString(nativeSmsMirrorKey, jsonEncode(smsIds));
+    } catch (e) {
+      debugPrint('ConversationLock native mirror failed: $e');
+    }
+  }
+
+  @visibleForTesting
+  void resetForTesting() {
+    _locked.clear();
+    _unlockedThisSession.clear();
+    _loaded = false;
   }
 
   /// True when [id] is configured as locked (independent of session unlock).

@@ -324,7 +324,13 @@ class _ScheduledRow extends StatelessWidget {
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Icon(Icons.schedule_rounded, color: cyber.cyan, size: 18),
+          Icon(
+            message.failed
+                ? Icons.error_outline_rounded
+                : Icons.schedule_rounded,
+            color: message.failed ? cyber.magenta : cyber.cyan,
+            size: 18,
+          ),
           const SizedBox(width: FluffySpacing.md),
           Expanded(
             child: Column(
@@ -332,9 +338,11 @@ class _ScheduledRow extends StatelessWidget {
               mainAxisSize: MainAxisSize.min,
               children: [
                 Text(
-                  ScheduledSend.formatWhen(message.sendAtTime),
+                  message.failed
+                      ? 'ÉCHEC — modifie pour réessayer'
+                      : ScheduledSend.formatWhen(message.sendAtTime),
                   style: FluffyTypography.labelM.copyWith(
-                    color: cyber.cyan,
+                    color: message.failed ? cyber.magenta : cyber.cyan,
                     letterSpacing: 1.2,
                   ),
                 ),
@@ -401,12 +409,18 @@ class _ScheduledEditSheetState extends State<_ScheduledEditSheet> {
   Future<void> _save() async {
     final body = _controller.text.trim();
     if (body.isEmpty) return;
-    await ScheduledMessages.instance.reschedule(
+    final ok = await ScheduledMessages.instance.reschedule(
       widget.message.id,
       body: body,
       sendAt: _when.millisecondsSinceEpoch,
     );
-    if (mounted) Navigator.of(context).pop();
+    if (!mounted) return;
+    if (!ok) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Message déjà en cours d\'envoi')),
+      );
+    }
+    Navigator.of(context).pop();
   }
 
   @override

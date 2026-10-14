@@ -865,7 +865,10 @@ object SmsBridge {
 
                 sms.sendMultipartTextMessage(address, null, parts, sentIntents, deliveredIntents)
                 Log.i(TAG, "sendSms → ${redact(address)} (${parts.size} part(s), row=$rowId)")
-                rowId.takeIf { it > 0 }
+                // Soumis au modem : ne JAMAIS renvoyer null ici, même si l'insertion
+                // provider a échoué (rowId=0), sinon l'appelant croit à un échec et
+                // renvoie le SMS (doublons). 0 = envoyé mais non persisté.
+                rowId.coerceAtLeast(0L)
             } catch (e: SecurityException) {
                 Log.e(TAG, "sendSms → ${redact(address)}: SEND_SMS denied: ${e.message}")
                 markSmsFailed(context, rowId, e)
@@ -947,6 +950,10 @@ object SmsBridge {
      *  - < 31    : SmsManager.getDefault().
      */
     @Suppress("DEPRECATION")
+    /** Nombre de parts (donc de callbacks SENT) pour [body]. */
+    internal fun partCount(context: Context, body: String): Int =
+        runCatching { obtainSmsManager(context).divideMessage(body).size }.getOrDefault(1)
+
     private fun obtainSmsManager(context: Context): SmsManager =
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
             context.getSystemService(SmsManager::class.java)
@@ -1481,7 +1488,7 @@ object SmsBridge {
             // (code=5) sur ce device/carrier (GrapheneOS + Orange + WiFi-calling)
             // sans jamais atteindre le MMSC → on by-passe avec notre propre client
             // HTTP, sur le réseau MMS cellulaire (comme QKSMS/Signal).
-            sendPduOnMmsNetwork(context, pdu, mmsId, txn)
+            sendPduOnMmsNetwork(context, pdu, pduName, mmsId, txn)
             Log.i(TAG, "sendMms → ${redact(address)} (img=${imagePath != null}, mmsId=$mmsId)")
             mmsId.takeIf { it > 0 }
         } catch (e: SecurityException) {
@@ -1511,6 +1518,7 @@ object SmsBridge {
     private fun sendPduOnMmsNetwork(
         context: Context,
         pdu: ByteArray,
+        pduName: String,
         mmsId: Long,
         txn: String,
     ) {
@@ -1518,27 +1526,81 @@ object SmsBridge {
         mmsSendExecutor.execute {
             val (mmscUrl, proxyHost, proxyPort) = readMmsApn(app)
             if (mmscUrl.isNullOrBlank()) {
-                Log.e(TAG, "sendPduOnMmsNetwork: pas de MMSC dans l'APN")
-                markMmsFailed(app, mmsId)
-                onMmsSendResult?.invoke(mapOf("mmsId" to mmsId, "ok" to false))
+                Log.w(TAG, "sendPduOnMmsNetwork: pas de MMSC connu → service MMS système")
+                sendViaSystemMmsOrFail(app, pduName, mmsId, txn)
                 return@execute
             }
-            val ok = MmsNetworkManager.withNetwork(app) { _ ->
+            if (!isCleartextAllowedFor(mmscUrl, proxyHost)) {
+                // MMSC en HTTP clair hors de network_security_config (MVNO,
+                // opérateur étranger) : notre client serait bloqué, le service
+                // système n'est pas soumis à notre config réseau.
+                Log.i(TAG, "sendPduOnMmsNetwork: MMSC http non autorisé → service MMS système")
+                sendViaSystemMmsOrFail(app, pduName, mmsId, txn)
+                return@execute
+            }
+            val result = MmsNetworkManager.withNetwork(app) { _ ->
                 Log.i(TAG, "MMS network acquis → POST MMSC (proxy=${if (proxyHost.isNullOrBlank()) "non" else "oui"})")
                 // The process is already bound to the MMS network by the manager,
                 // so a plain HTTP connection routes over cellular MMS.
-                val resp = MmsHttpClient.postPdu(
+                MmsHttpClient.postPdu(
                     mmscUrl = mmscUrl,
                     proxyHost = proxyHost,
                     proxyPort = proxyPort,
                     pdu = pdu,
                 )
-                resp != null
-            } ?: false
-            Log.i(TAG, "MMS POST result ok=$ok (mmsId=$mmsId)")
-            if (ok) markMmsSent(app, mmsId) else markMmsFailed(app, mmsId)
-            onMmsSendResult?.invoke(mapOf("mmsId" to mmsId, "ok" to ok))
+            } ?: MmsHttpClient.PostResult.NOT_SENT
+            Log.i(TAG, "MMS POST result=$result (mmsId=$mmsId)")
+            when (result) {
+                MmsHttpClient.PostResult.ACCEPTED -> {
+                    markMmsSent(app, mmsId)
+                    onMmsSendResult?.invoke(mapOf("mmsId" to mmsId, "ok" to true))
+                }
+                MmsHttpClient.PostResult.UNKNOWN -> {
+                    // PDU parti sans accusé : le MMSC a pu l'accepter, un repli
+                    // l'enverrait en double. Échec visible, renvoi manuel.
+                    Log.w(TAG, "MMS POST sans réponse → pas de repli (risque de doublon)")
+                    markMmsFailed(app, mmsId)
+                    onMmsSendResult?.invoke(mapOf("mmsId" to mmsId, "ok" to false))
+                }
+                else -> {
+                    Log.w(TAG, "MMS POST direct non accepté → repli service MMS système")
+                    sendViaSystemMmsOrFail(app, pduName, mmsId, txn)
+                }
+            }
         }
+    }
+
+    /**
+     * Repli sur [SmsManager.sendMultimediaMessage] : le résultat arrive dans
+     * [MmsSentReceiver]. Si même la soumission échoue, la ligne passe FAILED.
+     */
+    private fun sendViaSystemMmsOrFail(app: Context, pduName: String, mmsId: Long, txn: String) {
+        val submitted = try {
+            obtainSmsManagerForMms(app).sendMultimediaMessage(
+                app,
+                MmsPduProvider.buildUri(pduName),
+                null,
+                null,
+                buildMmsSentIntent(app, mmsId, txn),
+            )
+            true
+        } catch (e: Exception) {
+            Log.e(TAG, "sendMultimediaMessage failed: ${e.message}")
+            false
+        }
+        if (!submitted) {
+            markMmsFailed(app, mmsId)
+            onMmsSendResult?.invoke(mapOf("mmsId" to mmsId, "ok" to false))
+        }
+    }
+
+    private fun isCleartextAllowedFor(mmscUrl: String, proxyHost: String?): Boolean {
+        val url = runCatching { java.net.URL(mmscUrl) }.getOrNull() ?: return false
+        if (url.protocol == "https" && proxyHost.isNullOrBlank()) return true
+        // Via proxy HTTP, la connexion en clair va au proxy.
+        val host = if (!proxyHost.isNullOrBlank()) proxyHost else url.host
+        return android.security.NetworkSecurityPolicy.getInstance()
+            .isCleartextTrafficPermitted(host)
     }
 
     /**
