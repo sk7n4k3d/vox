@@ -12,7 +12,6 @@ import 'package:fluffychat/utils/platform_infos.dart';
 import 'package:fluffychat/utils/rtc/livekit_gateway.dart';
 import 'package:fluffychat/utils/rtc/rtc_call.dart';
 import 'package:fluffychat/utils/rtc/rtc_client_port.dart';
-import 'package:fluffychat/utils/rtc/rtc_e2ee.dart';
 import 'package:fluffychat/utils/rtc/rtc_service.dart';
 import 'package:fluffychat/widgets/fluffy_chat_app.dart';
 import 'package:flutter/foundation.dart';
@@ -56,7 +55,6 @@ class VoipPlugin with WidgetsBindingObserver implements WebRTCDelegate {
   RtcService? rtcService;
   LiveKitCallController? _rtcController;
   StreamSubscription? _rtcStateSub;
-  StreamSubscription<List<BasicEventWithSender>>? _rtcKeysSub;
 
   /// La gateway LiveKit est creee par le service a la connexion ; la vue video
   /// s'y abonne des qu'elle apparait.
@@ -72,18 +70,6 @@ class VoipPlugin with WidgetsBindingObserver implements WebRTCDelegate {
       },
       onIncoming: _showRtcIncoming,
     );
-    // M1/M4 : journalise les cles e2ee entrantes sans les consommer encore.
-    _rtcKeysSub ??= client.onCallEvents.stream.listen((events) {
-      for (final e in events) {
-        if (e.type == RtcE2ee.encryptionKeysEventType) {
-          Logs().w(
-            '[RTC-RAW] cle e2ee de ${e.senderId} '
-            '(call_id=${e.content['call_id']}, '
-            '${(e.content['keys'] as List?)?.length ?? 0} entree(s))',
-          );
-        }
-      }
-    });
   }
 
   Future<void> _showRtcIncoming(RtcCall call) async {
@@ -211,8 +197,6 @@ class VoipPlugin with WidgetsBindingObserver implements WebRTCDelegate {
 
   /// A appeler a la fermeture de session : vide les ecoutes RTC.
   void rtcDispose() {
-    unawaited(_rtcKeysSub?.cancel());
-    _rtcKeysSub = null;
     unawaited(_rtcStateSub?.cancel());
     _rtcStateSub = null;
     unawaited(rtcService?.shutdown());
