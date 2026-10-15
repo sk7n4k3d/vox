@@ -1473,26 +1473,48 @@ class ChatController extends State<ChatPageWithRoom>
         return;
       }
     }
-    final callType = await showModalActionPopup<CallType>(
+    final rtcService = Matrix.of(context).voipPlugin?.rtcService;
+    final rtcOk = rtcService != null && await rtcService.rtcAvailable();
+    final choice = await showModalActionPopup<_VoxCallChoice>(
       context: context,
       title: L10n.of(context).warning,
       message: L10n.of(context).videoCallsBetaWarning,
       cancelLabel: L10n.of(context).cancel,
       actions: [
+        if (rtcOk) ...[
+          AdaptiveModalAction(
+            label: 'Appel vocal (nouveau protocole)',
+            icon: const Icon(Icons.phone),
+            value: _VoxCallChoice.rtcVoice,
+          ),
+          AdaptiveModalAction(
+            label: 'Appel video (nouveau protocole)',
+            icon: const Icon(Icons.video_call),
+            value: _VoxCallChoice.rtcVideo,
+          ),
+        ],
         AdaptiveModalAction(
           label: L10n.of(context).voiceCall,
           icon: const Icon(Icons.phone_outlined),
-          value: CallType.kVoice,
+          value: _VoxCallChoice.legacyVoice,
         ),
         AdaptiveModalAction(
           label: L10n.of(context).videoCall,
           icon: const Icon(Icons.video_call_outlined),
-          value: CallType.kVideo,
+          value: _VoxCallChoice.legacyVideo,
         ),
       ],
     );
-    if (callType == null) return;
+    if (choice == null) return;
     if (!mounted) return;
+    final useRtc =
+        choice == _VoxCallChoice.rtcVoice ||
+        choice == _VoxCallChoice.rtcVideo;
+    final callType =
+        choice == _VoxCallChoice.legacyVideo ||
+        choice == _VoxCallChoice.rtcVideo
+        ? CallType.kVideo
+        : CallType.kVoice;
 
     // Permissions runtime AVANT de lancer la session WebRTC. Le micro refusé doit
     // produire un dialogue clair, pas une exception dans flutter_webrtc (Review
@@ -1541,6 +1563,24 @@ class ChatController extends State<ChatPageWithRoom>
       }
       return;
     }
+    if (useRtc) {
+      final rtcCall = await rtcService!.outgoingCall(
+        roomId: room.id,
+        video: effectiveType == CallType.kVideo,
+      );
+      if (rtcCall == null) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Protocole RTC indisponible.')),
+          );
+        }
+        return;
+      }
+      AppSettings.store.setString('voip.rtcProtocol.${room.id}', 'rtc');
+      await voipPlugin.startRtcOutgoing(rtcCall);
+      return;
+    }
+    AppSettings.store.setString('voip.rtcProtocol.${room.id}', 'legacy');
     Logs().w("[VOIP] inviteToCall room=${room.id} type=$effectiveType");
     try {
       await voipPlugin.voip.inviteToCall(room, effectiveType);
@@ -1618,3 +1658,8 @@ enum AddPopupMenuActions {
   location,
   ephemeral,
 }
+
+
+/// Choix du protocole d'appel dans la fenetre modale (le RTC n'est propose
+/// que si le homeserver annonce un focus livekit, spec 2026-10-15 §4).
+enum _VoxCallChoice { legacyVoice, legacyVideo, rtcVoice, rtcVideo }

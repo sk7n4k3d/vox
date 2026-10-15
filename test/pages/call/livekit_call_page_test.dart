@@ -83,7 +83,7 @@ class _Harness {
       localUserId: '@moi:s',
       localDeviceId: 'D',
       sfu: _sfu(),
-      gatewayFactory: () => gateway,
+      gateway: gateway,
       memberships: _Publisher(),
       now: () => _t0,
       scheduler: _NoopScheduler(),

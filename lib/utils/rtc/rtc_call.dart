@@ -56,12 +56,12 @@ class RtcCall {
     required this.localUserId,
     required this.localDeviceId,
     required RtcSfuClient sfu,
-    required RtcMediaGateway Function() gatewayFactory,
+    required RtcMediaGateway gateway,
     required RtcMembershipPublisher memberships,
     DateTime Function()? now,
     RtcScheduler? scheduler,
   }) : _sfu = sfu,
-       _gatewayFactory = gatewayFactory,
+       _gateway = gateway,
        _memberships = memberships,
        _now = now ?? DateTime.now,
        _scheduler = scheduler ?? TimerScheduler();
@@ -72,7 +72,6 @@ class RtcCall {
   final String localDeviceId;
 
   final RtcSfuClient _sfu;
-  final RtcMediaGateway Function() _gatewayFactory;
   final RtcMembershipPublisher _memberships;
   final DateTime Function() _now;
   final RtcScheduler _scheduler;
@@ -86,7 +85,10 @@ class RtcCall {
       StreamController<CallState>.broadcast();
   Stream<CallState> get onStateChanged => _onStateChanged.stream;
 
-  RtcMediaGateway? _gateway;
+  final RtcMediaGateway _gateway;
+
+  /// Passerelle exposee a l UI (rendus video, futurs etats e2ee).
+  RtcMediaGateway get mediaGateway => _gateway;
   StreamSubscription<RtcRemoteEvent>? _remoteEvents;
   RtcTimerHandle? _cancelRefresh;
   List<RtcFocus> _foci = const [];
@@ -101,11 +103,10 @@ class RtcCall {
     try {
       final credentials = await _credentialsWithRetry();
       if (_state != CallState.connecting) return _abortIfCeded();
-      final gateway = _gateway = _gatewayFactory();
-      await gateway.connect(credentials);
+      await _gateway.connect(credentials);
       if (_state != CallState.connecting) return _abortIfCeded();
-      await gateway.startMedia(audio: true, video: wantVideo);
-      await gateway.publish();
+      await _gateway.startMedia(audio: true, video: wantVideo);
+      await _gateway.publish();
       if (_state != CallState.connecting) return _abortIfCeded();
       await _publishMembership();
       if (_state != CallState.connecting) return _abortIfCeded();
@@ -127,10 +128,9 @@ class RtcCall {
     try {
       final credentials = await _credentialsWithRetry();
       if (_state != CallState.connecting) return;
-      final gateway = _gateway = _gatewayFactory();
-      await gateway.connect(credentials);
-      await gateway.startMedia(audio: true, video: wantVideo);
-      await gateway.publish();
+      await _gateway.connect(credentials);
+      await _gateway.startMedia(audio: true, video: wantVideo);
+      await _gateway.publish();
       if (_state != CallState.connecting) return;
       await _publishMembership();
       _listenGateway();
@@ -163,7 +163,7 @@ class RtcCall {
     _terminal = true;
     _cancelRefresh?.call();
     await _memberships.retract();
-    await _gateway?.dispose();
+    await _gateway.dispose();
     await _remoteEvents?.cancel();
     _setState(CallState.ended);
   }
@@ -212,7 +212,7 @@ class RtcCall {
   }
 
   void _listenGateway() {
-    _remoteEvents = _gateway!.remoteEvents.listen((event) async {
+    _remoteEvents = _gateway.remoteEvents.listen((event) async {
       switch (event) {
         case RtcRemoteEvent.mediaReady:
         case RtcRemoteEvent.peerJoined:
@@ -236,7 +236,7 @@ class RtcCall {
     if (_terminal) return;
     _terminal = true;
     _cancelRefresh?.call();
-    await _gateway?.dispose();
+    await _gateway.dispose();
     await _remoteEvents?.cancel();
     _setState(CallState.failed);
   }

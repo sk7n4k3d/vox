@@ -3,16 +3,23 @@ import 'dart:core';
 
 import 'package:fluffychat/pages/call/active_call_page.dart';
 import 'package:fluffychat/pages/call/incoming_call_page.dart';
+import 'package:fluffychat/pages/call/livekit_call_controller.dart';
 import 'package:fluffychat/pages/call/missed_call_store.dart';
+import 'package:fluffychat/pages/call/rtc_video_view.dart';
 import 'package:fluffychat/pages/call/voip_bridge.dart';
 import 'package:fluffychat/pages/call/voip_call_controller.dart';
+import 'package:fluffychat/utils/rtc/livekit_gateway.dart';
+import 'package:fluffychat/utils/rtc/rtc_call.dart';
+import 'package:fluffychat/utils/rtc/rtc_client_port.dart';
+import 'package:fluffychat/utils/rtc/rtc_e2ee.dart';
+import 'package:fluffychat/utils/rtc/rtc_service.dart';
 import 'package:fluffychat/utils/platform_infos.dart';
 import 'package:fluffychat/widgets/fluffy_chat_app.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_foreground_task/flutter_foreground_task.dart';
 import 'package:flutter_webrtc/flutter_webrtc.dart' as webrtc_impl;
-import 'package:matrix/matrix.dart';
+import 'package:matrix/matrix.dart' hide CallState;
 import 'package:webrtc_interface/webrtc_interface.dart' hide Navigator;
 
 import '../../utils/voip/user_media_manager.dart';
@@ -23,6 +30,7 @@ class VoipPlugin with WidgetsBindingObserver implements WebRTCDelegate {
   Client get client => matrix.client;
   VoipPlugin(this.matrix) {
     voip = VoIP(client, this);
+    _initRtc();
     if (!kIsWeb) {
       final wb = WidgetsBinding.instance;
       wb.addObserver(this);
@@ -43,6 +51,169 @@ class VoipPlugin with WidgetsBindingObserver implements WebRTCDelegate {
 
   /// Nom de route des écrans d'appel : [closeCall] nettoie tout en un seul appel.
   static const String _callRoute = '/__voip_call';
+
+  // ── MatrixRTC (coexistence, spec 2026-10-15) ──────────────────────────
+  RtcService? rtcService;
+  LiveKitCallController? _rtcController;
+  StreamSubscription? _rtcStateSub;
+  StreamSubscription<List<BasicEventWithSender>>? _rtcKeysSub;
+
+  /// La gateway LiveKit est creee par le service a la connexion ; la vue video
+  /// s'y abonne des qu'elle apparait.
+  final ValueNotifier<LiveKitGateway?> rtcGateway = ValueNotifier(null);
+
+  void _initRtc() {
+    rtcService = RtcService(
+      port: RtcClientPort(client),
+      gatewayFactory: () {
+        final g = LiveKitGateway();
+        rtcGateway.value = g;
+        return g;
+      },
+      onIncoming: _showRtcIncoming,
+    );
+    // M1/M4 : journalise les cles e2ee entrantes sans les consommer encore.
+    _rtcKeysSub ??= client.onCallEvents.stream.listen((events) {
+      for (final e in events) {
+        if (e.type == RtcE2ee.encryptionKeysEventType) {
+          Logs().w(
+            '[RTC-RAW] cle e2ee de ${e.senderId} '
+            '(call_id=${e.content['call_id']}, '
+            '${(e.content['keys'] as List?)?.length ?? 0} entree(s))',
+          );
+        }
+      }
+    });
+  }
+
+  Future<void> _showRtcIncoming(RtcCall call) async {
+    final room = client.getRoomById(call.roomId);
+    final callerName = room?.getLocalizedDisplayname() ?? call.roomId;
+    await _bridge.acquireAudioFocus();
+    await _bridge.startRinging(video: call.wantVideo);
+    _showOverlay(
+      () => IncomingCallPage(
+        callId: call.roomId,
+        roomId: call.roomId,
+        callerName: callerName,
+        video: call.wantVideo,
+        onAnswer: _answerRtc,
+        onDecline: _declineRtc,
+      ),
+    );
+  }
+
+  void _answerRtc() {
+    final call = rtcService?.currentCall;
+    if (call == null) return;
+    unawaited(_bridge.stopRinging());
+    unawaited(_rtcConnectAndShow(call, accepting: true));
+  }
+
+  void _declineRtc() {
+    final call = rtcService?.currentCall;
+    if (call == null) return;
+    unawaited(call.hangup());
+    unawaited(
+      MissedCallStore(matrix.store).add(
+        MissedCall(
+          callId: 'rtc-${call.roomId}',
+          roomId: call.roomId,
+          callerName:
+              client.getRoomById(call.roomId)?.getLocalizedDisplayname() ??
+              call.roomId,
+          video: call.wantVideo,
+          at: DateTime.now(),
+        ),
+      ),
+    );
+  }
+
+  /// Sortant (branche par chat.dart apres les permissions) : ecrans puis
+  /// connexion. La gateway livekit est publiee par [rtcGateway].
+  Future<void> startRtcOutgoing(RtcCall call) async {
+    await _bridge.acquireAudioFocus();
+    await _rtcConnectAndShow(call, accepting: false);
+  }
+
+  Future<void> _rtcConnectAndShow(RtcCall call, {required bool accepting}) async {
+    _showRtcActive(call);
+    try {
+      if (accepting) {
+        await call.accept();
+      } else {
+        await call.start();
+      }
+    } catch (e) {
+      Logs().w('[RTC] ${accepting ? 'accept' : 'start'} a echoue: $e');
+    }
+  }
+
+  Future<void> _showRtcActive(RtcCall call) async {
+    final room = client.getRoomById(call.roomId);
+    final peers = rtcService?.remotePeersOf(call.roomId) ?? const [];
+    final peerId = peers.isNotEmpty ? peers.first.userId : null;
+    // fallback pour le sortant (personne n'a encore publié de présence) : le
+    // contre-participant rejoint du DM.
+    String? dmPeerId;
+    if (peerId == null && room != null) {
+      try {
+        dmPeerId = (await room.requestParticipants())
+            .where((u) => u.membership == Membership.join && u.id != client.userID)
+            .map((u) => u.id)
+            .firstOrNull;
+      } catch (e) {
+        Logs().w('[RTC] contrepartie introuvable: $e');
+      }
+    }
+    final knownPeerId = peerId ?? dmPeerId;
+    _rtcStateSub?.cancel();
+    // annulee a chaque re-connexion d etat et a la fin d appel
+    // ignore: cancel_subscriptions
+    _rtcStateSub = call.onStateChanged.listen((s) {
+      if (s == CallState.ended || s == CallState.failed) {
+        unawaited(_endRtcCall());
+      }
+    });
+    _rtcController?.dispose();
+    final controller = _rtcController = LiveKitCallController(
+      call: call,
+      gateway: call.mediaGateway,
+      remoteName: knownPeerId != null
+          ? room?.unsafeGetUserFromMemoryOrFallback(knownPeerId).calcDisplayname(
+                    mxidLocalPartFallback: false,
+                  ) ??
+                  call.roomId
+          : room?.getLocalizedDisplayname() ?? call.roomId,
+      remoteMxid: knownPeerId,
+    );
+    _showOverlay(
+      () => ActiveCallPage(
+        controller: controller,
+        remoteVideo: RtcVideoView(gatewayListenable: rtcGateway),
+        localVideo: RtcVideoView(gatewayListenable: rtcGateway, local: true),
+      ),
+    );
+  }
+
+  Future<void> _endRtcCall() async {
+    unawaited(_bridge.stopRinging());
+    unawaited(_bridge.abandonAudioFocus());
+    _clearOverlay();
+    _rtcController?.dispose();
+    _rtcController = null;
+    rtcGateway.value = null;
+  }
+
+  /// A appeler a la fermeture de session : vide les ecoutes RTC.
+  void rtcDispose() {
+    unawaited(_rtcKeysSub?.cancel());
+    _rtcKeysSub = null;
+    unawaited(_rtcStateSub?.cancel());
+    _rtcStateSub = null;
+    unawaited(rtcService?.shutdown());
+    rtcService = null;
+  }
 
   CallSession? _session;
   VoipCallController? _controller;
