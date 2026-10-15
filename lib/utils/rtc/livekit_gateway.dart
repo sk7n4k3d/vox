@@ -131,11 +131,16 @@ class LiveKitGateway implements RtcMediaGateway {
   void _onRoomEvent(lk.RoomEvent event) {
     final room = _room;
     if (room == null) return;
-    final quality = event is lk.ParticipantConnectionQualityUpdatedEvent
-        ? ' (qualité ${event.connectionQuality.name}, pair '
-              '${event.participant.identity})'
-        : '';
-    Logs().w('[RTC] event LiveKit: ${event.runtimeType}$quality');
+    final detail = switch (event) {
+      lk.ParticipantConnectionQualityUpdatedEvent() =>
+        ' (qualité ${event.connectionQuality.name}, pair '
+        '${event.participant.identity})',
+      lk.TrackE2EEStateEvent() =>
+        ' (déchiffrement pair ${event.participant.identity} : '
+        '${event.state.name})',
+      _ => '',
+    };
+    Logs().w('[RTC] event LiveKit: ${event.runtimeType}$detail');
     if (event is lk.ParticipantConnectedEvent) {
       unawaited(_flushPendingRemoteKeys());
     }

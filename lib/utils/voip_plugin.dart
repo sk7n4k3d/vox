@@ -70,6 +70,11 @@ class VoipPlugin with WidgetsBindingObserver implements WebRTCDelegate {
       },
       onIncoming: _showRtcIncoming,
     );
+    // Journal brut de TOUS les to-device (warning : invisible sinon en
+    // release) — seul moyen de prouver si la clé média d'un pair arrive.
+    _rtcToDeviceRawSub ??= client.onToDeviceEvent.stream.listen((event) {
+      Logs().w('[RTC-RAW] to-device ${event.type} de ${event.senderId}');
+    });
   }
 
   Future<void> _showRtcIncoming(RtcCall call) async {
@@ -199,11 +204,13 @@ class VoipPlugin with WidgetsBindingObserver implements WebRTCDelegate {
   void rtcDispose() {
     unawaited(_rtcStateSub?.cancel());
     _rtcStateSub = null;
+    unawaited(_rtcToDeviceRawSub?.cancel());
     unawaited(rtcService?.shutdown());
     rtcService = null;
   }
 
   CallSession? _session;
+  StreamSubscription<dynamic>? _rtcToDeviceRawSub;
   VoipCallController? _controller;
   final VoipBridge _bridge = VoipBridge();
   StreamSubscription<VoipEvent>? _nativeEvents;
