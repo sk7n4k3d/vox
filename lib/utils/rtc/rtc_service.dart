@@ -121,7 +121,15 @@ class RtcService {
     if (await _port.isRoomJoined(event.roomId) != true) return;
     _peers[event.roomId] = alive;
     if (_current != null) {
-      Logs().w('[RTC] appel déjà actif : nouvelle présence ignorée');
+      final call = _current!;
+      if (call.roomId == event.roomId &&
+          call.state == CallState.ringingOut) {
+        // l appelant que nous sommes : la pair a rejoint -> conversation
+        _remoteOfCurrent = event.senderId;
+        call.onRemoteMembership(alive.first);
+      } else {
+        Logs().w('[RTC] appel déjà actif : nouvelle présence ignorée');
+      }
       return;
     }
     final sfu = _sfu ??= await _port.sfuClient();

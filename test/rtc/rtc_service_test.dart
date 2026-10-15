@@ -204,6 +204,18 @@ void main() {
     expect(port.retracted, ['!dm:s']);
   });
 
+  test('sortant : presence distante en ringingOut passe l appel a active',
+      () async {
+    final call = (await service.outgoingCall(roomId: '!dm:s', video: false))!;
+    await call.start();
+    await pumpEventQueue();
+    expect(call.state, CallState.ringingOut);
+    // la pair rejoint l appel : sa presence doit declencher active (le client
+    // peut etre sur le media-server sans publier, cf. multi-SFU)
+    await deliver(content: _content());
+    expect(call.state, CallState.active);
+  });
+
   test('rtcAvailable : reflète la présence dun focus annonce', () async {
     final off = RtcService(
       port: _FakePort()..available = false,
