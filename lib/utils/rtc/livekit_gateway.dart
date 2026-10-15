@@ -73,7 +73,8 @@ class LiveKitGateway implements RtcMediaGateway {
               'masqués=${st.concealedSamples} events=${st.concealmentEvents} '
               'énergie=${st.totalAudioEnergy?.toStringAsFixed(2)}/'
               '${st.totalSamplesDuration?.toStringAsFixed(1)}s '
-              '${st.mimeType} ${st.clockRate?.toInt()}Hz');
+              '${st.mimeType} ${st.clockRate?.toInt()}Hz '
+              'canaux=${st.channels?.toInt()}');
         } catch (e) {
           Logs().w('[RTC] stats audio indisponibles: $e');
         }
