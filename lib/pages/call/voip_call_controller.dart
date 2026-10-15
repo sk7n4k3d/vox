@@ -93,11 +93,11 @@ class VoipCallController extends CallController {
       }
       String summarize(String? sdp, String who) {
         if (sdp == null) return '$who SDP=null';
-        final m = RegExp(r'^m=(audio|video).*\$', multiLine: true)
+        final m = RegExp(r'^m=(audio|video).*$', multiLine: true)
             .allMatches(sdp)
             .map((e) => e.group(1))
             .join('+');
-        final dir = RegExp(r'^a=(sendrecv|sendonly|recvonly|inactive)\$', multiLine: true)
+        final dir = RegExp(r'^a=(sendrecv|sendonly|recvonly|inactive).*$', multiLine: true)
                 .allMatches(sdp)
                 .map((e) => e.group(1))
                 .toList();
