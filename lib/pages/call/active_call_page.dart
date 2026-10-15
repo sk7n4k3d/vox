@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:fluffychat/config/cyberpunk_theme_extension.dart';
 import 'package:fluffychat/pages/call/call_theme.dart';
 import 'package:fluffychat/utils/voip/video_renderer.dart';
@@ -28,6 +30,17 @@ abstract class CallController extends ChangeNotifier {
   /// Flux vidéo local (ma webcam) et distant (l'interlocuteur).
   WrappedMediaStream? get localStream;
   WrappedMediaStream? get remoteStream;
+
+  /// Identifiant Matrix brut, affiché en petit sous le nom (null = on ne
+  /// connaît que le nom d'affichage).
+  String? get remoteMxid => null;
+
+  /// Moment où l'appel est passé en connecté (null avant) — base du chrono.
+  DateTime? get connectedAt => _connectedAt;
+  DateTime? _connectedAt;
+
+  /// À appeler par l'implémentation quand la session annonce `kConnected`.
+  void markConnected() => _connectedAt ??= DateTime.now();
 
   void toggleMic();
   void toggleCamera();
@@ -69,6 +82,51 @@ class _ActiveCallPageState extends State<ActiveCallPage> {
 
   void _swap() => setState(() => _swapped = !_swapped);
 
+  /// Le chrono tique une fois la seconde tant que l'appel est connecté.
+  Timer? _ticker;
+
+  @override
+  void initState() {
+    super.initState();
+    _syncTicker();
+  }
+
+  @override
+  void didUpdateWidget(covariant ActiveCallPage oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    _syncTicker();
+  }
+
+  void _syncTicker() {
+    final shouldTick = controller.connectedAt != null;
+    final ticking = _ticker != null;
+    if (shouldTick && !ticking) {
+      _ticker = Timer.periodic(const Duration(seconds: 1), (_) {
+        if (mounted) setState(() {});
+      });
+    } else if (!shouldTick && ticking) {
+      _ticker?.cancel();
+      _ticker = null;
+    }
+  }
+
+  @override
+  void dispose() {
+    _ticker?.cancel();
+    super.dispose();
+  }
+
+  String _elapsed() {
+    final since = controller.connectedAt;
+    if (since == null) return '';
+    final d = DateTime.now().difference(since);
+    final h = d.inHours;
+    final m = d.inMinutes % 60;
+    final s = d.inSeconds % 60;
+    String two(int v) => v.toString().padLeft(2, '0');
+    return h > 0 ? '$h:${two(m)}:${two(s)}' : '${two(m)}:${two(s)}';
+  }
+
   @override
   Widget build(BuildContext context) {
     final cyber = CallTheme.of(context);
@@ -76,11 +134,16 @@ class _ActiveCallPageState extends State<ActiveCallPage> {
     return AnimatedBuilder(
       animation: controller,
       builder: (context, _) {
+        // connectedAt peut apparaitre pendant l'appel : le ticker se branche ici,
+        // pas seulement dans initState/didUpdateWidget.
+        _syncTicker();
         // L'image de l'interlocuteur est principale par defaut. Le mirror
         // (retournement horizontal) n'est mis que sur MA vue, sinon celle de
         // l'autre sortirait inversée.
-        final mainStream = _swapped ? controller.localStream : controller.remoteStream;
-        final pipStream = _swapped ? controller.remoteStream : controller.localStream;
+        final mainStream =
+            _swapped ? controller.localStream : controller.remoteStream;
+        final pipStream =
+            _swapped ? controller.remoteStream : controller.localStream;
 
         final mainVideo =
             widget.remoteVideo ??
@@ -95,43 +158,109 @@ class _ActiveCallPageState extends State<ActiveCallPage> {
         final noVideoAtAll =
             controller.remoteStream == null && controller.localStream == null;
 
-        return Scaffold(
-          backgroundColor: CallTheme.background,
-          body: SafeArea(
+        // Ce que remplit l'écran sous les voiles : l'image principale quand elle
+        // existe, sinon un fond vivant avec l'avatar de l'interlocuteur — plus
+        // jamais le rectangle gris mort de l'ancien appel vidéo.
+        final Widget stage;
+        if (!controller.isVideo) {
+          stage = _EmptyStage(
+            cyber: cyber,
+            child: _CallerBadge(name: controller.remoteName),
+          );
+        } else if (mainStream != null ||
+            widget.remoteVideo != null ||
+            (controller.localStream != null && _swapped)) {
+          stage = mainVideo;
+        } else {
+          stage = _EmptyStage(
+            cyber: cyber,
             child: Column(
+              mainAxisSize: MainAxisSize.min,
               children: [
-                _TopBar(controller: controller),
-                Expanded(
-                  child: Stack(
-                    children: [
-                      Positioned.fill(
-                        child: !controller.isVideo
-                            ? Center(
-                                child: _CallerBadge(name: controller.remoteName),
-                              )
-                            : noVideoAtAll
-                            ? _NoVideoPlaceholder(cyber: cyber)
-                            : mainVideo,
-                      ),
-                      if (controller.isVideo && !noVideoAtAll)
-                        Positioned(
-                          right: 16,
-                          bottom: 16,
-                          child: GestureDetector(
-                            onTap: _swap,
-                            child: _Pip(child: pipVideo),
-                          ),
-                        ),
-                    ],
+                _CallerBadge(name: controller.remoteName),
+                const SizedBox(height: 20),
+                Text(
+                  controller.connecting
+                      ? 'Connexion…'
+                      : 'En attente de l\'image',
+                  style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                    color: Colors.white70,
                   ),
-                ),
-                if (controller.reconnecting) const _ReconnectingBanner(),
-                _Controls(
-                  controller: controller,
-                  onSwap: controller.isVideo ? _swap : null,
                 ),
               ],
             ),
+          );
+        }
+
+        return Scaffold(
+          backgroundColor: CallTheme.background,
+          body: Stack(
+            fit: StackFit.expand,
+            children: [
+              stage,
+              // Voiles haut/bas : sans eux, les textes blancs disparaissent
+              // dès que la vidéo est claire.
+              const Positioned(
+                left: 0,
+                right: 0,
+                top: 0,
+                height: 150,
+                child: IgnorePointer(
+                  child: DecoratedBox(
+                    decoration: BoxDecoration(
+                      gradient: LinearGradient(
+                        begin: Alignment.topCenter,
+                        end: Alignment.bottomCenter,
+                        colors: [Color(0xB3000000), Colors.transparent],
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+              const Positioned(
+                left: 0,
+                right: 0,
+                bottom: 0,
+                height: 210,
+                child: IgnorePointer(
+                  child: DecoratedBox(
+                    decoration: BoxDecoration(
+                      gradient: LinearGradient(
+                        begin: Alignment.topCenter,
+                        end: Alignment.bottomCenter,
+                        colors: [Colors.transparent, Color(0xCC000000)],
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+              SafeArea(
+                child: Column(
+                  children: [
+                    _TopBar(controller: controller, elapsed: _elapsed()),
+                    const Spacer(),
+                    if (controller.reconnecting) const _ReconnectingBanner(),
+                    _Controls(
+                      controller: controller,
+                      onSwap: controller.isVideo ? _swap : null,
+                    ),
+                  ],
+                ),
+              ),
+              if (controller.isVideo && !noVideoAtAll)
+                Positioned(
+                  right: 14,
+                  bottom: 150,
+                  child: GestureDetector(
+                    onTap: _swap,
+                    child: _Pip(
+                      cyber: cyber,
+                      hint: _swapped ? 'vue normale' : 'inverser',
+                      child: pipVideo,
+                    ),
+                  ),
+                ),
+            ],
           ),
         );
       },
@@ -139,10 +268,75 @@ class _ActiveCallPageState extends State<ActiveCallPage> {
   }
 }
 
+/// Fond des situations sans image : noir profond + halo cyan/magenta très lent
+/// (30 s par aller-retour — la règle du contrat d'animation : rien de clinquant
+/// pendant que la sonnerie ou l'audio tournent).
+class _EmptyStage extends StatelessWidget {
+  const _EmptyStage({required this.cyber, required this.child});
+
+  final CyberpunkTheme cyber;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    return _SlowGlow(
+      duration: const Duration(seconds: 30),
+      builder: (context, phase) => DecoratedBox(
+        decoration: BoxDecoration(
+          gradient: RadialGradient(
+            center: Alignment(-0.6 + 1.2 * phase, -0.5),
+            radius: 1.1,
+            colors: [
+              cyber.cyan.withValues(alpha: 0.10),
+              cyber.magenta.withValues(alpha: 0.06),
+              Colors.transparent,
+            ],
+            stops: const [0.0, 0.55, 1.0],
+          ),
+        ),
+        child: Center(child: child),
+      ),
+    );
+  }
+}
+
+/// Aller-retour 0 → 1 → 0 sans TickProvider : borné, testable, zéro ticker.
+class _SlowGlow extends StatefulWidget {
+  const _SlowGlow({required this.duration, required this.builder});
+
+  final Duration duration;
+  final Widget Function(BuildContext context, double phase) builder;
+
+  @override
+  State<_SlowGlow> createState() => _SlowGlowState();
+}
+
+class _SlowGlowState extends State<_SlowGlow>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _controller = AnimationController(
+    vsync: this,
+    duration: widget.duration,
+  )..repeat(reverse: true);
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) => AnimatedBuilder(
+    animation: _controller,
+    builder: (context, _) =>
+        widget.builder(context, Curves.easeInOut.transform(_controller.value)),
+  );
+}
+
 class _TopBar extends StatelessWidget {
-  const _TopBar({required this.controller});
+  const _TopBar({required this.controller, this.elapsed = ''});
 
   final CallController controller;
+  final String elapsed;
 
   String get _status {
     if (controller.reconnecting) return 'Connexion perdue…';
@@ -153,6 +347,12 @@ class _TopBar extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final cyber = CallTheme.of(context);
+    final statusColor = controller.reconnecting
+        ? cyber.warn
+        : controller.connecting
+        ? cyber.cyan
+        : cyber.success;
+    final mxid = controller.remoteMxid;
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
       child: Column(
@@ -163,8 +363,19 @@ class _TopBar extends StatelessWidget {
             overflow: TextOverflow.ellipsis,
             style: Theme.of(
               context,
-            ).textTheme.titleMedium?.copyWith(color: Colors.white),
+            ).textTheme.titleLarge?.copyWith(color: Colors.white),
           ),
+          if (mxid != null && mxid != controller.remoteName) ...[
+            const SizedBox(height: 2),
+            Text(
+              mxid,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                color: Colors.white38,
+              ),
+            ),
+          ],
           const SizedBox(height: 6),
           Row(
             mainAxisSize: MainAxisSize.min,
@@ -174,24 +385,33 @@ class _TopBar extends StatelessWidget {
                 height: 8,
                 decoration: BoxDecoration(
                   shape: BoxShape.circle,
-                  color: controller.reconnecting
-                      ? cyber.warn
-                      : controller.connecting
-                      ? cyber.cyan
-                      : cyber.success,
+                  color: statusColor,
+                  boxShadow: [
+                    BoxShadow(
+                      color: statusColor.withValues(alpha: 0.7),
+                      blurRadius: 6,
+                    ),
+                  ],
                 ),
               ),
               const SizedBox(width: 8),
               Text(
                 _status,
                 style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                  color: controller.reconnecting
-                      ? cyber.warn
-                      : controller.connecting
-                      ? cyber.cyan
-                      : cyber.success,
+                  color: statusColor,
                 ),
               ),
+              if (elapsed.isNotEmpty) ...[
+                const SizedBox(width: 10),
+                Text(
+                  elapsed,
+                  style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                    color: Colors.white,
+                    fontWeight: FontWeight.w600,
+                    letterSpacing: 1,
+                  ),
+                ),
+              ],
             ],
           ),
         ],
@@ -218,14 +438,6 @@ class _Controls extends StatelessWidget {
       padding: compact
           ? const EdgeInsets.fromLTRB(8, 12, 8, 24)
           : const EdgeInsets.fromLTRB(24, 16, 24, 32),
-      decoration: BoxDecoration(
-        color: Colors.black.withValues(alpha: 0.35),
-        border: Border(
-          top: BorderSide(
-            color: CallTheme.of(context).glassBorder.withValues(alpha: 0.2),
-          ),
-        ),
-      ),
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceEvenly,
         children: [
@@ -235,6 +447,7 @@ class _Controls extends StatelessWidget {
             icon: controller.micMuted ? Icons.mic_off : Icons.mic,
             label: controller.micMuted ? 'Micro coupé' : 'Couper le micro',
             active: controller.micMuted,
+            mutedState: controller.micMuted,
             onTap: controller.toggleMic,
           ),
           if (controller.isVideo)
@@ -246,6 +459,7 @@ class _Controls extends StatelessWidget {
                   : Icons.videocam,
               label: controller.cameraOff ? 'Caméra off' : 'Caméra',
               active: controller.cameraOff,
+              mutedState: controller.cameraOff,
               onTap: controller.toggleCamera,
             ),
           if (controller.isVideo)
@@ -260,7 +474,7 @@ class _Controls extends StatelessWidget {
             _Control(
               compact: compact,
               key: const Key('call-swap-video'),
-              icon: Icons.flip_camera_android_outlined,
+              icon: Icons.swap_horiz_rounded,
               label: 'Inverser les vues',
               onTap: onSwap!,
             ),
@@ -295,6 +509,7 @@ class _Control extends StatelessWidget {
     required this.onTap,
     this.active = false,
     this.danger = false,
+    this.mutedState = false,
     this.compact = false,
     super.key,
   });
@@ -305,6 +520,10 @@ class _Control extends StatelessWidget {
   final bool active;
   final bool danger;
 
+  /// Vrai quand ce bouton représente une coupure (micro ou caméra hors service)
+  /// : le rouge remplace le cyan, pour que « coupé » se voie de loin.
+  final bool mutedState;
+
   /// Mode video : six controles sur un ecran de phone ne tiennent pas avec un
   /// libelle de 74 dp sous chaque bouton — le raccrocher, a droite, sortait
   /// completement de l'ecran (mesure: left=394 sur un 360 dp).
@@ -314,8 +533,16 @@ class _Control extends StatelessWidget {
   Widget build(BuildContext context) {
     final cyber = CallTheme.of(context);
     final color = danger
+        ? Colors.white
+        : (mutedState ? CallTheme.decline : (active ? cyber.cyan : Colors.white));
+    final surface = danger
         ? CallTheme.decline
-        : (active ? cyber.cyan : Colors.white);
+        : mutedState
+        ? cyber.glassBorder.withValues(alpha: 0.9)
+        : CallTheme.controlSurface(cyber, active: active);
+    final size = compact
+        ? (danger ? CallTheme.controlRadius * 1.4 : CallTheme.controlRadius * 1.2)
+        : CallTheme.controlRadius * 1.7;
 
     return Column(
       mainAxisSize: MainAxisSize.min,
@@ -324,19 +551,31 @@ class _Control extends StatelessWidget {
           button: true,
           label: label,
           child: Material(
-            color: CallTheme.controlSurface(cyber, active: active),
+            color: surface,
             shape: const CircleBorder(),
-            child: InkWell(
-              customBorder: const CircleBorder(),
-              onTap: onTap,
-              child: SizedBox(
-                width: compact
-                    ? CallTheme.controlRadius * 1.2
-                    : CallTheme.controlRadius * 1.7,
-                height: compact
-                    ? CallTheme.controlRadius * 1.2
-                    : CallTheme.controlRadius * 1.7,
-                child: Icon(icon, color: color, size: compact ? 22 : 26),
+            // Le raccrocher porte un halo rouge : c'est LE bouton qu'on doit
+            // trouver sans réfléchir, même à une main dans le noir.
+            child: Ink(
+              decoration: danger
+                  ? BoxDecoration(
+                      shape: BoxShape.circle,
+                      boxShadow: [
+                        BoxShadow(
+                          color: CallTheme.decline.withValues(alpha: 0.45),
+                          blurRadius: 18,
+                          spreadRadius: 1,
+                        ),
+                      ],
+                    )
+                  : null,
+              child: InkWell(
+                customBorder: const CircleBorder(),
+                onTap: onTap,
+                child: SizedBox(
+                  width: size,
+                  height: size,
+                  child: Icon(icon, color: color, size: compact ? 24 : 26),
+                ),
               ),
             ),
           ),
@@ -393,41 +632,57 @@ class _ReconnectingBanner extends StatelessWidget {
 }
 
 class _Pip extends StatelessWidget {
-  const _Pip({this.child});
+  const _Pip({required this.cyber, this.hint, this.child});
 
+  final CyberpunkTheme cyber;
+  final String? hint;
   final Widget? child;
 
   @override
   Widget build(BuildContext context) {
     return Container(
-      width: 96,
-      height: 128,
+      width: 104,
+      height: 146,
       decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(
-          color: CallTheme.of(context).glassBorder.withValues(alpha: 0.5),
-        ),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: cyber.cyan.withValues(alpha: 0.55), width: 1.4),
         color: Colors.black,
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.55),
+            blurRadius: 10,
+            offset: const Offset(0, 4),
+          ),
+        ],
       ),
       clipBehavior: Clip.antiAlias,
-      child: child ?? const SizedBox.shrink(),
+      child: Stack(
+        fit: StackFit.expand,
+        children: [
+          child ?? const SizedBox.shrink(),
+          if (hint != null)
+            Positioned(
+              left: 5,
+              bottom: 4,
+              child: DecoratedBox(
+                decoration: BoxDecoration(
+                  color: Colors.black.withValues(alpha: 0.55),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Padding(
+                  padding: const EdgeInsets.all(3),
+                  child: Icon(
+                    Icons.swap_horiz_rounded,
+                    size: 14,
+                    color: cyber.cyan.withValues(alpha: 0.9),
+                  ),
+                ),
+              ),
+            ),
+        ],
+      ),
     );
   }
-}
-
-class _NoVideoPlaceholder extends StatelessWidget {
-  const _NoVideoPlaceholder({required this.cyber});
-
-  final CyberpunkTheme cyber;
-
-  @override
-  Widget build(BuildContext context) => Center(
-    child: Icon(
-      Icons.videocam_off_outlined,
-      size: 64,
-      color: cyber.glassBorder,
-    ),
-  );
 }
 
 class _CallerBadge extends StatelessWidget {
@@ -458,7 +713,13 @@ class _CallerBadge extends StatelessWidget {
             cyber.magenta.withValues(alpha: 0.35),
           ],
         ),
-        border: Border.all(color: cyber.glassBorder),
+        border: Border.all(color: cyber.cyan.withValues(alpha: 0.6), width: 1.5),
+        boxShadow: [
+          BoxShadow(
+            color: cyber.cyan.withValues(alpha: 0.25),
+            blurRadius: 24,
+          ),
+        ],
       ),
       child: Text(
         initials.isEmpty ? '?' : initials,

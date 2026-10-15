@@ -17,7 +17,10 @@ class VoipCallController extends CallController {
       // .w et pas .i : en release le SDK matrix coupe les niveaux info/verbose, un
       // log de diagnostic en .i est invisible (perdu des heures sur ça le 2026-10-15).
       Logs().w('[VOIP] état: ${s.name}');
-      if (s.name == 'kConnected') unawaited(_logSdp());
+      if (s.name == 'kConnected') {
+        markConnected();
+        unawaited(_logSdp());
+      }
       notifyListeners();
     });
     _listenStreams();
@@ -29,9 +32,17 @@ class VoipCallController extends CallController {
   /// `facingMode` courant du flux vidéo local. Le SDK ne l'expose pas.
   String _facingMode = 'user';
 
+  /// Le nom que le compte affiche passe avant l'identifiant brut :
+  /// « Alice - Appels » se lit, `@alice:matrix.sk7.sh` se copie.
   @override
-  String get remoteName =>
-      session.remoteUserId ?? session.room.getLocalizedDisplayname();
+  String get remoteName {
+    final localized = session.room.getLocalizedDisplayname();
+    if (localized.trim().isNotEmpty) return localized;
+    return session.remoteUserId ?? 'Inconnu';
+  }
+
+  @override
+  String? get remoteMxid => session.remoteUserId;
 
   @override
   bool get isVideo => session.type == CallType.kVideo;

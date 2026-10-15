@@ -8,6 +8,9 @@ class FakeController extends CallController {
 
   @override
   String remoteName;
+  String? mxid;
+  @override
+  String? get remoteMxid => mxid;
   @override
   bool isVideo;
   @override
@@ -209,6 +212,28 @@ void main() {
     await tester.pumpWidget(page(FakeController()));
 
     expect(find.byKey(const Key('call-swap-video')), findsNothing);
+  });
+
+  testWidgets('le chrono apparait des que la session annonce connecte', (
+    tester,
+  ) async {
+    final c = FakeController()..markConnected();
+    await tester.pumpWidget(page(c));
+
+    expect(find.text('00:00'), findsOneWidget);
+
+    // demonter la page : sinon le Timer.periodic du chrono reste pending.
+    await tester.pumpWidget(const SizedBox());
+  });
+
+  testWidgets("l'identifiant brut se glisse sous le nom, pas a sa place", (
+    tester,
+  ) async {
+    final c = FakeController()..mxid = '@alice:matrix.sk7.sh';
+    await tester.pumpWidget(page(c));
+
+    expect(find.text('Alice'), findsOneWidget);
+    expect(find.text('@alice:matrix.sk7.sh'), findsOneWidget);
   });
 
   testWidgets('le statut affiche la reconnexion avant connecté', (
