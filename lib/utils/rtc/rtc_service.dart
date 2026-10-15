@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 
 import 'package:matrix/matrix.dart' show Logs;
 
@@ -87,6 +88,13 @@ class RtcService {
 
   /// Point d'entrée unique des events de présence (stream prod ou test).
   Future<void> handleMembershipEvent(RtcIncomingEvent event) async {
+    // M1 (spec §8) : journal brut calibré sur le trafic réel d'Element X.
+    // Contient IDs et foci uniquement — jamais de token ni de clé.
+    Logs().w(
+      '[RTC-RAW] membership ${event.roomId} de ${event.senderId} @'
+      '${event.originServerTs.toIso8601String()}: '
+      '${_truncate(jsonEncode(event.content))}',
+    );
     if (event.senderId == _port.userId) return; // notre propre écho
     final members = parseMembershipEvent(
       event.content,
@@ -178,3 +186,7 @@ class _PortPublisher implements RtcMembershipPublisher {
 }
 
 void _noop(RtcCall call) {}
+
+/// Bornage du journal brut : un event malveillant ou énorme ne doit pas
+/// saturer logcat/stockage.
+String _truncate(String s) => s.length <= 400 ? s : '${s.substring(0, 400)}…';
