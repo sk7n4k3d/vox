@@ -150,3 +150,16 @@ Puis `Room().connect(url, jwt)`. Le nom de la room LiveKit (hash `fvad/…`) est
    frais qui ne stoppe pas la lecture en cours → sonnerie infinie après un
    appel raté. Corrigé en gardant l'instance (commit séparé, chemin legacy
    également touché).
+
+5. **Course `mediaReady` (terrain 16:00)** : l'événement LiveKit d'abonnement
+   média peut arriver PENDANT qu'on publie notre présence, avant l'abonnement
+   de `RtcCall._listenGateway` → l'écran reste « connexion » alors que le son
+   coule. Corrigé : la gateway mémorise `hasRemoteMedia` et la machine à états
+   rattrape l'état `active` à l'abonnement. Journal de chaque event LiveKit
+   (`[RTC] event LiveKit: …`) pour affiner la suite.
+
+6. **Flap audio au décrochage** : `abandonAudioFocus()` entre le bridge et
+   `AudioManager` LiveKit faisait osciller le mode de la session au moment
+   exact du LiveKit `connect` — artéfacts de décodage côté répondant.
+   Décrochage RTC = stop sonnerie SEULEMENT, la session passe directement
+   du bridge (sonnerie) à LiveKit (appel).
