@@ -20,6 +20,15 @@ class VoipCallController extends CallController {
       if (s.name == 'kConnected') {
         markConnected();
         unawaited(_logSdp());
+        // Micro coupé pendant la sonnerie : addLocalStream initialise ses
+        // drapeaux de lui-même et ignore l'intention déjà posée — la
+        // réappliquer dès que les pistes existent.
+        if (_micMuted) {
+          unawaited(session.setMicrophoneMuted(true));
+        }
+        if (_cameraOff) {
+          unawaited(session.setLocalVideoMuted(true));
+        }
       }
       notifyListeners();
     });
@@ -47,11 +56,18 @@ class VoipCallController extends CallController {
   @override
   bool get isVideo => session.type == CallType.kVideo;
 
-  @override
-  bool get micMuted => session.isMicrophoneMuted;
+  /// État de coupure local, faisant foi. `session.isMicrophoneMuted` renvoie
+  /// vrai dès que la liste des pistes du flux est vide côté Dart, micro
+  /// réellement actif ou non — le bouton restait bloqué sur « coupé » et ne
+  /// revenait plus jamais (appel du 2026-10-15).
+  bool _micMuted = false;
+  bool _cameraOff = false;
 
   @override
-  bool get cameraOff => session.isLocalVideoMuted;
+  bool get micMuted => _micMuted;
+
+  @override
+  bool get cameraOff => _cameraOff;
 
   @override
   bool get speakerOn => _speakerOn;
@@ -144,27 +160,52 @@ class VoipCallController extends CallController {
 
   @override
   void toggleMic() {
-    final stream = session.localUserMediaStream;
-    if (stream == null) {
-      Logs().w('[VOIP] toggleMic SANS flux local - bouton inerte');
-      return;
-    }
-    stream.setAudioMuted(!session.isMicrophoneMuted);
-    Logs().w('[VOIP] micro coupe=${session.isMicrophoneMuted}');
+    _micMuted = !_micMuted;
     notifyListeners();
+    unawaited(_applyMicMute());
+  }
+
+  /// `session.setMicrophoneMuted` est le seul chemin qui coupe vraiment le
+  /// micro : il pose le drapeau de mute, désactive les pistes WebRTC via
+  /// `updateMuteStatus` et prévient le pair. `WrappedMediaStream.setAudioMuted`
+  /// ne posait qu'un booléen — bouton rouge, micro toujours ouvert aux oreilles
+  /// de l'interlocuteur (bug du 2026-10-15).
+  Future<void> _applyMicMute() async {
+    try {
+      await session.setMicrophoneMuted(_micMuted);
+    } catch (e) {
+      Logs().w('[VOIP] setMicrophoneMuted a échoué: $e');
+    }
+    _logMuteState('micro=${_micMuted ? "coupé" : "actif"}');
   }
 
   @override
   void toggleCamera() {
     if (!isVideo) return;
-    final stream = session.localUserMediaStream;
-    if (stream == null) {
-      Logs().w('[VOIP] toggleCamera SANS flux local - bouton inerte');
-      return;
-    }
-    stream.setVideoMuted(!session.isLocalVideoMuted);
-    Logs().w('[VOIP] camera coupe=${session.isLocalVideoMuted}');
+    _cameraOff = !_cameraOff;
     notifyListeners();
+    unawaited(_applyCameraMute());
+  }
+
+  Future<void> _applyCameraMute() async {
+    try {
+      await session.setLocalVideoMuted(_cameraOff);
+    } catch (e) {
+      Logs().w('[VOIP] setLocalVideoMuted a échoué: $e');
+    }
+    _logMuteState('camera=${_cameraOff ? "off" : "on"}');
+  }
+
+  /// Ce que le SDK voit des pistes locales : audio=0 pendant que le micro
+  /// émet = liste de pistes désynchronisée, le mutisme réel ne peut alors
+  /// passer que par les pistes des senders (durcissement côté SDK).
+  void _logMuteState(String why) {
+    final local = session.localUserMediaStream?.stream;
+    Logs().w(
+      '[VOIP] mute ($why) pistes locales '
+      'audio=${local?.getAudioTracks().length ?? -1} '
+      'video=${local?.getVideoTracks().length ?? -1}',
+    );
   }
 
   @override
