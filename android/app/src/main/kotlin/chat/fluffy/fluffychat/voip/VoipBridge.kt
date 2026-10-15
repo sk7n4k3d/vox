@@ -307,6 +307,11 @@ object VoipBridge {
 
     private var ringing = false
 
+    /// LA sonnerie en cours : stop() doit viser cette instance, pas un objet
+    /// frais (un Ringtone fraichement cree ne stoppe rien du tout — bug
+    /// "sonnerie infinie" constaté sur le terrain le 15/10).
+    private var currentRingtone: android.media.Ringtone? = null
+
     /** Démarre la sonnerie (son par défaut du système + vibration). Idempotent. */
     fun startRinging(context: Context, video: Boolean) {
         if (ringing) return
@@ -316,6 +321,7 @@ object VoipBridge {
                 if (video) RingtoneManager.TYPE_RINGTONE else RingtoneManager.TYPE_RINGTONE,
             )
             val player = RingtoneManager.getRingtone(context, uri)
+            currentRingtone = player
             if (player != null) {
                 player.audioAttributes = AudioAttributes.Builder()
                     .setUsage(AudioAttributes.USAGE_NOTIFICATION_RINGTONE)
@@ -334,8 +340,8 @@ object VoipBridge {
         if (!ringing) return
         ringing = false
         try {
-            RingtoneManager.getRingtone(context, RingtoneManager.getDefaultUri(RingtoneManager.TYPE_RINGTONE))
-                ?.stop()
+            currentRingtone?.stop()
+            currentRingtone = null
         } catch (e: Exception) {
             Log.e(TAG, "stopRinging failed: ${e.message}")
         }
