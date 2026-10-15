@@ -119,3 +119,34 @@ Puis `Room().connect(url, jwt)`. Le nom de la room LiveKit (hash `fvad/…`) est
 - 1:1 seulement ; le legacy reste le choix par défaut d'un appel sortant.
 - En v1, un appel entrant réveille l'app mais ne « sonne » pas si l'app est totalement fermée sans push dédié — la détection se fait au prochain sync. (Amélioration push ensuite : règle serveur sur l'event membership.)
 - Le DM avec Noémie reste chiffré (Olm) pour les events ; les médias suivent le §5.
+
+---
+
+## 10. Amendements — calibrage M1 (terrain 15/10, appel réel Noémie/Element X)
+
+1. **Forme réelle de la membership entrante** : SessionMembershipData **plate**
+   (pas de tableau `calls`), `expires: 14400000` (durée relative en ms, 4 h),
+   `focus_active: {"focus_selection": "multi_sfu", "type": "livekit"}`,
+   `m.call.intent: "audio"`, `membershipID: "<user>:<device>"`, et surtout :
+
+2. **`foci_preferred` pointe vers le SFU du homeserver DE L APPELANT**
+   (`livekit_service_url: https://livekit-jwt.call.matrix.org`,
+   `livekit_alias: <roomId>`) — pas vers le nôtre. Le répondant doit donc
+   rejoindre le focus publié par l'appelant (`provideFoci`, corrigé le 15/10).
+   Conséquence d'infrastructure : un entrant depuis matrix.org suppose que VOX
+   sache obtenir un JWT sur `livekit-jwt.call.matrix.org` — ce service
+   n'accepte plus `POST /sfu/get` legacy (refus à confirmer ; l'erreur
+   `M_UNRECOGNIZED` observée le 15/10 venait de notre GET sur
+   `openid/request_token`, depuis corrigé). **Cas 1:1 usuel = VOX appelle** :
+   c'est nous qui publions notre focus, Element X rejoint notre
+   `matrix-rtc.sk7.sh` — aucun besoin de toucher au SFU de matrix.org.
+   L'entrant inter-SFU hétérogène est un chantier M4+ (MSC4195/appservice ou
+   relais), pas un défaut applicatif.
+
+3. **`GET` est refusé sur `openid/request_token`** par Tuwunel (attendu POST,
+   cf. api générée `requestOpenIdToken`). Utiliser la méthode typée du SDK.
+
+4. **`stopRinging` natif** : `RingtoneManager.getRingtone()` crée un objet
+   frais qui ne stoppe pas la lecture en cours → sonnerie infinie après un
+   appel raté. Corrigé en gardant l'instance (commit séparé, chemin legacy
+   également touché).
