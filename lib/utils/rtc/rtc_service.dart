@@ -31,6 +31,12 @@ abstract class RtcSessionPort {
   Stream<RtcIncomingEvent> get membershipEvents;
 
   Future<bool> isRoomJoined(String roomId);
+
+  /// Foci livekit du serveur du répondant unique de cette DM (bien-known
+  /// distant), vide sinon. MSC3401 laisse l'appelant choisir le focus : en
+  /// proposant celui de l'appelé, chacun publie chez lui et le média arrive
+  /// sans maillage inter-SFU (calibrage source matrix-rust-rtc, 15/10).
+  Future<List<RtcFocus>> calleeFoci(String roomId);
   /// Renvoie l event id de la presence publiee (rattachement MSC4075).
   Future<String?> publishMembership(String roomId, Map<String, Object?> content);
   Future<void> sendNotification(String roomId, Map<String, Object?> content);
@@ -153,6 +159,8 @@ class RtcService {
     final sfu = _sfu ??= await _port.sfuClient();
     if (sfu == null) return null;
     final call = _makeCall(roomId, video: video, sfu: sfu);
+    final callee = await _port.calleeFoci(roomId);
+    if (callee.isNotEmpty) call.provideFoci(callee);
     _current = call;
     return call;
   }

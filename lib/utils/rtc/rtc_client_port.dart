@@ -1,5 +1,7 @@
 import 'dart:async';
+import 'dart:convert';
 
+import 'package:http/http.dart' as http;
 import 'package:matrix/matrix.dart';
 
 import 'rtc_membership.dart';
@@ -72,6 +74,37 @@ class RtcClientPort implements RtcSessionPort {
     _stateKey,
     {},
   );
+
+  @override
+  Future<List<RtcFocus>> calleeFoci(String roomId) async {
+    final room = client.getRoomById(roomId);
+    final me = client.userID;
+    if (room == null || me == null) return const [];
+    final others =
+        room.getParticipants([Membership.join]).where((u) => u.id != me).toList();
+    if (others.length != 1) return const [];
+    final domain = others.single.id.split(':').last;
+    final anon = http.Client();
+    final probe = RtcSfuClient(
+      homeserver: Uri.https(domain),
+      userId: me,
+      deviceId: client.deviceID ?? '',
+      plainGet: (uri) async =>
+          jsonDecode((await anon.get(uri)).body) as Map<String, Object?>,
+      openidToken: () async =>
+          throw StateError('well-known distant sans openid'),
+      plainPost: (_, __) async => throw StateError('well-known distant'),
+    );
+    try {
+      final foci = await probe.discoverFoci();
+      return foci.where((f) => f.type == 'livekit').toList();
+    } catch (e) {
+      Logs().w('[RTC] foci du répondant injoignables: $e');
+      return const [];
+    } finally {
+      anon.close();
+    }
+  }
 
   @override
   Future<RtcSfuClient?> sfuClient() async {

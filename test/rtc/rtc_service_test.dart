@@ -12,6 +12,7 @@ class _FakePort implements RtcSessionPort {
   final incoming = <RtcIncomingEvent>[];
   final published = <String, List<Map<String, Object?>>>{};
   final retracted = <String>[];
+  List<RtcFocus> calleeFociResult = const [];
   final notifications = <String, List<Map<String, Object?>>>{};
   final joinedRooms = <String>{'!dm:s'};
   bool available = true;
@@ -46,6 +47,9 @@ class _FakePort implements RtcSessionPort {
   @override
   Future<void> retractMembership(String roomId) async =>
       retracted.add(roomId);
+
+  @override
+  Future<List<RtcFocus>> calleeFoci(String roomId) async => calleeFociResult;
 
   @override
   Future<RtcSfuClient?> sfuClient() async => available
@@ -202,6 +206,20 @@ void main() {
     expect(entry['device_id'], 'VOXDEV');
     await call.hangup();
     expect(port.retracted, ['!dm:s']);
+  });
+
+  test('sortant : le focus proposé est celui du serveur du répondant',
+      () async {
+    port.calleeFociResult = const [
+      RtcFocus(type: 'livekit', livekitServiceUrl: 'https://callee.sfu'),
+    ];
+    final call = (await service.outgoingCall(roomId: '!dm:s', video: false))!;
+    await call.start();
+    await pumpEventQueue();
+    final entry = port.published['!dm:s']!.single;
+    final foci = (entry['foci_preferred']! as List)
+        .cast<Map<String, Object?>>();
+    expect(foci.single['livekit_service_url'], 'https://callee.sfu');
   });
 
   test('sortant : presence distante en ringingOut passe l appel a active',
