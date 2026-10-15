@@ -32,6 +32,14 @@ class FakeGateway implements RtcMediaGateway {
 
   @override
   Future<void> dispose() async => disposals++;
+  @override
+  Future<void> setAudioMuted(bool muted) async {}
+
+  @override
+  Future<void> setCameraMuted(bool muted) async {}
+
+  @override
+  Future<void> flipCamera() async {}
 }
 
 class FakePublisher implements RtcMembershipPublisher {

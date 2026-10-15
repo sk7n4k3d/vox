@@ -17,6 +17,12 @@ abstract class RtcMediaGateway {
   Future<void> publish();
   Stream<RtcRemoteEvent> get remoteEvents;
   Future<void> dispose();
+
+  // Actions des boutons de l'UI. Concrets : une gateway qui ne sait pas faire
+  // (fake de test) n'est pas forcée de les implémenter.
+  Future<void> setAudioMuted(bool muted) async {}
+  Future<void> setCameraMuted(bool muted) async {}
+  Future<void> flipCamera() async {}
 }
 
 /// Publication/retrait de NOTRE présence dans la room (adapteur Room du
