@@ -1,6 +1,3 @@
-import 'dart:convert';
-import 'dart:math';
-
 import 'rtc_sfu_client.dart';
 
 /// Type d'event de présence MSC3401 publié par Element (vérifié dans les logs
@@ -28,6 +25,15 @@ class RtcSessionMembership {
   final DateTime originServerTs;
   final List<RtcFocus> fociPreferred;
 
+  /// `m.call.intent` : « audio » ou « video » (Element s'en sert pour router
+  /// l'event comme appel — absent chez nous il affichait « événement non
+  /// pris en charge », terrain 15/10).
+  final String? intent;
+
+  /// `created_ts` (ms epoch) du contenu ; sert de rafraîchissement à chaque
+  /// republi (l'event est autrement identique et Synapse le dédoublonne).
+  final int? createdTs;
+
   const RtcSessionMembership({
     required this.userId,
     required this.deviceId,
@@ -37,6 +43,8 @@ class RtcSessionMembership {
     required this.membershipId,
     required this.originServerTs,
     required this.fociPreferred,
+    this.intent,
+    this.createdTs,
   });
 
   bool isExpiredAt(DateTime now) =>
@@ -44,13 +52,13 @@ class RtcSessionMembership {
         originServerTs.add(Duration(milliseconds: expiresMs)),
       );
 
-  bool get isImplicitRoomCall =>
-      callId.isEmpty && application == 'm.call';
+  bool get isImplicitRoomCall => callId.isEmpty && application == 'm.call';
 }
 
-/// Extrait les sessions d'un event de membership, formes `{"calls":[…]}` et
-/// plate. Tout contenu invalide ou incomplet → liste vide : cet event peut
-/// venir de n'importe qui dans la room, il ne doit JAMAIS crasher l'app.
+/// Extrait les sessions d'un event de présence, formes plate (Element X,
+/// calibrage 15/10) et `{"calls":[…]}` (anciens clients). Tout contenu
+/// invalide ou incomplet → liste vide : cet event peut venir de n'importe qui
+/// dans la room, il ne doit JAMAIS crasher l'app.
 List<RtcSessionMembership> parseMembershipEvent(
   Map<String, Object?> content,
   String sender,
@@ -83,6 +91,7 @@ RtcSessionMembership? _memberFromEntry(
   final deviceId = entry['device_id'];
   if (application is! String || deviceId is! String) return null;
   final expires = entry['expires'];
+  final createdTs = entry['created_ts'];
   return RtcSessionMembership(
     userId: userId,
     deviceId: deviceId,
@@ -96,6 +105,10 @@ RtcSessionMembership? _memberFromEntry(
         : '',
     originServerTs: originServerTs,
     fociPreferred: _livekitFoci(entry['foci_preferred']),
+    intent: entry['m.call.intent'] is String
+        ? entry['m.call.intent']! as String
+        : null,
+    createdTs: createdTs is int ? createdTs : null,
   );
 }
 
@@ -105,37 +118,35 @@ List<RtcFocus> _livekitFoci(Object? raw) {
     return RtcFocus(
       type: f['type'] as String? ?? '',
       livekitServiceUrl: f['livekit_service_url'] as String? ?? '',
+      livekitAlias: f['livekit_alias'] is String
+          ? f['livekit_alias']! as String
+          : null,
     );
   }).where((f) => f.type == 'livekit' && f.livekitServiceUrl.isNotEmpty)
       .toList();
 }
 
-/// Contenu à publier pour NOTRE session ; la forme tableau `calls` est celle
-/// qu'Element lit (calibrage M1 sur l'event réel reçu — spec §3.1).
+/// Contenu à publier pour NOTRE session : la forme PLATE SessionMembershipData
+/// exacte publiée par Element X (fixture réelle du 15/10, spec §10). L'ancien
+/// tableau `calls[]` n'est plus reconnu par les clients récents.
 Map<String, Object?> buildMembershipContent(RtcSessionMembership m) => {
-  'calls': [
-    {
-      'application': m.application,
-      'scope': 'm.room',
-      'call_id': m.callId,
-      'device_id': m.deviceId,
-      'expires': m.expiresMs,
-      'membershipID': _newMembershipId(),
-      'foci_preferred': m.fociPreferred
-          .map(
-            (f) => {
-              'type': f.type,
-              'livekit_service_url': f.livekitServiceUrl,
-            },
-          )
-          .toList(),
-    },
-  ],
+  'application': m.application,
+  'call_id': m.callId,
+  'device_id': m.deviceId,
+  'created_ts': m.createdTs ?? m.originServerTs.millisecondsSinceEpoch,
+  'expires': m.expiresMs,
+  'foci_preferred': m.fociPreferred
+      .map(
+        (f) => {
+          'type': f.type,
+          'livekit_service_url': f.livekitServiceUrl,
+          if (f.livekitAlias != null && f.livekitAlias!.isNotEmpty)
+            'livekit_alias': f.livekitAlias,
+        },
+      )
+      .toList(),
+  'focus_active': {'focus_selection': 'multi_sfu', 'type': 'livekit'},
+  'm.call.intent': m.intent ?? 'audio',
+  'membershipID': '${m.userId}:${m.deviceId}',
+  'scope': 'm.room',
 };
-
-/// Cache-buster : sans changement de contenu, Synapse ne renvoie pas l'event
-/// et les pairs croient notre présence expirée.
-String _newMembershipId() {
-  final bytes = List<int>.generate(12, (_) => Random.secure().nextInt(256));
-  return base64Url.encode(bytes).replaceAll('=', '');
-}

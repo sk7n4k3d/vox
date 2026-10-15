@@ -186,8 +186,7 @@ void main() {
     await call.start();
     await pumpEventQueue();
     expect(port.published['!dm:s'], hasLength(1));
-    final entry = ((port.published['!dm:s']!.single['calls']! as List).single
-        as Map).cast<String, Object?>();
+    final entry = port.published['!dm:s']!.single;
     expect(entry['device_id'], 'VOXDEV');
     await call.hangup();
     expect(port.retracted, ['!dm:s']);

@@ -17,7 +17,15 @@ class RtcFocus {
   final String type;
   final String livekitServiceUrl;
 
-  const RtcFocus({required this.type, required this.livekitServiceUrl});
+  /// Nom de la room LiveKit côté appelant (MSC3401 : `<roomId>` en 1:1) ;
+  /// publié par Element X, utile aux pairs qui nous rejoignent.
+  final String? livekitAlias;
+
+  const RtcFocus({
+    required this.type,
+    required this.livekitServiceUrl,
+    this.livekitAlias,
+  });
 }
 
 /// Ce qu'il faut pour se connecter au SFU LiveKit.
@@ -93,7 +101,7 @@ class RtcSfuClient {
         );
         return {
           'access_token': creds.accessToken,
-          'token_type': creds.tokenType ?? 'Bearer',
+          'token_type': creds.tokenType,
           'matrix_server_name': creds.matrixServerName,
           'expires_in': creds.expiresIn,
         };

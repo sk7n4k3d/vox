@@ -175,11 +175,11 @@ void main() {
     expect(c.gateway.connects, 1);
     expect(c.gateway.startAudio, isTrue);
     expect(c.publisher.published, hasLength(1));
-    // la membership publiée porte les champs réseau attendus
-    final entry = ((c.publisher.published.single['calls']! as List).first
-        as Map).cast<String, Object?>();
+    // la membership publiée porte les champs réseau attendus (forme plate)
+    final entry = c.publisher.published.single;
     expect(entry['device_id'], 'D');
     expect(entry['application'], 'm.call');
+    expect(entry['m.call.intent'], 'audio');
   });
 
   test('sortant : membership distante → active', () async {

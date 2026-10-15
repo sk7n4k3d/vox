@@ -204,7 +204,16 @@ class RtcCall {
           expiresMs: _expiryMs,
           membershipId: '',
           originServerTs: _now(),
-          fociPreferred: _foci,
+          fociPreferred: _foci
+              .map(
+                (f) => RtcFocus(
+                  type: f.type,
+                  livekitServiceUrl: f.livekitServiceUrl,
+                  livekitAlias: f.livekitAlias ?? roomId,
+                ),
+              )
+              .toList(),
+          intent: wantVideo ? 'video' : 'audio',
         ),
       ),
     );

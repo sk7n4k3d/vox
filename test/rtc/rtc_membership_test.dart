@@ -172,21 +172,102 @@ void main() {
           'https://matrix-rtc.sk7.sh');
     });
 
-    test('expires est relatif en ms et membershipID régénéré à chaque build',
+    test('expires relatif, membershipID = user:device, refresh par created_ts',
         () {
       final a = buildMembershipContent(member);
-      final b = buildMembershipContent(member);
-      final entryA =
-          ((a['calls']! as List).single as Map).cast<String, Object?>();
-      final entryB =
-          ((b['calls']! as List).single as Map).cast<String, Object?>();
-      expect(entryA['expires'], 3600000);
-      expect(entryA['membershipID'], isA<String>());
-      expect(entryB['membershipID'], isNot(entryA['membershipID']));
+      final later = RtcSessionMembership(
+        userId: member.userId,
+        deviceId: member.deviceId,
+        callId: '',
+        application: 'm.call',
+        expiresMs: 3600000,
+        membershipId: '',
+        originServerTs: member.originServerTs.add(const Duration(minutes: 30)),
+        fociPreferred: member.fociPreferred,
+      );
+      final b = buildMembershipContent(later);
+      expect(a['expires'], 3600000);
+      expect(a['membershipID'], '@sk7n4k3d:matrix.sk7.sh:VOXDEV');
+      expect(b['created_ts'], isNot(a['created_ts']));
     });
   });
 
   test('le type d event visé est bien celui du réseau', () {
     expect(rtcMembershipEventType, 'org.matrix.msc3401.call.member');
+  });
+
+  group('forme plate miroir Element X (calibrage M1)', () {
+    // fixture = event RÉEL publié par Noémie/Element X le 15/10 15:43:52
+    final realRemote = <String, Object?>{
+      'application': 'm.call',
+      'call_id': '',
+      'created_ts': 1792071832886,
+      'device_id': 'VAY14m8QBP',
+      'expires': 14400000,
+      'foci_preferred': [
+        {
+          'livekit_alias': '!y2jT1plx',
+          'livekit_service_url': 'https://livekit-jwt.call.matrix.org',
+          'type': 'livekit',
+        },
+      ],
+      'focus_active': {'focus_selection': 'multi_sfu', 'type': 'livekit'},
+      'm.call.intent': 'audio',
+      'membershipID': '@nanagum:VAY14m8QBP',
+    };
+
+    test('parse : intent, alias et created_ts sont lus', () {
+      final members = parseMembershipEvent(
+        realRemote,
+        '@nanagum:matrix.org',
+        DateTime.fromMillisecondsSinceEpoch(1792071832886),
+      );
+      expect(members, hasLength(1));
+      final m = members.single;
+      expect(m.intent, 'audio');
+      expect(m.fociPreferred.single.livekitAlias, '!y2jT1plx');
+      expect(m.createdTs, 1792071832886);
+    });
+
+    test('build : produit la forme plate avec alias, intent et focus_active',
+        () {
+      final content = buildMembershipContent(
+        RtcSessionMembership(
+          userId: '@moi:s',
+          deviceId: 'VOXDEV',
+          callId: '',
+          application: 'm.call',
+          expiresMs: 3600000,
+          membershipId: 'x',
+          originServerTs: t0,
+          fociPreferred: const [
+            RtcFocus(
+              type: 'livekit',
+              livekitServiceUrl: 'https://matrix-rtc.sk7.sh',
+              livekitAlias: '!dm:s',
+            ),
+          ],
+          intent: 'video',
+        ),
+      );
+      // plus de tableau `calls` : Element X lit la forme plate
+      expect(content['calls'], isNull);
+      expect(content['application'], 'm.call');
+      expect(content['device_id'], 'VOXDEV');
+      expect(content['m.call.intent'], 'video');
+      expect(content['focus_active'], {
+        'focus_selection': 'multi_sfu',
+        'type': 'livekit',
+      });
+      final foci = (content['foci_preferred']! as List)
+          .cast<Map<String, Object?>>();
+      expect(foci.single['livekit_alias'], '!dm:s');
+      expect(content['membershipID'], '@moi:s:VOXDEV');
+      // round-trip dans notre propre parseur
+      expect(
+        parseMembershipEvent(content, '@moi:s', t0).single.intent,
+        'video',
+      );
+    });
   });
 }
