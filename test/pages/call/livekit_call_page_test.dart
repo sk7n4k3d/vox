@@ -39,9 +39,11 @@ class _TestGateway implements RtcMediaGateway {
 
 class _Publisher implements RtcMembershipPublisher {
   @override
-  Future<void> publish(Map<String, Object?> content) async {}
+  Future<String?> publish(Map<String, Object?> content) async => '\$E';
   @override
   Future<void> retract() async {}
+  @override
+  Future<void> notify(Map<String, Object?> content) async {}
 }
 
 /// Scheduler qui ignore les jobs : les tests d'UI ne testent pas le refresh

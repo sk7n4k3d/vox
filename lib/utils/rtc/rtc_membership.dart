@@ -18,6 +18,42 @@ String legacyMembershipStateKey(String userId, String deviceId) =>
 /// Durée de vie par défaut quand `expires` est absent (alignée js-sdk : 4 h).
 const defaultMembershipExpiryMs = 1000 * 60 * 60 * 4;
 
+/// Event de sonnerie MSC4075 (notification d'appel). Element X ne fait pas
+/// sonner son utilisateur sans cet event : la présence seule ne « convoque »
+/// personne (calibrage rust matrix-rust-rtc, source 15/10).
+const rtcNotificationEventType = 'org.matrix.msc4075.rtc.notification';
+
+/// Contenu de la sonnerie, miroir EXACT de `build_notification_content` de
+/// matrix-rust-rtc (element-hq/matrix-rust-rtc) : les champs sont écrits à la
+/// fois dans `application` (forme de la MSC) et au niveau racine (forme que
+/// tous les clients déployés lisent réellement).
+Map<String, Object?> buildNotificationContent({
+  required String senderUserId,
+  required String deviceId,
+  required String memberEventId,
+  required int senderTsMs,
+  required String intent,
+  int lifetimeMs = 90000,
+}) => {
+  'application': {
+    'type': 'm.call',
+    'notification_type': 'ring',
+    'sender_ts': senderTsMs,
+    'lifetime': lifetimeMs,
+    'device_id': deviceId,
+    'm.call.intent': intent,
+  },
+  'notification_type': 'ring',
+  'sender_ts': senderTsMs,
+  'lifetime': lifetimeMs,
+  'm.call.intent': intent,
+  'm.text': [
+    {'body': 'Session started by $senderUserId'},
+  ],
+  'm.mentions': {'user_ids': <String>[], 'room': true},
+  'm.relates_to': {'rel_type': 'm.reference', 'event_id': memberEventId},
+};
+
 /// Une session (user+device) présente dans un appel.
 class RtcSessionMembership {
   final String userId;

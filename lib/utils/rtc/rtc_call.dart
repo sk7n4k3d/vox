@@ -31,8 +31,11 @@ abstract class RtcMediaGateway {
 /// Publication/retrait de NOTRE présence dans la room (adapteur Room du
 /// task 6 ; injectée pour que la machine soit testable sans Matrix).
 abstract class RtcMembershipPublisher {
-  Future<void> publish(Map<String, Object?> content);
+  /// Publie notre présence et renvoie l'event id (nécessaire pour rattacher
+  /// la sonnerie MSC4075), ou null si le serveur n'en rapporte pas.
+  Future<String?> publish(Map<String, Object?> content);
   Future<void> retract();
+  Future<void> notify(Map<String, Object?> content);
 }
 
 typedef RtcTimerHandle = void Function();
@@ -124,6 +127,13 @@ class RtcCall {
       if (_state != CallState.connecting) return _abortIfCeded();
       _listenGateway();
       _setState(CallState.ringingOut);
+      try {
+        await _sendRing();
+      } on Object catch (e) {
+        // la sonnerie ne casse pas l appel : sans elle il reste joignable
+        // à vue depuis la timeline
+        Logs().w('[RTC] échec de la sonnerie: $e');
+      }
       _scheduleRefresh();
     } on Object catch (e) {
       Logs().w('[RTC] start échoué: $e');
@@ -196,8 +206,11 @@ class RtcCall {
     }
   }
 
+  String? _ownMembershipEventId;
+  bool _ringSent = false;
+
   Future<void> _publishMembership() async {
-    await _memberships.publish(
+    final id = await _memberships.publish(
       buildMembershipContent(
         RtcSessionMembership(
           userId: localUserId,
@@ -218,6 +231,28 @@ class RtcCall {
               .toList(),
           intent: wantVideo ? 'video' : 'audio',
         ),
+      ),
+    );
+    if (id != null && id.isNotEmpty) _ownMembershipEventId = id;
+  }
+
+  /// Sonnerie MSC4075 : uniquement le premier membre (l'appelant) la publie,
+  /// rattachée à sa présence. Element X n'affiche rien sans elle.
+  Future<void> _sendRing() async {
+    if (_ringSent) return;
+    final id = _ownMembershipEventId;
+    if (id == null) {
+      Logs().w('[RTC] sonnerie non envoyée : pas d event id de présence');
+      return;
+    }
+    _ringSent = true;
+    await _memberships.notify(
+      buildNotificationContent(
+        senderUserId: localUserId,
+        deviceId: localDeviceId,
+        memberEventId: id,
+        senderTsMs: _now().millisecondsSinceEpoch,
+        intent: wantVideo ? 'video' : 'audio',
       ),
     );
   }

@@ -47,14 +47,22 @@ class FakeGateway implements RtcMediaGateway {
 
 class FakePublisher implements RtcMembershipPublisher {
   final published = <Map<String, Object?>>[];
+  final notifications = <Map<String, Object?>>[];
   int retracted = 0;
+  String? eventId = '\$EvFake';
 
   @override
-  Future<void> publish(Map<String, Object?> content) async =>
-      published.add(content);
+  Future<String?> publish(Map<String, Object?> content) async {
+    published.add(content);
+    return eventId;
+  }
 
   @override
   Future<void> retract() async => retracted++;
+
+  @override
+  Future<void> notify(Map<String, Object?> content) async =>
+      notifications.add(content);
 }
 
 /// RtcSfuClient dont on compte les tentatives ; [failuresBefore] = nombre de
@@ -385,5 +393,28 @@ void main() {
     await c.call.accept();
     await _pump();
     expect(c.call.state, CallState.active);
+  });
+
+  test('appelant : envoie la sonnerie MSC4075 rattachée à sa présence',
+      () async {
+    final c = _makeCall();
+    await c.call.start();
+    await _pump();
+    expect(c.publisher.notifications, hasLength(1));
+    final n = c.publisher.notifications.single;
+    expect(n['notification_type'], 'ring');
+    expect(n['m.relates_to'], {
+      'rel_type': 'm.reference',
+      'event_id': '\$EvFake',
+    });
+  });
+
+  test('répondant : pas de sonnerie (c est l appelant qui sonne)', () async {
+    final c = _makeCall();
+    c.call.onRemoteMembership(_remote());
+    await _pump();
+    await c.call.accept();
+    await _pump();
+    expect(c.publisher.notifications, isEmpty);
   });
 }

@@ -31,7 +31,9 @@ abstract class RtcSessionPort {
   Stream<RtcIncomingEvent> get membershipEvents;
 
   Future<bool> isRoomJoined(String roomId);
-  Future<void> publishMembership(String roomId, Map<String, Object?> content);
+  /// Renvoie l event id de la presence publiee (rattachement MSC4075).
+  Future<String?> publishMembership(String roomId, Map<String, Object?> content);
+  Future<void> sendNotification(String roomId, Map<String, Object?> content);
   Future<void> retractMembership(String roomId);
 
   /// Client prêt à parler au SFU, ou null si le homeserver n'annonce aucun
@@ -184,11 +186,15 @@ class _PortPublisher implements RtcMembershipPublisher {
   _PortPublisher(this._port, this._roomId);
 
   @override
-  Future<void> publish(Map<String, Object?> content) =>
+  Future<String?> publish(Map<String, Object?> content) =>
       _port.publishMembership(_roomId, content);
 
   @override
   Future<void> retract() => _port.retractMembership(_roomId);
+
+  @override
+  Future<void> notify(Map<String, Object?> content) =>
+      _port.sendNotification(_roomId, content);
 }
 
 void _noop(RtcCall call) {}

@@ -43,7 +43,7 @@ class RtcClientPort implements RtcSessionPort {
       client.getRoomById(roomId)?.membership == Membership.join;
 
   @override
-  Future<void> publishMembership(
+  Future<String?> publishMembership(
     String roomId,
     Map<String, Object?> content,
   ) => client.setRoomStateWithKey(
@@ -52,6 +52,18 @@ class RtcClientPort implements RtcSessionPort {
     _stateKey,
     content,
   );
+
+  @override
+  Future<void> sendNotification(
+    String roomId,
+    Map<String, Object?> content,
+  ) async {
+    await client.getRoomById(roomId)?.sendEvent(
+      content,
+      type: rtcNotificationEventType,
+      displayPendingEvent: false,
+    );
+  }
 
   @override
   Future<void> retractMembership(String roomId) => client.setRoomStateWithKey(

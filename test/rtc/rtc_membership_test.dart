@@ -283,4 +283,34 @@ void main() {
       );
     });
   });
+
+  group('buildNotificationContent (MSC4075, miroir rust)', () {
+    test('ring avec mentions room et référence à la présence publiée', () {
+      final c = buildNotificationContent(
+        senderUserId: '@moi:s',
+        deviceId: 'VOXDEV',
+        memberEventId: '\$Ev1',
+        senderTsMs: 1792075000000,
+        intent: 'audio',
+      );
+      expect(c['notification_type'], 'ring');
+      expect(c['sender_ts'], 1792075000000);
+      expect(c['lifetime'], 90000);
+      expect(c['m.call.intent'], 'audio');
+      final app = (c['application']! as Map).cast<String, Object?>();
+      expect(app['type'], 'm.call');
+      expect(app['notification_type'], 'ring');
+      expect(app['device_id'], 'VOXDEV');
+      expect(c['m.mentions'], {
+        'user_ids': <String>[],
+        'room': true,
+      });
+      expect(c['m.relates_to'], {
+        'rel_type': 'm.reference',
+        'event_id': '\$Ev1',
+      });
+      final text = (c['m.text']! as List).cast<Map<String, Object?>>();
+      expect(text.single['body'], contains('@moi:s'));
+    });
+  });
 }

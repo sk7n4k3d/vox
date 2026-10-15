@@ -12,6 +12,7 @@ class _FakePort implements RtcSessionPort {
   final incoming = <RtcIncomingEvent>[];
   final published = <String, List<Map<String, Object?>>>{};
   final retracted = <String>[];
+  final notifications = <String, List<Map<String, Object?>>>{};
   final joinedRooms = <String>{'!dm:s'};
   bool available = true;
 
@@ -28,10 +29,19 @@ class _FakePort implements RtcSessionPort {
       joinedRooms.contains(roomId);
 
   @override
-  Future<void> publishMembership(
+  Future<String?> publishMembership(
     String roomId,
     Map<String, Object?> content,
-  ) async => (published[roomId] ??= []).add(content);
+  ) async {
+    (published[roomId] ??= <Map<String, Object?>>[]).add(content);
+    return '\$Ev${published[roomId]!.length}';
+  }
+
+  @override
+  Future<void> sendNotification(
+    String roomId,
+    Map<String, Object?> content,
+  ) async => (notifications[roomId] ??= <Map<String, Object?>>[]).add(content);
 
   @override
   Future<void> retractMembership(String roomId) async =>
