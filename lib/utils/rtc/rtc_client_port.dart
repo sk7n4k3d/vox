@@ -17,6 +17,11 @@ class RtcClientPort implements RtcSessionPort {
   @override
   String get deviceId => client.deviceID!;
 
+  /// Cle sous laquelle notre presence est stockee dans l etat de la room,
+  /// identique a celle d Element X (sinon sa lecture nous ignore, calibrage
+  /// serveur 15/10 : voir legacyMembershipStateKey).
+  String get _stateKey => legacyMembershipStateKey(userId, deviceId);
+
   @override
   Stream<RtcIncomingEvent> get membershipEvents =>
       client.onRoomState.stream
@@ -41,14 +46,19 @@ class RtcClientPort implements RtcSessionPort {
   Future<void> publishMembership(
     String roomId,
     Map<String, Object?> content,
-  ) => client.setRoomStateWithKey(roomId, rtcMembershipEventType, '', content);
+  ) => client.setRoomStateWithKey(
+    roomId,
+    rtcMembershipEventType,
+    _stateKey,
+    content,
+  );
 
   @override
   Future<void> retractMembership(String roomId) => client.setRoomStateWithKey(
     roomId,
     rtcMembershipEventType,
-    '',
-    {'calls': <Object?>[]},
+    _stateKey,
+    {},
   );
 
   @override

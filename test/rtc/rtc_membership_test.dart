@@ -270,4 +270,17 @@ void main() {
       );
     });
   });
+
+  group('legacyMembershipStateKey (calibrage serveur 15/10, RocksDB Tuwunel)',
+      () {
+    test('suit la forme publiée par Element X : _user_device_m.call', () {
+      expect(
+        legacyMembershipStateKey(
+          '@nanagum:matrix.org',
+          'VAY14m8QBP',
+        ),
+        '_@nanagum:matrix.org_VAY14m8QBP_m.call',
+      );
+    });
+  });
 }

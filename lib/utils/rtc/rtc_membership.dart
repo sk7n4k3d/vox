@@ -7,6 +7,14 @@ const rtcMembershipEventType = 'org.matrix.msc3401.call.member';
 /// Format sticky MSC4143 — toléré en lecture (ignoré proprement), non produit.
 const rtcStickyMembershipEventType = 'org.matrix.msc4143.rtc.member';
 
+/// Clé d'état de NOTRE presence legacy : Element X (matrix-rust-sdk) indexe
+/// les sessions sur `_user_device_m.call` (le prefixe `_` est la convention
+/// des rooms < 3757/3779, cf. js-sdk makeMembershipStateKey). Preuve serveur
+/// 15/10 : les events de Noemie portent `_@nanagum:matrix.org_VAY14m8QBP_m.call`
+/// ; sous cle vide nos events etaient ignores (« evenement non pris en charge »).
+String legacyMembershipStateKey(String userId, String deviceId) =>
+    '_${userId}_${deviceId}_m.call';
+
 /// Durée de vie par défaut quand `expires` est absent (alignée js-sdk : 4 h).
 const defaultMembershipExpiryMs = 1000 * 60 * 60 * 4;
 

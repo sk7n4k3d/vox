@@ -51,7 +51,11 @@ class LiveKitGateway implements RtcMediaGateway {
   void _onRoomEvent(lk.RoomEvent event) {
     final room = _room;
     if (room == null) return;
-    Logs().w('[RTC] event LiveKit: ${event.runtimeType}');
+    final quality = event is lk.ParticipantConnectionQualityUpdatedEvent
+        ? ' (qualité ${event.connectionQuality.name}, pair '
+              '${event.participant.identity})'
+        : '';
+    Logs().w('[RTC] event LiveKit: ${event.runtimeType}$quality');
     if (event is lk.TrackSubscribedEvent) {
       _publishTracks();
       if (event.track is lk.VideoTrack || event.track is lk.AudioTrack) {
