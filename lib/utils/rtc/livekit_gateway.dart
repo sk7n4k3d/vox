@@ -26,6 +26,14 @@ class LiveKitGateway implements RtcMediaGateway {
   LiveKitTracks get currentTracks => _current;
   bool get e2eeActive => _room?.e2eeManager != null;
 
+  /// Du média distant a déjà été souscrit au moins une fois : sert à rattraper
+  /// un `mediaReady` émis AVANT que la machine à états ne s'abonne (course
+  /// connect→publie→abonnement, qui laissait l'écran bloqué sur « connexion »,
+  /// terrain 15/10 16:00).
+  bool _remoteMediaSeen = false;
+  @override
+  bool get hasRemoteMedia => _remoteMediaSeen;
+
   @override
   Future<void> connect(SfuCredentials credentials) async {
     final room = _room = lk.Room(
@@ -43,9 +51,11 @@ class LiveKitGateway implements RtcMediaGateway {
   void _onRoomEvent(lk.RoomEvent event) {
     final room = _room;
     if (room == null) return;
+    Logs().w('[RTC] event LiveKit: ${event.runtimeType}');
     if (event is lk.TrackSubscribedEvent) {
       _publishTracks();
       if (event.track is lk.VideoTrack || event.track is lk.AudioTrack) {
+        _remoteMediaSeen = true;
         _remote.add(RtcRemoteEvent.mediaReady);
       }
     } else if (event is lk.TrackUnsubscribedEvent) {

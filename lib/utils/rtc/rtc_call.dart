@@ -23,6 +23,9 @@ abstract class RtcMediaGateway {
   Future<void> setAudioMuted(bool muted) async {}
   Future<void> setCameraMuted(bool muted) async {}
   Future<void> flipCamera() async {}
+
+  /// Media distant déjà reçu (voir la course de [RtcCall._listenGateway]).
+  bool get hasRemoteMedia => false;
 }
 
 /// Publication/retrait de NOTRE présence dans la room (adapteur Room du
@@ -232,6 +235,12 @@ class RtcCall {
   }
 
   void _listenGateway() {
+    // rattrapage : le média a pu arriver pendant qu'on publiait notre
+    // présence, avant cet abonnement au flux d'evenements
+    if (_gateway.hasRemoteMedia &&
+        (_state == CallState.connecting || _state == CallState.ringingOut)) {
+      _setState(CallState.active);
+    }
     _remoteEvents = _gateway.remoteEvents.listen((event) async {
       switch (event) {
         case RtcRemoteEvent.mediaReady:

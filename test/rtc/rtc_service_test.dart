@@ -77,6 +77,8 @@ class _Gateway implements RtcMediaGateway {
   Future<void> setCameraMuted(bool muted) async {}
   @override
   Future<void> flipCamera() async {}
+  @override
+  bool get hasRemoteMedia => false;
 }
 
 Map<String, Object?> _content({

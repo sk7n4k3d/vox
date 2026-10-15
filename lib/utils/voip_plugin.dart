@@ -107,7 +107,9 @@ class VoipPlugin with WidgetsBindingObserver implements WebRTCDelegate {
     final call = rtcService?.currentCall;
     if (call == null) return;
     unawaited(_bridge.stopRinging());
-    unawaited(_bridge.abandonAudioFocus());
+    // PAS d'abandonAudioFocus ici : LiveKit reprend la session tout de suite
+    // et le va-et-vient du mode audio au moment du decrochage est un
+    // gresilleur connu du son decode (terrain 15/10).
     unawaited(_rtcConnectAndShow(call, accepting: true));
   }
 

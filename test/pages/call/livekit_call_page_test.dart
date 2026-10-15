@@ -33,6 +33,8 @@ class _TestGateway implements RtcMediaGateway {
   Future<void> setCameraMuted(bool muted) async => cameraCalls.add(muted);
   @override
   Future<void> flipCamera() async => flips++;
+  @override
+  bool get hasRemoteMedia => false;
 }
 
 class _Publisher implements RtcMembershipPublisher {

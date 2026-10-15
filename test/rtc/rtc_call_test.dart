@@ -14,6 +14,9 @@ class FakeGateway implements RtcMediaGateway {
   int connects = 0;
   int disposals = 0;
   bool startAudio = false, startVideo = false;
+  bool remoteMediaSeen = false;
+  @override
+  bool get hasRemoteMedia => remoteMediaSeen;
 
   @override
   Future<void> connect(SfuCredentials c) async => connects++;
@@ -370,5 +373,17 @@ void main() {
     await c.call.start();
     await _pump();
     expect(c.call.state, CallState.ringingOut);
+  });
+
+  test('média arrivé avant l abonnement aux events -> rattrape active',
+      () async {
+    final c = _makeCall();
+    c.call.onRemoteMembership(_remote());
+    await _pump();
+    expect(c.call.state, CallState.ringingIn);
+    c.gateway.remoteMediaSeen = true;
+    await c.call.accept();
+    await _pump();
+    expect(c.call.state, CallState.active);
   });
 }
