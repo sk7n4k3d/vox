@@ -90,14 +90,14 @@ class RtcClientPort implements RtcSessionPort {
     }
     await client.sendToDeviceEncrypted(
       [device],
-      rtcEncryptionKeyEventType,
+      RtcE2ee.keyEventType,
       content! as Map<String, Object?>,
     );
   }
 
   @override
   Stream<RtcIncomingEvent> get rtcKeyEvents => client.onToDeviceEvent.stream
-      .where((event) => event.type == rtcEncryptionKeyEventType)
+      .where((event) => RtcE2ee.parseEventTypes.contains(event.type))
       .map(
         (event) => RtcIncomingEvent(
           roomId: event.content['room_id'] as String? ?? '',
@@ -124,8 +124,9 @@ class RtcClientPort implements RtcSessionPort {
       homeserver: Uri.https(domain),
       userId: me,
       deviceId: client.deviceID ?? '',
-      plainGet: (uri) async =>
-          jsonDecode((await anon.get(uri)).body) as Map<String, Object?>,
+      plainGet: (uri) async => jsonDecode(
+            (await anon.get(uri).timeout(const Duration(seconds: 10))).body,
+          ) as Map<String, Object?>,
       openidToken: () async =>
           throw StateError('well-known distant sans openid'),
       plainPost: (_, __) async => throw StateError('well-known distant'),
