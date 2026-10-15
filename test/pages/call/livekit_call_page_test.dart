@@ -59,12 +59,12 @@ RtcSfuClient _sfu() => RtcSfuClient(
       {'type': 'livekit', 'livekit_service_url': 'https://lk.s'},
     ],
   },
-  authenticatedGet: (_) async => {
+  openidToken: () async => {
     'access_token': 'oid',
     'token_type': 'Bearer',
     'matrix_server_name': 's',
     'expires_in': 3600,
-  },
+    },
   plainPost: (_, __) async => {'url': 'wss://lk.s', 'jwt': 'j'},
 );
 

@@ -48,12 +48,12 @@ class _FakePort implements RtcSessionPort {
               {'type': 'livekit', 'livekit_service_url': 'https://lk.s'},
             ],
           },
-          authenticatedGet: (_) async => {
+          openidToken: () async => {
             'access_token': 'oid',
             'token_type': 'Bearer',
             'matrix_server_name': 's',
             'expires_in': 3600,
-          },
+            },
           plainPost: (_, __) async => {'url': 'wss://lk.s', 'jwt': 'j'},
         )
       : null;
@@ -206,6 +206,27 @@ void main() {
     );
     expect(await on.rtcAvailable(), isTrue);
     await on.shutdown();
+  });
+
+  test('les présences vivantes sont suivies par room avec leur focus',
+      () async {
+    await deliver();
+    final peers = service.remotePeersOf('!dm:s');
+    expect(peers.map((p) => p.deviceId), ['N1']);
+    // M1 : Element X publie son propre SFU dans foci_preferred
+    expect(
+      peers.single.fociPreferred.single.livekitServiceUrl,
+      'https://lk.s',
+    );
+  });
+
+  test('rtcAvailable ne se fige pas sur un premier echec', () async {
+    final flaky = _FakePort()..available = false;
+    final svc = RtcService(port: flaky, gatewayFactory: () => _Gateway());
+    expect(await svc.rtcAvailable(), isFalse);
+    flaky.available = true;
+    expect(await svc.rtcAvailable(), isTrue);
+    await svc.shutdown();
   });
 
   test('deuxieme appel pendant un appel actif → ignore, rien ne se publie',

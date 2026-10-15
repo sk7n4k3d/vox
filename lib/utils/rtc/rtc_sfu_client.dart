@@ -6,7 +6,7 @@ import 'package:matrix/matrix.dart';
 /// GET JSON renvoyant le corps décodé (throw sur réseau/HTTP non-JSON).
 typedef RtcJsonGet = Future<Map<String, Object?>> Function(Uri uri);
 
-/// POST JSON authentifié ni lié, corps envoyé en application/json.
+/// POST JSON sans auth Matrix (le token OpenID est dans le corps).
 typedef RtcJsonPost = Future<Map<String, Object?>> Function(
   Uri uri,
   Map<String, Object?> body,
@@ -50,7 +50,11 @@ class RtcSfuClient {
   final String userId;
   final String deviceId;
   final RtcJsonGet plainGet;
-  final RtcJsonGet authenticatedGet;
+
+  /// Token OpenID de la session courante. POST obligatoire : l'endpoint est
+  /// appelé `request_token` mais Tuwunel (et la spec récente) exigent POST —
+  /// un GET repond `M_UNRECOGNIZED: Method Not Allowed` (terrain 15/10).
+  final Future<Map<String, Object?>> Function() openidToken;
   final RtcJsonPost plainPost;
 
   RtcSfuClient({
@@ -58,7 +62,7 @@ class RtcSfuClient {
     required this.userId,
     required this.deviceId,
     required this.plainGet,
-    required this.authenticatedGet,
+    required this.openidToken,
     required this.plainPost,
   });
 
@@ -82,9 +86,17 @@ class RtcSfuClient {
         );
         return jsonDecode(res.body) as Map<String, Object?>;
       },
-      authenticatedGet: (uri) async {
-        final action = uri.path.replaceFirst('/_matrix/', '/');
-        return await client.request(RequestType.GET, action);
+      openidToken: () async {
+        final creds = await client.requestOpenIdToken(
+          client.userID!,
+          <String, Object?>{},
+        );
+        return {
+          'access_token': creds.accessToken,
+          'token_type': creds.tokenType ?? 'Bearer',
+          'matrix_server_name': creds.matrixServerName,
+          'expires_in': creds.expiresIn,
+        };
       },
     );
   }
@@ -112,11 +124,7 @@ class RtcSfuClient {
   /// `{room, device_id, openid_token}` validé en spike). Une seule tentative :
   /// la politique de retry appartient à l'appelant (RtcCall).
   Future<SfuCredentials> requestCredentials(String roomId, RtcFocus focus) async {
-    final openid = await authenticatedGet(
-      homeserver.replace(
-        path: '/_matrix/client/v3/user/${Uri.encodeComponent(userId)}/openid/request_token',
-      ),
-    );
+    final openid = await openidToken();
     final body = <String, Object?>{
       'room': roomId,
       'device_id': deviceId,

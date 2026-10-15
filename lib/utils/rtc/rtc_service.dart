@@ -82,8 +82,11 @@ class RtcService {
 
   /// Le homeserver annonce-t-il un média-server RTC joignable ?
   Future<bool> rtcAvailable() async {
-    _sfu ??= await _port.sfuClient();
-    return _availableCache ??= _sfu != null;
+    if (_availableCache == true) return true;
+    // un echec (homeserver pas encore pret) ne se fige pas : on re-interroge
+    final sfu = _sfu ??= await _port.sfuClient();
+    _availableCache = sfu != null;
+    return _availableCache!;
   }
 
   /// Point d'entrée unique des events de présence (stream prod ou test).
@@ -121,7 +124,10 @@ class RtcService {
     }
     final sfu = _sfu ??= await _port.sfuClient();
     if (sfu == null) return;
+    _availableCache = true;
     final call = _makeCall(event.roomId, video: false, sfu: sfu);
+    // l entrant rejoint le média-server annonce par l appelant
+    call.provideFoci(alive.first.fociPreferred);
     _current = call;
     _remoteOfCurrent = event.senderId;
     call.onRemoteMembership(alive.first);

@@ -92,7 +92,16 @@ class RtcCall {
   StreamSubscription<RtcRemoteEvent>? _remoteEvents;
   RtcTimerHandle? _cancelRefresh;
   List<RtcFocus> _foci = const [];
+  /// Foci publiés par le pair (membership) : l'entrant REJOINT le SFU de
+  /// l'appelant, jamais le nôtre (calibrage M1 : Element X appelle depuis son
+  /// propre homeserver).
+  List<RtcFocus> _preferredFoci = const [];
   bool _outgoing = false;
+
+  /// A appeler avant [accept] avec les `foci_preferred` de la pair.
+  void provideFoci(List<RtcFocus> foci) {
+    if (_preferredFoci.isEmpty && foci.isNotEmpty) _preferredFoci = foci;
+  }
   bool _terminal = false;
 
   /// Appel sortant : réservation SFU, média, publication de présence.
@@ -169,7 +178,9 @@ class RtcCall {
   }
 
   Future<SfuCredentials> _credentialsWithRetry() async {
-    final foci = await _sfu.discoverFoci();
+    final foci = _preferredFoci.isNotEmpty
+        ? _preferredFoci
+        : await _sfu.discoverFoci();
     if (foci.isEmpty) {
       throw const SfuAuthException('M_NO_FOCUS', 'aucun focus livekit connu');
     }

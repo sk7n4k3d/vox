@@ -70,7 +70,7 @@ class _CountingSfu {
         {'type': 'livekit', 'livekit_service_url': 'https://lk.s'},
       ],
     },
-    authenticatedGet: (_) async => {
+    openidToken: () async => {
       'access_token': 'oid',
       'token_type': 'Bearer',
       'matrix_server_name': 's',
@@ -316,5 +316,59 @@ void main() {
     await c.call.accept();
     expect(c.call.state, CallState.idle);
     expect(c.gateway.connects, 0);
+  });
+
+  test('accept : rejoint le focus publie par le pair, pas le notre', () async {
+    // bien-known local -> https://lk.s ; la membership, elle, pointe ailleurs
+    var posts = <String>[];
+    final sfu = RtcSfuClient(
+      homeserver: Uri.parse('https://matrix.sk7.sh'),
+      userId: '@moi:s',
+      deviceId: 'D',
+      plainGet: (_) async => {
+        'org.matrix.msc4143.rtc_foci': [
+          {'type': 'livekit', 'livekit_service_url': 'https://lk.s'},
+        ],
+      },
+      openidToken: () async => {
+        'access_token': 'oid',
+        'token_type': 'Bearer',
+        'matrix_server_name': 's',
+        'expires_in': 3600,
+      },
+      plainPost: (uri, body) async {
+        posts.add(uri.toString());
+        return {'url': 'wss://their-lk.s', 'jwt': 'j2'};
+      },
+    );
+    final gateway = FakeGateway();
+    final call = RtcCall(
+      roomId: '!dm:s',
+      wantVideo: false,
+      localUserId: '@moi:s',
+      localDeviceId: 'D',
+      sfu: sfu,
+      gateway: gateway,
+      memberships: FakePublisher(),
+      now: () => _t0,
+      scheduler: FakeScheduler(),
+    );
+    call.provideFoci([
+      const RtcFocus(type: 'livekit', livekitServiceUrl: 'https://their-lk.s'),
+    ]);
+    call.onRemoteMembership(_remote());
+    await pumpEventQueue();
+    expect(call.state, CallState.ringingIn);
+    await call.accept();
+    await pumpEventQueue();
+    expect(posts, ['https://their-lk.s/sfu/get']);
+  });
+
+  test('sortant : sans pair connu, utilise le focus du bien-known local',
+      () async {
+    final c = _makeCall();
+    await c.call.start();
+    await _pump();
+    expect(c.call.state, CallState.ringingOut);
   });
 }

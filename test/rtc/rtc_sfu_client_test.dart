@@ -30,7 +30,12 @@ RtcSfuClient _client(_Recorder rec) => RtcSfuClient(
       userId: '@hermes:matrix.sk7.sh',
       deviceId: 'DEVSPICE',
       plainGet: rec.get,
-      authenticatedGet: rec.get,
+      openidToken: () async => {
+        'access_token': 'oid-token',
+        'token_type': 'Bearer',
+        'matrix_server_name': 'matrix.sk7.sh',
+        'expires_in': 3600,
+      },
       plainPost: rec.post,
     );
 
@@ -69,17 +74,6 @@ void main() {
     test('openid puis /sfu/get avec le body legacy exact', () async {
       final rec = _Recorder()
         ..handler = (req) async {
-          if (req.url.path.endsWith('/openid/request_token')) {
-            return http.Response(
-              jsonEncode({
-                'access_token': 'oid-token',
-                'token_type': 'Bearer',
-                'matrix_server_name': 'matrix.sk7.sh',
-                'expires_in': 3600,
-              }),
-              200,
-            );
-          }
           expect(req.url.path, '/sfu/get');
           return http.Response(
             jsonEncode({'url': 'wss://matrix-rtc.sk7.sh', 'jwt': 'le-jwt'}),
@@ -95,12 +89,7 @@ void main() {
       );
       expect(creds.livekitUrl, 'wss://matrix-rtc.sk7.sh');
       expect(creds.jwt, 'le-jwt');
-      expect(
-        rec.requests[0].url.toString(),
-        'https://matrix.sk7.sh/_matrix/client/v3/user/%40hermes'
-        '%3Amatrix.sk7.sh/openid/request_token',
-      );
-      final body = jsonDecode(rec.requests[1].body) as Map<String, Object?>;
+      final body = jsonDecode(rec.requests.single.body) as Map<String, Object?>;
       expect(
         body['room'],
         '!y2jT1plx0un4plMEDxtM66gwZBdsgc6M673rNLm933M',
@@ -118,21 +107,10 @@ void main() {
       var posts = 0;
       final rec = _Recorder()
         ..handler = (req) async {
-          if (req.method == 'POST') {
-            posts++;
-            return http.Response(
-              '{"errcode":"M_UNKNOWN_TOKEN","error":"expired"}',
-              401,
-            );
-          }
+          posts++;
           return http.Response(
-            jsonEncode({
-              'access_token': 'oid-token',
-              'token_type': 'Bearer',
-              'matrix_server_name': 'matrix.sk7.sh',
-              'expires_in': 3600,
-            }),
-            200,
+            '{"errcode":"M_UNKNOWN_TOKEN","error":"expired"}',
+            401,
           );
         };
       await expectLater(
