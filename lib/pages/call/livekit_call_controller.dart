@@ -1,9 +1,9 @@
 import 'dart:async';
 
 import 'package:fluffychat/pages/call/active_call_page.dart';
-import 'package:fluffychat/pages/call/voip_bridge.dart';
 import 'package:fluffychat/utils/rtc/livekit_gateway.dart';
 import 'package:fluffychat/utils/rtc/rtc_call.dart';
+import 'package:livekit_client/livekit_client.dart' as lk;
 import 'package:matrix/matrix.dart' show Logs, WrappedMediaStream;
 
 /// Pilote RTC de l'écran d'appel : implémente l'interface déjà utilisée par
@@ -18,10 +18,8 @@ class LiveKitCallController extends CallController {
     required RtcMediaGateway gateway,
     required this.remoteName,
     required this.remoteMxid,
-    VoipBridge? bridge,
   }) : _call = call,
-       _gateway = gateway,
-       _bridge = bridge ?? VoipBridge() {
+       _gateway = gateway {
     _stateSub = _call.onStateChanged.listen((s) {
       if (s == CallState.active) markConnected();
       notifyListeners();
@@ -30,7 +28,6 @@ class LiveKitCallController extends CallController {
 
   final RtcCall _call;
   final RtcMediaGateway _gateway;
-  final VoipBridge _bridge;
 
   @override
   final String remoteName;
@@ -108,14 +105,15 @@ class LiveKitCallController extends CallController {
     unawaited(_apply('flip caméra', _gateway.flipCamera()));
   }
 
+  /// Le routage audio d'un appel RTC appartient à LiveKit (AudioManager) :
+  /// toucher la session depuis le bridge legacy en parallèle créait des
+  ///-artefacts ("son moisi", terrain 15/10).
   @override
   void toggleSpeaker() {
     _speakerOn = !_speakerOn;
     notifyListeners();
     unawaited(
-      _bridge.setAudioRoute(
-        _speakerOn ? AudioRoute.speaker : AudioRoute.earpiece,
-      ),
+      lk.AudioManager.instance.setSpeakerOutputPreferred(_speakerOn),
     );
   }
 

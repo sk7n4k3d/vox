@@ -8,12 +8,12 @@ import 'package:fluffychat/pages/call/missed_call_store.dart';
 import 'package:fluffychat/pages/call/rtc_video_view.dart';
 import 'package:fluffychat/pages/call/voip_bridge.dart';
 import 'package:fluffychat/pages/call/voip_call_controller.dart';
+import 'package:fluffychat/utils/platform_infos.dart';
 import 'package:fluffychat/utils/rtc/livekit_gateway.dart';
 import 'package:fluffychat/utils/rtc/rtc_call.dart';
 import 'package:fluffychat/utils/rtc/rtc_client_port.dart';
 import 'package:fluffychat/utils/rtc/rtc_e2ee.dart';
 import 'package:fluffychat/utils/rtc/rtc_service.dart';
-import 'package:fluffychat/utils/platform_infos.dart';
 import 'package:fluffychat/widgets/fluffy_chat_app.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
@@ -107,6 +107,7 @@ class VoipPlugin with WidgetsBindingObserver implements WebRTCDelegate {
     final call = rtcService?.currentCall;
     if (call == null) return;
     unawaited(_bridge.stopRinging());
+    unawaited(_bridge.abandonAudioFocus());
     unawaited(_rtcConnectAndShow(call, accepting: true));
   }
 
@@ -132,7 +133,8 @@ class VoipPlugin with WidgetsBindingObserver implements WebRTCDelegate {
   /// Sortant (branche par chat.dart apres les permissions) : ecrans puis
   /// connexion. La gateway livekit est publiee par [rtcGateway].
   Future<void> startRtcOutgoing(RtcCall call) async {
-    await _bridge.acquireAudioFocus();
+    // Pas d'acquireAudioFocus ici : LiveKit gere la session audio des appels
+    // RTC de bout en bout ; le bridge ne s'occupe que de la sonnerie entrante.
     await _rtcConnectAndShow(call, accepting: false);
   }
 
