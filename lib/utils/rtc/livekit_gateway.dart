@@ -46,6 +46,39 @@ class LiveKitGateway implements RtcMediaGateway {
     await room.connect(credentials.livekitUrl, credentials.jwt);
     Logs().w('[RTC] connecté au SFU (participants: '
         '${room.remoteParticipants.length})');
+    _statsTimer?.cancel();
+    _statsTimer = Timer.periodic(const Duration(seconds: 5), (_) =>
+        unawaited(_logRemoteAudioStats()));
+  }
+
+  Timer? _statsTimer;
+
+  /// Sonde du grésillement descendant (terrain 15/10) : `concealedSamples`
+  /// compte les échantillons fabriqués par le masque-perte — ce sont
+  /// littéralement les craquements entendus. Jitter/pertes élevés = réseau ;
+  /// concealed à 0 et son pourri = pipeline audio local.
+  Future<void> _logRemoteAudioStats() async {
+    final room = _room;
+    if (room == null) return;
+    for (final p in room.remoteParticipants.values) {
+      for (final pub in p.audioTrackPublications) {
+        final t = pub.track;
+        if (t is! lk.RemoteAudioTrack) continue;
+        try {
+          final st = await t.getReceiverStats();
+          if (st == null) continue;
+          Logs().w('[RTC] stats audio entrant (${p.identity}): '
+              'paquets=${st.packetsReceived} perdus=${st.packetsLost} '
+              'jitter=${st.jitter?.toStringAsFixed(3)} '
+              'masqués=${st.concealedSamples} events=${st.concealmentEvents} '
+              'énergie=${st.totalAudioEnergy?.toStringAsFixed(2)}/'
+              '${st.totalSamplesDuration?.toStringAsFixed(1)}s '
+              '${st.mimeType} ${st.clockRate?.toInt()}Hz');
+        } catch (e) {
+          Logs().w('[RTC] stats audio indisponibles: $e');
+        }
+      }
+    }
   }
 
   void _onRoomEvent(lk.RoomEvent event) {
@@ -168,6 +201,7 @@ class LiveKitGateway implements RtcMediaGateway {
 
   @override
   Future<void> dispose() async {
+    _statsTimer?.cancel();
     await _eventCancel?.call();
     _eventCancel = null;
     final room = _room;
