@@ -34,12 +34,17 @@ class LiveKitGateway implements RtcMediaGateway {
   @override
   bool get hasRemoteMedia => _remoteMediaSeen;
 
+  lk.BaseKeyProvider? _keyProvider;
+  final List<(String, int)> _pendingRemoteKeys = [];
+
   @override
   Future<void> connect(SfuCredentials credentials) async {
+    final keyProvider = _keyProvider = await lk.BaseKeyProvider.create();
     final room = _room = lk.Room(
-      roomOptions: const lk.RoomOptions(
+      roomOptions: lk.RoomOptions(
         adaptiveStream: true,
         dynacast: false,
+        encryption: lk.E2EEOptions(keyProvider: keyProvider),
       ),
     );
     _eventCancel = room.events.listen(_onRoomEvent);
@@ -57,6 +62,47 @@ class LiveKitGateway implements RtcMediaGateway {
   /// compte les échantillons fabriqués par le masque-perte — ce sont
   /// littéralement les craquements entendus. Jitter/pertes élevés = réseau ;
   /// concealed à 0 et son pourri = pipeline audio local.
+  @override
+  Future<void> installOutboundKey(String keyLatin1, int index) async {
+    final local = _room?.localParticipant;
+    final kp = _keyProvider;
+    if (local == null || kp == null) return;
+    await kp.setKey(keyLatin1, participantId: local.sid, keyIndex: index);
+  }
+
+  @override
+  Future<void> installRemoteKey(String keyLatin1, int index) async {
+    final kp = _keyProvider;
+    if (kp == null) return;
+    final identity = _remoteIdentity();
+    if (identity == null) {
+      // la clé Olm peut précéder la connexion LiveKit du pair : on la garde,
+      // [ParticipantConnectedEvent] la réinstallera.
+      _pendingRemoteKeys.add((keyLatin1, index));
+      return;
+    }
+    await kp.setKey(keyLatin1, participantId: identity, keyIndex: index);
+  }
+
+  /// 1:1 : la conversation n'a qu'un seul pair ; la clé d'un event de
+  /// membership pair a donc une destination sans ambiguïté.
+  String? _remoteIdentity() {
+    final remoteParticipants = _room?.remoteParticipants.values;
+    if (remoteParticipants == null) return null;
+    for (final p in remoteParticipants) {
+      if (p.identity.isNotEmpty) return p.identity;
+    }
+    return null;
+  }
+
+  Future<void> _flushPendingRemoteKeys() async {
+    final pending = List.of(_pendingRemoteKeys);
+    _pendingRemoteKeys.clear();
+    for (final (key, index) in pending) {
+      await installRemoteKey(key, index);
+    }
+  }
+
   Future<void> _logRemoteAudioStats() async {
     final room = _room;
     if (room == null) return;
@@ -90,6 +136,9 @@ class LiveKitGateway implements RtcMediaGateway {
               '${event.participant.identity})'
         : '';
     Logs().w('[RTC] event LiveKit: ${event.runtimeType}$quality');
+    if (event is lk.ParticipantConnectedEvent) {
+      unawaited(_flushPendingRemoteKeys());
+    }
     if (event is lk.TrackSubscribedEvent) {
       _publishTracks();
       if (event.track is lk.VideoTrack || event.track is lk.AudioTrack) {
@@ -203,6 +252,8 @@ class LiveKitGateway implements RtcMediaGateway {
   @override
   Future<void> dispose() async {
     _statsTimer?.cancel();
+    _pendingRemoteKeys.clear();
+    _keyProvider = null;
     await _eventCancel?.call();
     _eventCancel = null;
     final room = _room;

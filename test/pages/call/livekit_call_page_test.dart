@@ -35,6 +35,10 @@ class _TestGateway implements RtcMediaGateway {
   Future<void> flipCamera() async => flips++;
   @override
   bool get hasRemoteMedia => false;
+  @override
+  Future<void> installOutboundKey(String keyLatin1, int index) async {}
+  @override
+  Future<void> installRemoteKey(String keyLatin1, int index) async {}
 }
 
 class _Publisher implements RtcMembershipPublisher {
@@ -44,6 +48,8 @@ class _Publisher implements RtcMembershipPublisher {
   Future<void> retract() async {}
   @override
   Future<void> notify(Map<String, Object?> content) async {}
+  @override
+  Future<void> sendKey(String userId, String deviceId, Object? content) async {}
 }
 
 /// Scheduler qui ignore les jobs : les tests d'UI ne testent pas le refresh

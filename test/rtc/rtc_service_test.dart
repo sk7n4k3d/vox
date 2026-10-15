@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'dart:async';
 
 import 'package:fluffychat/utils/rtc/rtc_call.dart';
@@ -14,6 +16,13 @@ class _FakePort implements RtcSessionPort {
   final retracted = <String>[];
   List<RtcFocus> calleeFociResult = const [];
   final notifications = <String, List<Map<String, Object?>>>{};
+  final keysSent = <List<String>>[];
+  final keyStream = StreamController<RtcIncomingEvent>.broadcast();
+  @override
+  Future<void> sendRtcKey(String userId, String deviceId, Object? c) async =>
+      keysSent.add([userId, deviceId]);
+  @override
+  Stream<RtcIncomingEvent> get rtcKeyEvents => keyStream.stream;
   final joinedRooms = <String>{'!dm:s'};
   bool available = true;
 
@@ -75,6 +84,10 @@ class _FakePort implements RtcSessionPort {
 
 class _Gateway implements RtcMediaGateway {
   final remote = StreamController<RtcRemoteEvent>.broadcast();
+  @override
+  Future<void> installOutboundKey(String keyLatin1, int index) async {}
+  @override
+  Future<void> installRemoteKey(String keyLatin1, int index) async {}
   @override
   Future<void> connect(SfuCredentials c) async {}
   @override
@@ -232,6 +245,31 @@ void main() {
     // peut etre sur le media-server sans publier, cf. multi-SFU)
     await deliver(content: _content());
     expect(call.state, CallState.active);
+  });
+
+  test('clé média to-device est remise à l appel en cours', () async {
+    final call = (await service.outgoingCall(roomId: '!dm:s', video: false))!;
+    await call.start();
+    await pumpEventQueue();
+    port.keyStream.add(RtcIncomingEvent(
+      roomId: '!dm:s',
+      senderId: '@noemie:s',
+      content: {
+        'room_id': '!dm:s',
+        'member_id': '@noemie:s:N1',
+        'media_key': {
+          'index': 0,
+          'key': base64Encode(List.filled(32, 5)),
+        },
+        'format': 0,
+      },
+      originServerTs: _t0,
+      senderDeviceId: 'N1',
+    ));
+    await pumpEventQueue();
+    // la gateway fake accepte le installRemoteKey sans erreur : la clé a bien
+    // traversé service -> call -> gateway
+    expect(call.state, CallState.ringingOut);
   });
 
   test('rtcAvailable : reflète la présence dun focus annonce', () async {

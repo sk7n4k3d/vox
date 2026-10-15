@@ -1,73 +1,106 @@
-import 'dart:async';
 import 'dart:convert';
 import 'dart:math';
 import 'dart:typed_data';
 
-/// Envoi to-device (adapteur `client.sendToDevice(Encrypted)` au task 6).
-typedef RtcToDevice =
-    Future<void> Function(
-      String eventType,
-      Map<String, Map<String, Object?>> messagesByUserDevice,
-    );
+/// Type wire des messages de clés média (matrix-rust-rtc `wire.rs`, 15/10) :
+/// Olm-chiffré, envoyé device par device aux membres de la session.
+const rtcEncryptionKeyEventType = 'org.matrix.msc4143.rtc.encryption_key';
 
-/// Clé des médias LiveKit d'un appel (passkey), partagée via
-/// `io.element.call.encryption_keys` — schéma js-sdk, recalibré si M1 observe
-/// autre chose (spec §5).
+/// Clé média entrante validée, prête pour le KeyProvider LiveKit.
+class RtcInboundKey {
+  /// `member_id` de l'expéditeur (`user:device`, comme la membershipID
+  /// legacy) ; sert à retrouver l'identité LiveKit du pair.
+  final String memberId;
+
+  /// 32 octets brute encodés latin1, forme attendue par BaseKeyProvider.
+  final String keyLatin1;
+  final int index;
+
+  const RtcInboundKey(this.memberId, this.keyLatin1, this.index);
+}
+
+/// Envoi du contenu brut vers un device précis (chiffrement Olm géré par le
+/// port ; le device destinataire est celui qui a publié la membership).
+typedef RtcKeySender =
+    Future<void> Function(String userId, String deviceId, Object? content);
+
+/// Une direction de la conversation e2ee : notre clé + le parse/validation des
+/// clés reçues, au schéma exact de matrix-rust-rtc (media_key.index/key,
+/// format 0 = base64 non paddé, room_id, member_id).
 class RtcE2ee {
-  RtcE2ee({required this.callId, required RtcToDevice sender})
-    : _sender = sender,
-      _passkey = _newKey();
+  RtcE2ee({
+    required this.roomId,
+    required this.userId,
+    required this.deviceId,
+    RtcKeySender? sendKey,
+  }) : _sendKey = sendKey,
+       _keyBytes = _newKey();
 
-  static const encryptionKeysEventType = 'io.element.call.encryption_keys';
+  final String roomId;
+  final String userId;
+  final String deviceId;
+  final RtcKeySender? _sendKey;
+  final Uint8List _keyBytes;
+  final Set<String> _sharedWith = {};
 
-  final String callId;
-  final RtcToDevice _sender;
-  final Uint8List _passkey;
-  final StreamController<Uint8List> _onKey =
-      StreamController<Uint8List>.broadcast();
+  String get memberId => '$userId:$deviceId';
 
-  Stream<Uint8List> get onKey => _onKey.stream;
+  /// Notre clé, encodée latin1 pour le KeyProvider LiveKit.
+  String get ownKeyLatin1 => latin1.decode(_keyBytes);
+  int get ownIndex => 0;
 
-  Uint8List get passkey => _passkey;
+  /// Contenu MSC4143 à envoyer à un pair (member_id = NOTRE session ; le
+  /// receveur vérifie qu'il nomme bien notre event de membership).
+  Map<String, Object?> buildKeyMessage() => {
+    'room_id': roomId,
+    'member_id': memberId,
+    'media_key': {'index': ownIndex, 'key': base64Encode(_keyBytes)},
+    'format': 0,
+  };
 
-  Future<void> shareWithDevice(String userId, String deviceId) async {
-    await _sender(encryptionKeysEventType, {
-      userId: {
-        deviceId: {
-          'call_id': callId,
-          'keys': [
-            {'index': 0, 'key': base64Encode(_passkey)},
-          ],
-        },
-      },
-    });
+  /// Partage notre clé avec une session (user+device tirés de sa membership),
+  /// une seule fois par device.
+  Future<void> shareWith(String peerUserId, String peerDeviceId) async {
+    final sender = _sendKey;
+    if (sender == null) return;
+    if (peerDeviceId.isEmpty || !_sharedWith.add(peerDeviceId)) return;
+    await sender(peerUserId, peerDeviceId, buildKeyMessage());
   }
 
-  /// Clés reçues d'un pair ; contenu défensif, jamais d'exception.
-  void handleIncomingKeys(Map<String, Object?> content, String fromUserId) {
-    if (content['call_id'] != callId) return;
-    final keys = content['keys'];
-    if (keys is! List) return;
-    for (final entry in keys.whereType<Map<Object?, Object?>>()) {
-      final key = entry['key'];
-      if (key is! String) continue;
-      try {
-        _onKey.add(base64Decode(key));
-      } on FormatException {
-        // pas du base64 : contenu invalide, on ignore.
-      }
+  /// Parse une clé reçue. Défensif comme le reste du module : contenu
+  /// inattendu, format inconnu ou room_id étranger -> null, jamais une
+  /// exception. `senderDeviceId` vient de la session Olm (device authentifié)
+  /// ; sans lui on ne peut pas prouver l'origine — MSC4143 jette.
+  static RtcInboundKey? parse(
+    Map<String, Object?> content, {
+    required String roomId,
+    required String senderUserId,
+    String? senderDeviceId,
+  }) {
+    if (senderDeviceId == null || senderDeviceId.isEmpty) return null;
+    if (content['room_id'] != roomId) return null;
+    if (content['format'] != 0) return null;
+    final mediaKey = content['media_key'];
+    if (mediaKey is! Map) return null;
+    final key = mediaKey['key'];
+    final index = mediaKey['index'];
+    if (key is! String || index is! int) return null;
+    late final Uint8List bytes;
+    try {
+      bytes = base64Decode(key);
+    } on FormatException {
+      return null;
     }
+    if (bytes.length != 32) return null;
+    return RtcInboundKey(
+      '$senderUserId:$senderDeviceId',
+      latin1.decode(bytes),
+      index,
+    );
   }
-
-  Future<void> dispose() => _onKey.close();
 
   static Uint8List _newKey() {
     final random = Random.secure();
-    return Uint8List.fromList(
-      List<int>.generate(32, (_) => random.nextInt(256)),
-    );
+    return Uint8List.fromList(List<int>.generate(32, (_) => random.nextInt(256)));
   }
-
-  @override
-  String toString() => 'RtcE2ee(call $callId)';
 }

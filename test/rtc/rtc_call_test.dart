@@ -1,6 +1,9 @@
+import 'dart:convert';
+
 import 'dart:async';
 
 import 'package:fluffychat/utils/rtc/rtc_call.dart';
+import 'package:fluffychat/utils/rtc/rtc_service.dart';
 import 'package:fluffychat/utils/rtc/rtc_membership.dart';
 import 'package:fluffychat/utils/rtc/rtc_sfu_client.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -17,6 +20,14 @@ class FakeGateway implements RtcMediaGateway {
   bool remoteMediaSeen = false;
   @override
   bool get hasRemoteMedia => remoteMediaSeen;
+  final outboundKeys = <(String, int)>[];
+  final remoteKeys = <(String, int)>[];
+  @override
+  Future<void> installOutboundKey(String keyLatin1, int index) async =>
+      outboundKeys.add((keyLatin1, index));
+  @override
+  Future<void> installRemoteKey(String keyLatin1, int index) async =>
+      remoteKeys.add((keyLatin1, index));
 
   @override
   Future<void> connect(SfuCredentials c) async => connects++;
@@ -63,6 +74,10 @@ class FakePublisher implements RtcMembershipPublisher {
   @override
   Future<void> notify(Map<String, Object?> content) async =>
       notifications.add(content);
+  final keysSent = <List<String>>[];
+  @override
+  Future<void> sendKey(String userId, String deviceId, Object? content) async =>
+      keysSent.add([userId, deviceId]);
 }
 
 /// RtcSfuClient dont on compte les tentatives ; [failuresBefore] = nombre de
@@ -416,5 +431,37 @@ void main() {
     await c.call.accept();
     await _pump();
     expect(c.publisher.notifications, isEmpty);
+  });
+
+  test('e2ee : install clé sortante, la partage avec la pair, avale la sienne',
+      () async {
+    final c = _makeCall();
+    await c.call.start();
+    await _pump();
+    expect(c.gateway.outboundKeys, hasLength(1));
+    expect(c.gateway.outboundKeys.single.$1.length, 32);
+    // la pair nous annonce sa présence -> on lui envoie notre clé
+    c.call.onRemoteMembership(_remote());
+    await _pump();
+    expect(c.publisher.keysSent, [
+      ['@noemie:s', 'N1'],
+    ]);
+    // une clé média Olm-authentifiée arrive -> installée chez la gateway
+    final content = {
+      'room_id': '!dm:s',
+      'member_id': '@noemie:s:N1',
+      'media_key': {'index': 0, 'key': base64Encode(List.filled(32, 5))},
+      'format': 0,
+    };
+    c.call.handleRemoteKey(RtcIncomingEvent(
+      roomId: '!dm:s',
+      senderId: '@noemie:s',
+      content: content,
+      originServerTs: _t0,
+      senderDeviceId: 'N1',
+    ));
+    await _pump();
+    expect(c.gateway.remoteKeys, hasLength(1));
+    expect(c.gateway.remoteKeys.single.$2, 0);
   });
 }

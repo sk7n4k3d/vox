@@ -14,11 +14,15 @@ class RtcIncomingEvent {
   final Map<String, Object?> content;
   final DateTime originServerTs;
 
+  /// Pour les events to-device : device authentifié par la session Olm.
+  final String? senderDeviceId;
+
   const RtcIncomingEvent({
     required this.roomId,
     required this.senderId,
     required this.content,
     required this.originServerTs,
+    this.senderDeviceId,
   });
 }
 
@@ -37,6 +41,12 @@ abstract class RtcSessionPort {
   /// proposant celui de l'appelé, chacun publie chez lui et le média arrive
   /// sans maillage inter-SFU (calibrage source matrix-rust-rtc, 15/10).
   Future<List<RtcFocus>> calleeFoci(String roomId);
+
+  /// Clé média chiffrée pour le device donné (Olm to-device côté port).
+  Future<void> sendRtcKey(String userId, String deviceId, Object? content);
+
+  /// Messages de clés média reçus (to-device authentifiés côté port).
+  Stream<RtcIncomingEvent> get rtcKeyEvents;
   /// Renvoie l event id de la presence publiee (rattachement MSC4075).
   Future<String?> publishMembership(String roomId, Map<String, Object?> content);
   Future<void> sendNotification(String roomId, Map<String, Object?> content);
@@ -62,6 +72,7 @@ class RtcService {
        _now = now ?? DateTime.now,
        _scheduler = scheduler ?? TimerScheduler() {
     _sub = _port.membershipEvents.listen(handleMembershipEvent);
+    _keySub = _port.rtcKeyEvents.listen(_handleKeyEvent);
   }
 
   final RtcSessionPort _port;
@@ -71,6 +82,7 @@ class RtcService {
   final RtcScheduler _scheduler;
 
   StreamSubscription<RtcIncomingEvent>? _sub;
+  StreamSubscription<RtcIncomingEvent>? _keySub;
   RtcCall? _current;
   String? _remoteOfCurrent;
   final Map<String, List<RtcSessionMembership>> _peers = {};
@@ -86,6 +98,15 @@ class RtcService {
   Future<void> shutdown() async {
     await _sub?.cancel();
     _sub = null;
+    await _keySub?.cancel();
+    _keySub = null;
+  }
+
+  /// Clé média reçue : elle ne parle qu'à l'appel en cours dans cette room.
+  void _handleKeyEvent(RtcIncomingEvent event) {
+    final call = _current;
+    if (call == null || call.roomId != event.roomId) return;
+    call.handleRemoteKey(event);
   }
 
   /// Le homeserver annonce-t-il un média-server RTC joignable ?
@@ -211,6 +232,10 @@ class _PortPublisher implements RtcMembershipPublisher {
   @override
   Future<void> notify(Map<String, Object?> content) =>
       _port.sendNotification(_roomId, content);
+
+  @override
+  Future<void> sendKey(String userId, String deviceId, Object? content) =>
+      _port.sendRtcKey(userId, deviceId, content);
 }
 
 void _noop(RtcCall call) {}

@@ -4,6 +4,7 @@ import 'dart:convert';
 import 'package:http/http.dart' as http;
 import 'package:matrix/matrix.dart';
 
+import 'rtc_e2ee.dart';
 import 'rtc_membership.dart';
 import 'rtc_service.dart';
 import 'rtc_sfu_client.dart';
@@ -74,6 +75,40 @@ class RtcClientPort implements RtcSessionPort {
     _stateKey,
     {},
   );
+
+  @override
+  Future<void> sendRtcKey(
+    String userId,
+    String deviceId,
+    Object? content,
+  ) async {
+    final device = client.userDeviceKeys[userId]?.deviceKeys[deviceId];
+    if (device == null) {
+      Logs().w('[RTC] pas de clés device pour $userId:$deviceId — clé média '
+          'non envoyée');
+      return;
+    }
+    await client.sendToDeviceEncrypted(
+      [device],
+      rtcEncryptionKeyEventType,
+      content! as Map<String, Object?>,
+    );
+  }
+
+  @override
+  Stream<RtcIncomingEvent> get rtcKeyEvents => client.onToDeviceEvent.stream
+      .where((event) => event.type == rtcEncryptionKeyEventType)
+      .map(
+        (event) => RtcIncomingEvent(
+          roomId: event.content['room_id'] as String? ?? '',
+          senderId: event.senderId,
+          content: Map<String, Object?>.from(event.content),
+          originServerTs: DateTime.fromMillisecondsSinceEpoch(0),
+          senderDeviceId:
+              event.encryptedContent?['sender_device'] as String? ??
+              event.content['sender_device'] as String?,
+        ),
+      );
 
   @override
   Future<List<RtcFocus>> calleeFoci(String roomId) async {

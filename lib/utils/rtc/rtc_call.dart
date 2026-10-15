@@ -2,7 +2,9 @@ import 'dart:async';
 
 import 'package:matrix/matrix.dart' show Logs;
 
+import 'rtc_e2ee.dart';
 import 'rtc_membership.dart';
+import 'rtc_service.dart';
 import 'rtc_sfu_client.dart';
 
 enum CallState { idle, connecting, ringingOut, active, ringingIn, ended, failed }
@@ -13,6 +15,14 @@ enum RtcRemoteEvent { peerJoined, peerLeft, mediaReady, failed }
 /// parle à `livekit_client`, les tests à un fake.
 abstract class RtcMediaGateway {
   Future<void> connect(SfuCredentials credentials);
+
+  /// Installe NOTRE clé média (fournie par [RtcE2ee]) pour le chiffrement
+  /// sortant. Doit précéder startMedia sous peine de frames sans clé.
+  Future<void> installOutboundKey(String keyLatin1, int index) async {}
+
+  /// Installe la clé d'un pair (déjà authentifiée) pour le déchiffrant.
+  Future<void> installRemoteKey(String keyLatin1, int index) async {}
+
   Future<void> startMedia({required bool audio, required bool video});
   Future<void> publish();
   Stream<RtcRemoteEvent> get remoteEvents;
@@ -36,6 +46,7 @@ abstract class RtcMembershipPublisher {
   Future<String?> publish(Map<String, Object?> content);
   Future<void> retract();
   Future<void> notify(Map<String, Object?> content);
+  Future<void> sendKey(String userId, String deviceId, Object? content);
 }
 
 typedef RtcTimerHandle = void Function();
@@ -84,6 +95,43 @@ class RtcCall {
 
   static const _expiryMs = 3600000; // 1 h, rafraîchie à mi-parcours
 
+  /// Chiffrement média MatrixRTC (schéma matrix-rust-rtc, calibrage 15/10).
+  RtcE2ee? _e2ee;
+
+  RtcE2ee _ensureE2ee() => _e2ee ??= RtcE2ee(
+    roomId: roomId,
+    userId: localUserId,
+    deviceId: localDeviceId,
+    sendKey: (userId, deviceId, content) =>
+        _memberships.sendKey(userId, deviceId, content),
+  );
+
+  /// Partage notre clé avec la session d'un pair (idempotent par device).
+  void _shareKeysWith(RtcSessionMembership m) {
+    final e2ee = _e2ee;
+    if (e2ee == null) return;
+    if (m.userId == localUserId && m.deviceId == localDeviceId) return;
+    unawaited(
+      e2ee.shareWith(m.userId, m.deviceId).catchError((Object e) {
+        Logs().w('[RTC] partage de clé média impossible: $e');
+      }),
+    );
+  }
+
+  /// Clé reçue d'un pair (event to-device déjà authentifié par Olm en amont).
+  void handleRemoteKey(RtcIncomingEvent e) {
+    final key = RtcE2ee.parse(
+      e.content,
+      roomId: roomId,
+      senderUserId: e.senderId,
+      senderDeviceId: e.senderDeviceId,
+    );
+    if (key == null) return;
+    if (key.memberId == '$localUserId:$localDeviceId') return;
+    Logs().w('[RTC] clé média de ${key.memberId} (index ${key.index})');
+    unawaited(_gateway.installRemoteKey(key.keyLatin1, key.index));
+  }
+
   CallState _state = CallState.idle;
   CallState get state => _state;
 
@@ -118,8 +166,10 @@ class RtcCall {
     try {
       final credentials = await _credentialsWithRetry();
       if (_state != CallState.connecting) return _abortIfCeded();
+      final e2ee = _ensureE2ee();
       await _gateway.connect(credentials);
       if (_state != CallState.connecting) return _abortIfCeded();
+      await _gateway.installOutboundKey(e2ee.ownKeyLatin1, e2ee.ownIndex);
       await _gateway.startMedia(audio: true, video: wantVideo);
       await _gateway.publish();
       if (_state != CallState.connecting) return _abortIfCeded();
@@ -150,11 +200,15 @@ class RtcCall {
     try {
       final credentials = await _credentialsWithRetry();
       if (_state != CallState.connecting) return;
+      final e2ee = _ensureE2ee();
       await _gateway.connect(credentials);
+      await _gateway.installOutboundKey(e2ee.ownKeyLatin1, e2ee.ownIndex);
       await _gateway.startMedia(audio: true, video: wantVideo);
       await _gateway.publish();
       if (_state != CallState.connecting) return;
       await _publishMembership();
+      final peer = _lastRemote;
+      if (peer != null) _shareKeysWith(peer);
       _listenGateway();
       _scheduleRefresh();
     } on Object catch (e) {
@@ -163,9 +217,13 @@ class RtcCall {
     }
   }
 
+  RtcSessionMembership? _lastRemote;
+
   void onRemoteMembership(RtcSessionMembership m) {
     if (m.userId == localUserId) return; // autre device de nous, ou echo
     if (m.isExpiredAt(_now())) return;
+    _lastRemote = m;
+    _shareKeysWith(m);
     switch (_state) {
       case CallState.idle:
         _setState(CallState.ringingIn);
