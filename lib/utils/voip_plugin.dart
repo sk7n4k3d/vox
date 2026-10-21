@@ -135,6 +135,13 @@ class VoipPlugin with WidgetsBindingObserver implements WebRTCDelegate {
     final callerName = room?.getLocalizedDisplayname() ?? call.roomId;
     await _bridge.acquireAudioFocus();
     await _bridge.startRinging(video: call.wantVideo);
+    unawaited(
+      _bridge.showCallNotification(
+        title: 'Appel entrant de $callerName',
+        text: call.wantVideo ? 'Appel vidéo' : 'Appel audio',
+        ongoing: false,
+      ),
+    );
     _showOverlay(
       () => IncomingCallPage(
         callId: call.roomId,
@@ -185,6 +192,15 @@ class VoipPlugin with WidgetsBindingObserver implements WebRTCDelegate {
   }
 
   Future<void> _rtcConnectAndShow(RtcCall call, {required bool accepting}) async {
+    if (!accepting) {
+      unawaited(_bridge.startRingback());
+      unawaited(
+        _bridge.showCallNotification(
+          title: 'Appel en cours',
+          text: 'Mise en relation…',
+        ),
+      );
+    }
     _showRtcActive(call);
     try {
       if (accepting) {
@@ -222,6 +238,19 @@ class VoipPlugin with WidgetsBindingObserver implements WebRTCDelegate {
     _rtcStateSub = call.onStateChanged.listen((s) {
       if (s == CallState.ended || s == CallState.failed) {
         unawaited(_endRtcCall());
+      } else if (s == CallState.active) {
+        // L'appel est etabli : plus de sonnerie d'attente.
+        unawaited(_bridge.stopRingback());
+        unawaited(
+          _bridge.showCallNotification(
+            title: 'Appel en cours',
+            text: knownPeerId == null
+                ? 'Connecté'
+                : (room?.unsafeGetUserFromMemoryOrFallback(knownPeerId)
+                          .calcDisplayname(mxidLocalPartFallback: false) ??
+                      knownPeerId),
+          ),
+        );
       }
     });
     _rtcController?.dispose();
@@ -248,6 +277,8 @@ class VoipPlugin with WidgetsBindingObserver implements WebRTCDelegate {
   Future<void> _endRtcCall() async {
     matrix.store.setString(_activeCallKey, '');
     unawaited(_bridge.stopRinging());
+    unawaited(_bridge.stopRingback());
+    unawaited(_bridge.clearCallNotification());
     unawaited(_bridge.abandonAudioFocus());
     _clearOverlay();
     _rtcController?.dispose();
@@ -311,6 +342,20 @@ class VoipPlugin with WidgetsBindingObserver implements WebRTCDelegate {
     Logs().w('[VOIP] écran d\'appel affiché');
   }
 
+  /// Raccroché depuis la notification d'appel : on coupe la session en cours
+  /// (RTC en priorité, sinon l'appel legacy `m.call.*`).
+  Future<void> _hangupFromNotification() async {
+    final rtcCall = rtcService?.currentCall;
+    if (rtcCall != null) {
+      await rtcCall.hangup();
+      return;
+    }
+    final session = _session;
+    if (session != null) {
+      session.hangup(reason: CallErrorCode.userHangup);
+    }
+  }
+
   /// Retire tous les écrans d'appel empilés (entrant + en cours).
   void _clearOverlay() {
     _callOverlayShown = false;
@@ -324,6 +369,9 @@ class VoipPlugin with WidgetsBindingObserver implements WebRTCDelegate {
     _nativeEvents ??= _bridge.eventStream.listen((event) {
       if (event.kind == VoipEventKind.audioRoute && event.route != null) {
         _controller?.onNativeRouteChanged(event.route!);
+      }
+      if (event.kind == VoipEventKind.hangupRequested) {
+        unawaited(_hangupFromNotification());
       }
     });
   }
@@ -398,6 +446,15 @@ class VoipPlugin with WidgetsBindingObserver implements WebRTCDelegate {
       // Focus audio + capteur de proximite aussi cote sortant : c'est lui qui
       // declenche l'ecoute du capteur (VoipBridge.acquireAudioFocus -> startProximityWatch).
       await _bridge.acquireAudioFocus();
+      // Sonnerie d'attente : sans elle on n'entend RIEN en VoIP (le reseau ne
+      // fournit pas de signal « ca sonne chez l'autre »).
+      unawaited(_bridge.startRingback());
+      unawaited(
+        _bridge.showCallNotification(
+          title: 'Appel vers ${controller.remoteName}',
+          text: call.type == CallType.kVideo ? 'Appel vidéo' : 'Appel audio',
+        ),
+      );
       _showOverlay(() => ActiveCallPage(controller: controller));
       return;
     }
@@ -410,6 +467,13 @@ class VoipPlugin with WidgetsBindingObserver implements WebRTCDelegate {
     final callerName = call.remoteUserId ?? call.room.getLocalizedDisplayname();
     Logs().w('[VOIP] appel entrant de $callerName (${call.type})');
 
+    unawaited(
+      _bridge.showCallNotification(
+        title: 'Appel entrant de $callerName',
+        text: call.type == CallType.kVideo ? 'Appel vidéo' : 'Appel audio',
+        ongoing: false,
+      ),
+    );
     _showOverlay(
       () => IncomingCallPage(
         callId: call.callId,
@@ -432,6 +496,13 @@ class VoipPlugin with WidgetsBindingObserver implements WebRTCDelegate {
     // l invite (~60 s). Regression introduite le 14/10 (23fa8075d).
     unawaited(call.answer());
     unawaited(_bridge.stopRinging());
+    unawaited(_bridge.stopRingback());
+    unawaited(
+      _bridge.showCallNotification(
+        title: 'Appel en cours',
+        text: controller.remoteName,
+      ),
+    );
     _showOverlay(() => ActiveCallPage(controller: controller));
   }
 
@@ -445,6 +516,8 @@ class VoipPlugin with WidgetsBindingObserver implements WebRTCDelegate {
   Future<void> handleCallEnded(CallSession session) async {
     matrix.store.setString(_activeCallKey, '');
     unawaited(_bridge.stopRinging());
+    unawaited(_bridge.stopRingback());
+    unawaited(_bridge.clearCallNotification());
     unawaited(_bridge.abandonAudioFocus());
     _clearOverlay();
     _controller?.dispose();

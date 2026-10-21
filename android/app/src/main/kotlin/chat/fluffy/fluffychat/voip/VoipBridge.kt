@@ -1,15 +1,21 @@
 package chat.fluffy.fluffychat.voip
 
+import android.app.Notification
+import android.app.NotificationChannel
+import android.app.NotificationManager
+import android.app.PendingIntent
 import android.content.Context
 import android.media.AudioAttributes
 import android.media.AudioFocusRequest
 import android.media.AudioManager
 import android.media.RingtoneManager
+import android.media.ToneGenerator
 import android.os.Build
 import android.os.VibrationEffect
 import android.os.Vibrator
 import android.os.VibratorManager
 import android.util.Log
+import chat.fluffy.fluffychat.MainActivity
 
 /**
  * Couche native VoIP de VOX — ce qu'Android n'autorise pas au Dart.
@@ -37,6 +43,19 @@ object VoipBridge {
 
     /** Canal de la sonnerie d'appel entrant. IMPORTANCE_LOW : on gère le son nous-mêmes. */
     const val CHANNEL_INCALL = "voip_incall"
+
+    /** Canal de la notification « appel en cours ». IMPORTANCE_LOW : le son est géré par nous. */
+    const val CHANNEL_CALL = "voip_call"
+
+    /** Id de la notification d'appel (distincte du service permanent). */
+    private const val NOTIFICATION_ID_CALL = 2002
+
+    /** Action du bouton « Raccrocher » de la notification d'appel. */
+    const val ACTION_HANGUP = "eu.devlabz.vox.voip.HANGUP"
+
+    /** Callback : l'utilisateur a appuyé sur « Raccrocher » dans la notification. */
+    @Volatile
+    var onHangupRequested: (() -> Unit)? = null
 
     /**
      * Callback poussé quand un `m.call.invite` est reçu.
@@ -323,8 +342,12 @@ object VoipBridge {
             val player = RingtoneManager.getRingtone(context, uri)
             currentRingtone = player
             if (player != null) {
+                // Flux ALARME et non RING : en mode communication, le flux RING
+                // est reroute vers l'ecouteur (l'appareil en communication), donc
+                // la sonnerie sortait de l'ecouteur — inaudible. Le flux
+                // alarme, lui, reste sur le haut-parleur.
                 player.audioAttributes = AudioAttributes.Builder()
-                    .setUsage(AudioAttributes.USAGE_NOTIFICATION_RINGTONE)
+                    .setUsage(AudioAttributes.USAGE_ALARM)
                     .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
                     .build()
                 player.play()
@@ -363,6 +386,134 @@ object VoipBridge {
             }
         } catch (e: Exception) {
             Log.e(TAG, "vibrate failed: ${e.message}")
+        }
+    }
+
+    // ── Notification d'appel ─────────────────────────────────────────────────
+
+    /**
+     * Notification d'appel : QUI on appelle / qui nous appelle, et l'etat.
+     *
+     * Un appui ouvre l'app (l'ecran d'appel est re-empile au retour au premier
+     * plan), l'action « Raccrocher » termine l'appel sans rouvrir l'app.
+     */
+    fun showCallNotification(
+        context: Context,
+        title: String,
+        text: String,
+        ongoing: Boolean,
+    ) {
+        try {
+            val mgr = context.getSystemService(NotificationManager::class.java) ?: return
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O &&
+                mgr.getNotificationChannel(CHANNEL_CALL) == null
+            ) {
+                mgr.createNotificationChannel(
+                    NotificationChannel(
+                        CHANNEL_CALL,
+                        "Appels",
+                        NotificationManager.IMPORTANCE_LOW,
+                    ).apply {
+                        description = "Appel en cours : appui pour reprendre l'appel"
+                        setShowBadge(false)
+                        enableVibration(false)
+                    },
+                )
+            }
+            val openIntent = android.content.Intent(context, MainActivity::class.java).apply {
+                addFlags(
+                    android.content.Intent.FLAG_ACTIVITY_NEW_TASK or
+                        android.content.Intent.FLAG_ACTIVITY_SINGLE_TOP or
+                        android.content.Intent.FLAG_ACTIVITY_CLEAR_TOP,
+                )
+            }
+            val openPending = PendingIntent.getActivity(
+                context,
+                4201,
+                openIntent,
+                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+            )
+            val hangupPending = PendingIntent.getBroadcast(
+                context,
+                4202,
+                android.content.Intent(context, VoipBridgeService::class.java)
+                    .setAction(ACTION_HANGUP),
+                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+            )
+            val notification = Notification.Builder(context, CHANNEL_CALL)
+                .setContentTitle(title)
+                .setContentText(text)
+                .setSmallIcon(android.R.drawable.ic_menu_call)
+                .setOngoing(ongoing)
+                .setContentIntent(openPending)
+                .setCategory(Notification.CATEGORY_CALL)
+                .addAction(
+                    Notification.Action.Builder(
+                        android.R.drawable.ic_menu_close_clear_cancel,
+                        "Raccrocher",
+                        hangupPending,
+                    ).build(),
+                )
+                .build()
+            mgr.notify(NOTIFICATION_ID_CALL, notification)
+        } catch (e: Exception) {
+            Log.e(TAG, "showCallNotification failed: ${e.message}")
+        }
+    }
+
+    /** Retire la notification d'appel (appel terminé). */
+    fun clearCallNotification(context: Context) {
+        try {
+            val mgr = context.getSystemService(NotificationManager::class.java) ?: return
+            mgr.cancel(NOTIFICATION_ID_CALL)
+        } catch (e: Exception) {
+            Log.e(TAG, "clearCallNotification failed: ${e.message}")
+        }
+    }
+
+    // ── Sonnerie d'attente (appel sortant) ───────────────────────────────────
+
+    private var ringbackTone: ToneGenerator? = null
+    private val mainHandler = android.os.Handler(android.os.Looper.getMainLooper())
+
+    /** TONE_SUP_RINGTONE = la cadence « ca sonne chez l'autre » (2 s / 4 s). */
+    private val ringbackLoop = object : Runnable {
+        override fun run() {
+            try {
+                ringbackTone?.startTone(ToneGenerator.TONE_SUP_RINGTONE, 6000)
+            } catch (e: Exception) {
+                Log.w(TAG, "ringback loop: ${e.message}")
+            }
+            mainHandler.postDelayed(this, 6000)
+        }
+    }
+
+    /**
+     * Sonnerie d'attente de l'appel SORTANT : en VoIP le reseau ne fournit
+     * aucun signal « ca sonne chez l'autre », on n'entendait donc rien. Elle
+     * passe par le canal vocal (comme une vraie ligne) et s'arrete des que
+     * l'appel est repondu.
+     */
+    fun startRingback(context: Context) {
+        if (ringbackTone != null) return
+        try {
+            ringbackTone = ToneGenerator(AudioManager.STREAM_VOICE_CALL, 70)
+            mainHandler.post(ringbackLoop)
+            Log.i(TAG, "sonnerie d'attente active")
+        } catch (e: Exception) {
+            Log.e(TAG, "startRingback failed: ${e.message}")
+        }
+    }
+
+    /** Arrete la sonnerie d'attente. Idempotent. */
+    fun stopRingback(context: Context) {
+        try {
+            mainHandler.removeCallbacks(ringbackLoop)
+            ringbackTone?.stopTone()
+            ringbackTone?.release()
+            ringbackTone = null
+        } catch (e: Exception) {
+            Log.e(TAG, "stopRingback failed: ${e.message}")
         }
     }
 }

@@ -24,12 +24,14 @@ enum VoipEventKind {
   incomingCall,
   audioRoute,
   serviceKilled,
+  hangupRequested,
   unknown;
 
   static VoipEventKind fromWire(String? kind) => switch (kind) {
     'incoming_call' => VoipEventKind.incomingCall,
     'audio_route' => VoipEventKind.audioRoute,
     'service_killed' => VoipEventKind.serviceKilled,
+    'hangup_requested' => VoipEventKind.hangupRequested,
     _ => VoipEventKind.unknown,
   };
 }
@@ -111,6 +113,24 @@ class VoipBridge {
       _invokeBool('startRinging', {'video': video});
 
   Future<bool> stopRinging() => _invokeBool('stopRinging');
+
+  /// Sonnerie d'attente de l'appel sortant (« ça sonne chez l'autre »).
+  Future<bool> startRingback() => _invokeBool('startRingback');
+
+  Future<bool> stopRingback() => _invokeBool('stopRingback');
+
+  /// Notification d'appel : un appui ouvre l'app, l'action « Raccrocher » coupe.
+  Future<bool> showCallNotification({
+    required String title,
+    required String text,
+    bool ongoing = true,
+  }) => _invokeBool('showCallNotification', {
+    'title': title,
+    'text': text,
+    'ongoing': ongoing,
+  });
+
+  Future<bool> clearCallNotification() => _invokeBool('clearCallNotification');
 
   Future<bool> requestCallPermissions() => _invokeBool('requestCallPermissions');
 

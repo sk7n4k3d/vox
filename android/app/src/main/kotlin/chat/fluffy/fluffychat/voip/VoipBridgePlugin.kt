@@ -42,6 +42,7 @@ import io.flutter.plugin.common.MethodChannel
  * Events (EventChannel) — une Map, discriminée par `kind` :
  *   - { kind: "incoming_call", callId, roomId, callerName, video }
  *   - { kind: "audio_route", route }
+ *   - { kind: "hangup_requested" }
  *   - { kind: "service_killed" }
  *
  * Idempotent : [register] peut être rappelé à chaque création d'engine sans effet de bord.
@@ -67,6 +68,9 @@ class VoipBridgePlugin private constructor(
 
         VoipBridge.onIncomingCall = { payload ->
             main.post { eventSink?.success(HashMap<String, Any?>(payload).apply { put("kind", "incoming_call") }) }
+        }
+        VoipBridge.onHangupRequested = {
+            main.post { eventSink?.success(mapOf("kind" to "hangup_requested")) }
         }
         VoipBridge.onAudioRouteChanged = { route ->
             main.post { eventSink?.success(mapOf("kind" to "audio_route", "route" to route)) }
@@ -134,6 +138,31 @@ class VoipBridgePlugin private constructor(
 
             "stopRinging" -> {
                 VoipBridge.stopRinging(context)
+                result.success(true)
+            }
+
+            "startRingback" -> {
+                VoipBridge.startRingback(context)
+                result.success(true)
+            }
+
+            "stopRingback" -> {
+                VoipBridge.stopRingback(context)
+                result.success(true)
+            }
+
+            "showCallNotification" -> {
+                VoipBridge.showCallNotification(
+                    context,
+                    call.argument<String>("title") ?: "Appel",
+                    call.argument<String>("text") ?: "",
+                    call.argument<Boolean>("ongoing") ?: true,
+                )
+                result.success(true)
+            }
+
+            "clearCallNotification" -> {
+                VoipBridge.clearCallNotification(context)
                 result.success(true)
             }
 

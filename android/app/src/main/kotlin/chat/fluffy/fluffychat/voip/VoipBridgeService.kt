@@ -70,6 +70,13 @@ class VoipBridgeService : Service() {
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        // Bouton « Raccrocher » de la notification d'appel : on prévient le Dart
+        // (c'est lui qui tient la session WebRTC / LiveKit) puis on se tait.
+        if (intent?.action == VoipBridge.ACTION_HANGUP) {
+            Log.i(VoipBridge.TAG, "raccroché depuis la notification")
+            VoipBridge.onHangupRequested?.invoke()
+            return START_STICKY
+        }
         // START_STICKY : redémarrage par Android après un kill mémoire.
         return START_STICKY
     }
