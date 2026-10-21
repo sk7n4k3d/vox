@@ -74,13 +74,13 @@ class _MxcImageState extends State<MxcImage> {
     final uri = widget.uri;
     final event = widget.event;
 
-    if (uri != null) {
-      final devicePixelRatio = MediaQuery.devicePixelRatioOf(context);
-      final width = widget.width;
-      final realWidth = width == null ? null : width * devicePixelRatio;
-      final height = widget.height;
-      final realHeight = height == null ? null : height * devicePixelRatio;
+    final devicePixelRatio = MediaQuery.devicePixelRatioOf(context);
+    final width = widget.width;
+    final realWidth = width == null ? null : width * devicePixelRatio;
+    final height = widget.height;
+    final realHeight = height == null ? null : height * devicePixelRatio;
 
+    if (uri != null) {
       final remoteData = await client.downloadMxcCached(
         uri,
         width: realWidth,
@@ -96,20 +96,67 @@ class _MxcImageState extends State<MxcImage> {
     }
 
     if (event != null) {
-      final data = await event.downloadAndDecryptAttachment(
-        getThumbnail: widget.isThumbnail,
+      final loaded = await _loadEventMedia(
+        client,
+        realWidth: realWidth,
+        realHeight: realHeight,
       );
-      if (data.detectFileType is MatrixImageFile || widget.isThumbnail) {
-        if (!mounted) return;
-        setState(() {
-          _imageData = data.bytes;
-        });
-        if (!widget.isThumbnail) {
-          unawaited(MediaExporter.instance.exportMatrixEvent(event, data));
+      if (loaded == null) return;
+      if (!mounted) return;
+      setState(() {
+        _imageData = loaded.bytes;
+      });
+      if (!widget.isThumbnail && loaded.file != null) {
+        unawaited(MediaExporter.instance.exportMatrixEvent(event, loaded.file!));
+      }
+      return;
+    }
+  }
+
+  /// Charge le média porté par l'event à la meilleure qualité possible.
+  ///
+  /// L'event transporte souvent une miniature minuscule (96x96 px sur Synapse,
+  /// 320x240 sur Element X) : la rendre telle quelle dans une bulle de
+  /// 400x300 = gros pixelisé. Pour un média NON chiffré, on demande donc au
+  /// serveur une miniature à la taille d'affichage (le serveur la génère et la
+  /// met en cache) ; si le serveur refuse, on retombe sur la miniature de
+  /// l'event, et en dernier recours sur le fichier complet.
+  ///
+  /// Un média chiffré reste sur la miniature de l'event : le serveur ne peut
+  /// pas le re-dimensionner, et Télécharger le fichier complet en clair pour
+  /// une bulle serait trop coûteux en data.
+  Future<({Uint8List bytes, MatrixFile? file})?> _loadEventMedia(
+    Client client, {
+    num? realWidth,
+    num? realHeight,
+  }) async {
+    final event = widget.event!;
+    if (widget.isThumbnail && !event.isAttachmentEncrypted) {
+      final attachmentUri = event.attachmentMxcUrl;
+      if (attachmentUri != null && (realWidth != null || realHeight != null)) {
+        try {
+          final sized = await client.downloadMxcCached(
+            attachmentUri,
+            width: realWidth,
+            height: realHeight,
+            thumbnailMethod: widget.thumbnailMethod,
+            isThumbnail: true,
+            animated: widget.animated,
+          );
+          return (bytes: sized, file: null);
+        } catch (_) {
+          // Le serveur ne sait pas (ou ne veut pas) produire cette miniature :
+          // on tente la miniature de l'event ci-dessous.
         }
-        return;
       }
     }
+    final data = await event.downloadAndDecryptAttachment(
+      getThumbnail: widget.isThumbnail,
+    );
+    if (data.detectFileType is MatrixImageFile || widget.isThumbnail) {
+      return (bytes: data.bytes, file: data);
+    }
+    return null;
   }
 
   Future<void> _tryLoad() async {
@@ -146,9 +193,16 @@ class _MxcImageState extends State<MxcImage> {
                 width: widget.width,
                 height: widget.height,
                 fit: widget.fit,
-                filterQuality: widget.isThumbnail
-                    ? FilterQuality.low
-                    : FilterQuality.medium,
+                // Décode à la taille d'affichage (en pixels physiques) au lieu
+                // de décoder la photo entière : une image de 12 Mpx = 48 Mo de
+                // texture GPU pour une bulle de 400x300, et un
+                // ré-échantillonnage sans mipmap (FilterQuality.low) qui
+                // aliasse violemment les images réduites.
+                cacheWidth: widget.width == null
+                    ? null
+                    : (widget.width! * MediaQuery.devicePixelRatioOf(context))
+                        .round(),
+                filterQuality: FilterQuality.medium,
                 errorBuilder: (context, e, s) {
                   Logs().d('Unable to render mxc image', e, s);
                   return SizedBox(

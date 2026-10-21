@@ -101,6 +101,14 @@ object SmsBridge {
     // directement depuis le disque, sous-échantillonné, pour éviter l'OOM.
     private const val MAX_IMAGE_SOURCE_BYTES = 8_000_000L
 
+    // Photo de contact : on part de la photo PLEINE RÉSOLUTION et on la réduit
+    // à cette taille (px côté long) — le PHOTO_THUMBNAIL_URI du fournisseur de
+    // contacts fait 96x96 px et ressort pixellisé dans une bulle de 54 dp.
+    private const val CONTACT_PHOTO_MAX_PX = 256
+    // 24 h : au-delà, la photo est re-extraite (l'utilisateur a pu changer
+    // sa photo de contact entre-temps).
+    private const val CONTACT_PHOTO_TTL_MS = 24L * 60 * 60 * 1000
+
     // content://mms/part — URI des parts MMS (text/images). Pas d'API publique typée fiable < API 29.
     private val MMS_PART_URI: Uri = Uri.parse("content://mms/part")
 
@@ -2199,9 +2207,9 @@ object SmsBridge {
      * READ_CONTACTS n'est pas accordé (ou indisponible sur GrapheneOS profil
      * sans contacts), renvoie ContactInfo(null, null) sans planter.
      *
-     * La photo (PHOTO_THUMBNAIL_URI = content://) n'est pas lisible par Flutter
-     * directement, donc on extrait les bytes vers un fichier cache et on renvoie
-     * son path (réutilisé tant que le fichier existe).
+     * La photo (content://) n'est pas lisible par Flutter directement, donc on
+     * extrait les bytes vers un fichier cache et on renvoie son path (réutilisé
+     * tant que le fichier existe).
      */
     private fun resolveContact(context: Context, address: String): ContactInfo {
         return try {
@@ -2221,7 +2229,10 @@ object SmsBridge {
                 if (c.moveToFirst()) {
                     val name = c.getString(0)?.takeIf { it.isNotBlank() }
                     val photoUri = c.getString(1)?.takeIf { it.isNotBlank() }
-                    val contactId = c.getLong(2)
+                    // PhoneLookup renvoie l'id de la LIGNE TÉLÉPHONE : c'est
+                    // l'id de CONTACT qui indexe la table des photos.
+                    val rowId = c.getLong(2)
+                    val contactId = contactIdForPhoneRow(context, rowId) ?: rowId
                     ContactInfo(
                         name = name,
                         photoPath = cacheContactPhoto(context, contactId, photoUri),
@@ -2242,13 +2253,35 @@ object SmsBridge {
      * Extrait le thumbnail d'un contact vers cacheDir/contact_photos/<id>.jpg et
      * renvoie le path. Idempotent (réutilise le fichier s'il existe). Null si pas
      * de photo ou en cas d'erreur.
+     *
+     * Source prioritaire : la photo PLEINE RÉSOLUTION du contact
+     * (CommonDataKinds.Photo.PHOTO), sous-échantillonnée à
+     * [CONTACT_PHOTO_MAX_PX] puis ré-encodée en JPEG. Le
+     * PHOTO_THUMBNAIL_URI du fournisseur de contacts fait 96x96 px : dans une
+     * bulle de 54 dp (189 px physiques sur le Pixel) c'est du gros pixelisé.
+     * Repli sur le thumbnail du fournisseur si la photo pleine résolution est
+     * absente (contacts SIM, photos synchronisées à l'accessoire, etc.).
      */
     private fun cacheContactPhoto(context: Context, contactId: Long, photoUri: String?): String? {
-        if (photoUri.isNullOrBlank()) return null
+        if (contactId <= 0L) return null
         return try {
             val dir = File(context.cacheDir, "contact_photos").apply { mkdirs() }
-            val out = File(dir, "$contactId.jpg")
-            if (out.exists() && out.length() > 0) return out.absolutePath
+            val out = File(dir, "${contactId}_$CONTACT_PHOTO_MAX_PX.jpg")
+            if (out.exists() && out.length() > 0 &&
+                System.currentTimeMillis() - out.lastModified() < CONTACT_PHOTO_TTL_MS
+            ) {
+                return out.absolutePath
+            }
+            val full = fullContactPhotoBytes(context, contactId)
+            if (full != null) {
+                val scaled = scaleToJpeg(full, CONTACT_PHOTO_MAX_PX)
+                if (scaled != null && scaled.isNotEmpty()) {
+                    out.writeBytes(scaled)
+                    return out.absolutePath
+                }
+            }
+            // Repli : la vignette du fournisseur (basse résolution).
+            if (photoUri.isNullOrBlank()) return null
             context.contentResolver.openInputStream(Uri.parse(photoUri))?.use { input ->
                 out.outputStream().use { input.copyTo(it) }
             }
@@ -2257,6 +2290,78 @@ object SmsBridge {
             Log.w(TAG, "cacheContactPhoto($contactId) failed: ${e.message}")
             null
         }
+    }
+
+    /** Photo pleine résolution du contact, ou null si absente. */
+    private fun fullContactPhotoBytes(context: Context, contactId: Long): ByteArray? {
+        return try {
+            val contactUri = ContentUris.withAppendedId(
+                ContactsContract.Contacts.CONTENT_URI,
+                contactId,
+            )
+            val stream = ContactsContract.Contacts.openContactPhotoInputStream(
+                context.contentResolver,
+                contactUri,
+                true,
+            ) ?: return null
+            stream.use { it.readBytes() }
+        } catch (e: Exception) {
+            Log.w(TAG, "fullContactPhotoBytes($contactId) failed: ${e.message}")
+            null
+        }
+    }
+
+    /**
+     * Décode [bytes] et ré-encode en JPEG (q90) en [maxPx] côté long.
+     * Null si les octets ne sont pas une image décodable.
+     */
+    private fun scaleToJpeg(bytes: ByteArray, maxPx: Int): ByteArray? {
+        return try {
+            val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+            BitmapFactory.decodeByteArray(bytes, 0, bytes.size, bounds)
+            if (bounds.outWidth <= 0 || bounds.outHeight <= 0) {
+                null
+            } else {
+                var sample = 1
+                while (bounds.outWidth / (sample * 2) >= maxPx ||
+                    bounds.outHeight / (sample * 2) >= maxPx
+                ) {
+                    sample *= 2
+                }
+                val opts = BitmapFactory.Options().apply { inSampleSize = sample }
+                val bm = BitmapFactory.decodeByteArray(bytes, 0, bytes.size, opts)
+                if (bm == null) {
+                    null
+                } else {
+                    val out = ByteArrayOutputStream()
+                    bm.compress(Bitmap.CompressFormat.JPEG, 90, out)
+                    bm.recycle()
+                    out.toByteArray()
+                }
+            }
+        } catch (e: Exception) {
+            Log.w(TAG, "scaleToJpeg failed: ${e.message}")
+            null
+        }
+    }
+
+    /**
+     * Convertit l'id de ligne TELEPHONE (celui renvoyé par PhoneLookup) en id de
+     * CONTACT — c'est ce dernier qui indexe la table des photos.
+     */
+    private fun contactIdForPhoneRow(context: Context, phoneRowId: Long): Long? = try {
+        context.contentResolver.query(
+            ContactsContract.CommonDataKinds.Phone.CONTENT_URI,
+            arrayOf(ContactsContract.CommonDataKinds.Phone.CONTACT_ID),
+            "${ContactsContract.CommonDataKinds.Phone._ID} = ?",
+            arrayOf(phoneRowId.toString()),
+            null,
+        )?.use { c ->
+            if (c.moveToFirst()) c.getLong(0) else null
+        }
+    } catch (e: Exception) {
+        Log.w(TAG, "contactIdForPhoneRow($phoneRowId) failed: ${e.message}")
+        null
     }
 
     // ── Réception MMS (download du corps quand VOX est app par défaut) ─────────
