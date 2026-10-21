@@ -1225,9 +1225,26 @@ class _SmsChatPageState extends State<SmsChatPage> with WidgetsBindingObserver {
     );
   }
 
+  /// Ce numero est-il « special » (expediteur alphanumerique genre « Sosh »
+  /// ou « ENEDIS », code court genre « 888 ») ? On ne peut pas y repondre :
+  /// le composer est grise et l'app le dit.
+  bool get _isSpecialNumber {
+    final address = widget.address.trim();
+    if (address.isEmpty) return false;
+    final digits = address.replaceAll(RegExp(r'[^0-9]'), '');
+    // Expediteur alphanumerique (« Sosh », « Revolut », « iQera »...) : il n'y
+    // a aucun numero auquel repondre.
+    if (digits.isEmpty) return true;
+    // Code court / numero de service (888, 311, 1000...) : destinataire non
+    // joignable. Un vrai numero francais fait au moins 9 chiffres.
+    if (digits.length < 7) return true;
+    return false;
+  }
+
   Widget _buildComposer(ThemeData theme, CyberpunkTheme cyber) {
     final hasImage = _pendingImagePath != null;
-    final canSend = (_hasText || hasImage) && !_sending;
+    final canReply = !_isSpecialNumber;
+    final canSend = (_hasText || hasImage) && !_sending && canReply;
     return SafeArea(
       top: false,
       child: Padding(
@@ -1274,7 +1291,7 @@ class _SmsChatPageState extends State<SmsChatPage> with WidgetsBindingObserver {
                     useRootNavigator: true,
                     icon: const Icon(Icons.add_circle_outline),
                     iconColor: theme.colorScheme.onPrimaryContainer,
-                    enabled: !_sending,
+                    enabled: !_sending && canReply,
                     onSelected: (action) {
                       switch (action) {
                         case _SmsComposerAction.camera:
@@ -1351,6 +1368,8 @@ class _SmsChatPageState extends State<SmsChatPage> with WidgetsBindingObserver {
                       focusNode: _composerFocus,
                       minLines: 1,
                       maxLines: 8,
+                      // Numero special : champ grise, on ne peut pas repondre.
+                      enabled: canReply,
                       keyboardType: TextInputType.multiline,
                       // Honour the same "Enter to send" setting as the Matrix
                       // composer instead of always inserting a newline.
@@ -1393,7 +1412,9 @@ class _SmsChatPageState extends State<SmsChatPage> with WidgetsBindingObserver {
                       tooltip: 'Programmer l\'envoi',
                       color: cyber.cyan,
                       icon: const Icon(Icons.schedule_outlined),
-                      onPressed: _hasText && !_sending ? _schedule : null,
+                      onPressed: _hasText && !_sending && canReply
+                          ? _schedule
+                          : null,
                     ),
                   ),
                 ),
@@ -1429,6 +1450,34 @@ class _SmsChatPageState extends State<SmsChatPage> with WidgetsBindingObserver {
                 ),
               ],
             ),
+            if (!canReply)
+              Padding(
+                padding: const EdgeInsets.only(
+                  top: 4,
+                  left: 10,
+                  right: 10,
+                  bottom: 2,
+                ),
+                child: Row(
+                  children: [
+                    Icon(
+                      Icons.info_outline,
+                      size: 13,
+                      color: theme.colorScheme.onSurfaceVariant,
+                    ),
+                    const SizedBox(width: 6),
+                    Expanded(
+                      child: Text(
+                        'Impossible de répondre à ce numéro spécial',
+                        style: TextStyle(
+                          fontSize: 11,
+                          color: theme.colorScheme.onSurfaceVariant,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
             // Inline emoji panel — same slide-open behaviour as the Matrix
             // ChatEmojiPicker, minus the (SMS-irrelevant) sticker tab. Inserts
             // the picked glyph at the caret of the SMS field.
