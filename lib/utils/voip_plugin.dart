@@ -8,6 +8,7 @@ import 'package:fluffychat/pages/call/missed_call_store.dart';
 import 'package:fluffychat/pages/call/rtc_video_view.dart';
 import 'package:fluffychat/pages/call/voip_bridge.dart';
 import 'package:fluffychat/pages/call/voip_call_controller.dart';
+import 'package:fluffychat/utils/client_manager.dart';
 import 'package:fluffychat/utils/platform_infos.dart';
 import 'package:fluffychat/utils/rtc/livekit_gateway.dart';
 import 'package:fluffychat/utils/rtc/rtc_call.dart';
@@ -46,6 +47,58 @@ class VoipPlugin with WidgetsBindingObserver implements WebRTCDelegate {
     background =
         (state == AppLifecycleState.detached ||
         state == AppLifecycleState.paused);
+    if (state == AppLifecycleState.resumed) {
+      // Retour au premier plan pendant un appel : l'écran d'appel a pu
+      // disparaître (activity recréée, route poppée) → on le ré-empile si
+      // l'appel est toujours vivant, sinon on signale l'interruption.
+      unawaited(_restoreCallUi());
+    }
+  }
+
+  /// Un écran d'appel est-il empilé pour l'instant ?
+  bool _callOverlayShown = false;
+
+  /// Clé de persistance : un appel était en cours au dernier passage en
+  /// arrière-plan (permet de détecter un appel interrompu par un kill de
+  /// l'activity).
+  static const String _activeCallKey = 'active_call';
+
+  Future<void> _restoreCallUi() async {
+    if (_callOverlayShown) return;
+    // Appel MatrixRTC (LiveKit) encore vivant ?
+    final rtcCall = rtcService?.currentCall;
+    if (rtcCall != null) {
+      await _showRtcActive(rtcCall);
+      return;
+    }
+    // Appel legacy (m.call.*) encore vivant ?
+    final session = _session;
+    final controller = _controller;
+    if (session != null && controller != null) {
+      _showOverlay(() => ActiveCallPage(controller: controller));
+      return;
+    }
+    // Aucun appel vivant mais la trace en dit le contraire : l'activity a
+    // été recréée pendant l'appel → l'appel est mort, on le dit et on nettoie
+    // le service natif (sinon la notification d'appel reste en fond).
+    if (matrix.store.getString(_activeCallKey) == '1') {
+      matrix.store.setString(_activeCallKey, '');
+      Logs().w('[VOIP] appel interrompu (activity recréée)');
+      try {
+        ClientManager.sendInitNotification(
+          'Appel interrompu',
+          'L\'appel a été interrompu (application relancée en arrière-plan).',
+        );
+      } catch (e) {
+        Logs().w('[VOIP] notification interruption impossible: $e');
+      }
+      try {
+        FlutterForegroundTask.setOnLockScreenVisibility(false);
+        FlutterForegroundTask.stopService();
+      } catch (e) {
+        Logs().w('[VOIP] nettoyage foreground task impossible: $e');
+      }
+    }
   }
 
   /// Nom de route des écrans d'appel : [closeCall] nettoie tout en un seul appel.
@@ -162,6 +215,7 @@ class VoipPlugin with WidgetsBindingObserver implements WebRTCDelegate {
       }
     }
     final knownPeerId = peerId ?? dmPeerId;
+    matrix.store.setString(_activeCallKey, '1');
     _rtcStateSub?.cancel();
     // annulee a chaque re-connexion d etat et a la fin d appel
     // ignore: cancel_subscriptions
@@ -192,6 +246,7 @@ class VoipPlugin with WidgetsBindingObserver implements WebRTCDelegate {
   }
 
   Future<void> _endRtcCall() async {
+    matrix.store.setString(_activeCallKey, '');
     unawaited(_bridge.stopRinging());
     unawaited(_bridge.abandonAudioFocus());
     _clearOverlay();
@@ -245,6 +300,7 @@ class VoipPlugin with WidgetsBindingObserver implements WebRTCDelegate {
       Logs().w('[VOIP] Navigator indisponible, écran d\'appel non affiché');
       return;
     }
+    _callOverlayShown = true;
     nav.push(
       MaterialPageRoute<void>(
         builder: (_) => builder(),
@@ -257,6 +313,7 @@ class VoipPlugin with WidgetsBindingObserver implements WebRTCDelegate {
 
   /// Retire tous les écrans d'appel empilés (entrant + en cours).
   void _clearOverlay() {
+    _callOverlayShown = false;
     _nav?.popUntil((route) => route.settings.name != _callRoute);
   }
 
@@ -314,6 +371,7 @@ class VoipPlugin with WidgetsBindingObserver implements WebRTCDelegate {
     _session = call;
     _controller = VoipCallController(call);
     _listenNativeEvents();
+    matrix.store.setString(_activeCallKey, '1');
 
     if (PlatformInfos.isAndroid) {
       try {
@@ -380,6 +438,7 @@ class VoipPlugin with WidgetsBindingObserver implements WebRTCDelegate {
 
   @override
   Future<void> handleCallEnded(CallSession session) async {
+    matrix.store.setString(_activeCallKey, '');
     unawaited(_bridge.stopRinging());
     unawaited(_bridge.abandonAudioFocus());
     _clearOverlay();

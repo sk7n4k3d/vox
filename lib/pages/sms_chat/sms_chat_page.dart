@@ -460,17 +460,24 @@ class _SmsChatPageState extends State<SmsChatPage> with WidgetsBindingObserver {
     _scrollToBottom();
     _maybePlayEffect(body);
 
-    final int? rowId;
+    final int? rawRowId;
     if (hasImage) {
-      rowId = await SmsBridge.instance.sendMms(
+      rawRowId = await SmsBridge.instance.sendMms(
         widget.address,
         body.isEmpty ? null : body,
         imagePath,
       );
     } else {
-      rowId = await SmsBridge.instance.sendSms(widget.address, body);
+      rawRowId = await SmsBridge.instance.sendSms(widget.address, body);
     }
     if (!mounted) return;
+
+    // Convention native : un id NÉGATIF = « l'envoi a échoué, mais la ligne
+    // provider existe » (|id| = rowId). Sans ça la ligne FAILED restait
+    // orpheline : le message ressurgissait à chaque rechargement et la
+    // suppression ne tenait pas.
+    final failed = rawRowId != null && rawRowId < 0;
+    final rowId = failed ? -rawRowId : rawRowId;
 
     setState(() {
       _sending = false;
@@ -482,7 +489,7 @@ class _SmsChatPageState extends State<SmsChatPage> with WidgetsBindingObserver {
         body: optimistic.body,
         date: optimistic.date,
         isFromMe: true,
-        type: rowId != null ? _typeSent : _typeFailed,
+        type: (failed || rowId == null) ? _typeFailed : _typeSent,
         status: optimistic.status,
         read: true,
         isMms: optimistic.isMms,
@@ -724,9 +731,14 @@ class _SmsChatPageState extends State<SmsChatPage> with WidgetsBindingObserver {
     }
   }
 
-  /// Re-sends a previously failed SMS: drops the failed bubble and routes the
+  /// Re-sends a previously failed SMS: drops the failed bubble (and its
+  /// provider row, sinon elle ressurgit à la relecture) and routes the
   /// text back through the normal send path.
   Future<void> _resendMessage(SmsMessage message) async {
+    final realId = int.tryParse(message.id);
+    if (realId != null && realId > 0) {
+      await SmsBridge.instance.deleteMessage(realId, isMms: message.isMms);
+    }
     setState(() => _messages.removeWhere((m) => m.id == message.id));
     final rowId = await SmsBridge.instance.sendSms(
       widget.address,

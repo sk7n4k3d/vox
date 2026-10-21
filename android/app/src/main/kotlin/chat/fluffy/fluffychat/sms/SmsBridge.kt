@@ -880,11 +880,16 @@ object SmsBridge {
             } catch (e: SecurityException) {
                 Log.e(TAG, "sendSms → ${redact(address)}: SEND_SMS denied: ${e.message}")
                 markSmsFailed(context, rowId, e)
-                null
+                // Id NÉGATIF = « l'envoi a échoué MAIS la ligne provider
+                // existe » (|id| = rowId). Sans cette convention, le client
+                // perdait le rowId : la ligne FAILED restait orpheline dans le
+                // provider et le message réapparaissait à chaque rechargement,
+                // impossible à supprimer.
+                if (rowId > 0L) -rowId else null
             } catch (e: Exception) {
                 Log.e(TAG, "sendSms → ${redact(address)} failed: ${e.message}")
                 markSmsFailed(context, rowId, e)
-                null
+                if (rowId > 0L) -rowId else null
             }
         }
 
