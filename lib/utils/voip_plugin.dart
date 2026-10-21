@@ -426,6 +426,11 @@ class VoipPlugin with WidgetsBindingObserver implements WebRTCDelegate {
     final call = _session;
     final controller = _controller;
     if (call == null || controller == null) return;
+    // Le SDK n-envvoie le m.call.answer que si on le demande ici. Sans cet
+    // appel, l-ecran « appel entrant » s affiche mais l-appel ne se connecte
+    // JAMAIS : le pair ne recoit pas l answer et raccroche a l expiration de
+    // l invite (~60 s). Regression introduite le 14/10 (23fa8075d).
+    unawaited(call.answer());
     unawaited(_bridge.stopRinging());
     _showOverlay(() => ActiveCallPage(controller: controller));
   }
