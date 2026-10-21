@@ -55,6 +55,10 @@ class _MxcImageState extends State<MxcImage> {
   static final Map<String, Uint8List> _imageDataCache = {};
   Uint8List? _imageDataNoCache;
 
+  /// Nombre de tentatives de chargement (la boucle de retry est plafonnée :
+  /// sinon un média inaccessible fait saturer le réseau en boucle).
+  int _retries = 0;
+
   Uint8List? get _imageData => widget.cacheKey == null
       ? _imageDataNoCache
       : _imageDataCache[widget.cacheKey];
@@ -67,6 +71,13 @@ class _MxcImageState extends State<MxcImage> {
         : _imageDataCache[cacheKey] = data;
   }
 
+  /// Charge le média et l'affiche.
+  ///
+  /// Deux temps, pour ne JAMAIS bloquer l'interface sur un téléchargement :
+  /// 1. la source rapide (miniature du serveur pour un mxc, miniature de
+  ///    l'event sinon) s'affiche tout de suite ;
+  /// 2. une version plus nette est demandée en tâche de fond et remplacera la
+  ///    première quand elle arrive (cf. [_loadSharperVersion]).
   Future<void> _load() async {
     if (!mounted) return;
     final client =
@@ -80,107 +91,125 @@ class _MxcImageState extends State<MxcImage> {
     final height = widget.height;
     final realHeight = height == null ? null : height * devicePixelRatio;
 
+    // 1) mxc : le serveur sait générer une miniature à la bonne taille.
     if (uri != null) {
-      final remoteData = await client.downloadMxcCached(
-        uri,
-        width: realWidth,
-        height: realHeight,
-        thumbnailMethod: widget.thumbnailMethod,
-        isThumbnail: widget.isThumbnail,
-        animated: widget.animated,
-      );
-      if (!mounted) return;
-      setState(() {
-        _imageData = remoteData;
-      });
+      try {
+        final remoteData = await client.downloadMxcCached(
+          uri,
+          width: realWidth,
+          height: realHeight,
+          thumbnailMethod: widget.thumbnailMethod,
+          isThumbnail: widget.isThumbnail,
+          animated: widget.animated,
+        );
+        if (!mounted) return;
+        setState(() {
+          _imageData = remoteData;
+        });
+        return;
+      } catch (e) {
+        Logs().w('MxcImage: miniature serveur indisponible', e);
+      }
     }
 
-    if (event != null) {
-      final loaded = await _loadEventMedia(
-        client,
-        realWidth: realWidth,
-        realHeight: realHeight,
+    if (event == null) return;
+
+    // 2) la miniature portée par l'event : rapide, toujours disponible.
+    try {
+      final data = await event.downloadAndDecryptAttachment(
+        getThumbnail: widget.isThumbnail,
       );
-      if (loaded == null) return;
-      if (!mounted) return;
-      setState(() {
-        _imageData = loaded.bytes;
-      });
-      if (!widget.isThumbnail && loaded.file != null) {
-        unawaited(MediaExporter.instance.exportMatrixEvent(event, loaded.file!));
+      if (data.detectFileType is MatrixImageFile || widget.isThumbnail) {
+        if (!mounted) return;
+        setState(() {
+          _imageData = data.bytes;
+        });
+        if (!widget.isThumbnail) {
+          unawaited(MediaExporter.instance.exportMatrixEvent(event, data));
+        }
       }
+    } catch (e) {
+      Logs().w('MxcImage: miniature de l\'event indisponible', e);
       return;
+    }
+
+    // 3) version plus nette, en tâche de fond (l'UI n'attend pas).
+    if (widget.isThumbnail) {
+      _enqueueUpgrade(
+        () => _loadSharperVersion(client, realWidth, realHeight),
+      );
     }
   }
 
-  /// Charge le média porté par l'event à la meilleure qualité possible.
+  /// File d'attente des améliorations : une seule à la fois, sinon un cache
+  /// vidé triggers une rafale de téléchargements (le serveur sature et
+  /// l'app gèle au démarrage).
+  static Future<void> _upgradeQueue = Future<void>.value();
+
+  static void _enqueueUpgrade(Future<void> Function() job) {
+    _upgradeQueue = _upgradeQueue.then((_) => job()).catchError((_) {});
+  }
+
+  /// Demande une version plus nette de l'image de l'event, sans jamais
+  /// bloquer l'interface.
   ///
   /// L'event transporte souvent une miniature minuscule (96x96 px sur Synapse,
   /// 320x240 sur Element X) : la rendre telle quelle dans une bulle de
-  /// 400x300 = gros pixelisé. La chaîne de chargement est donc, par ordre de
-  /// préférence :
-  /// 1. média NON chiffré : miniature à la taille d'affichage générée par le
-  ///    serveur (il la met en cache) ;
-  /// 2. miniature de l'event, si elle est déjà assez grande pour l'affichage ;
-  /// 3. fichier complet (déchiffré si besoin), que le widget décode à la
-  ///    taille d'affichage : net, mais plus coûteux en data (le SDK le met en
-  ///    cache disque, donc payé une seule fois par média).
-  Future<({Uint8List bytes, MatrixFile? file})?> _loadEventMedia(
-    Client client, {
+  /// 400x300 = gros pixelisé.
+  ///  - média NON chiffré : on demande au serveur une miniature à la taille
+  ///    d'affichage (il la génère et la met en cache) ;
+  ///  - média CHIFFRÉ : le serveur ne voit que du chiffre, il ne peut pas
+  ///    re-dimensionner → on prend le fichier complet (déchiffré par le SDK,
+  ///    mis en cache disque) et le widget le décode à la taille d'affichage.
+  Future<void> _loadSharperVersion(
+    Client client,
     num? realWidth,
     num? realHeight,
-  }) async {
-    final event = widget.event!;
+  ) async {
+    final event = widget.event;
+    if (event == null) return;
     final displayPx = [
       realWidth,
       realHeight,
     ].whereType<num>().fold<num>(0, (a, b) => a > b ? a : b);
+    if (displayPx <= 0) return;
+    // Une vidéo ou un fichier : on garde la miniature (télécharger le film
+    // pour une vignette serait absurde).
+    if (!event.attachmentMimetype.startsWith('image/')) return;
+    // La miniature est déjà assez grande pour l'affichage : rien à faire.
+    final thumbPx = _eventThumbnailSize(event);
+    if (thumbPx > 0 && thumbPx >= displayPx * 0.5) return;
 
-    if (widget.isThumbnail) {
-      // 1) média non chiffré : le serveur sait re-dimensionner.
-      if (!event.isAttachmentEncrypted && displayPx > 0) {
+    try {
+      final Uint8List? better;
+      if (!event.isAttachmentEncrypted) {
         final attachmentUri = event.attachmentMxcUrl;
-        if (attachmentUri != null) {
-          try {
-            final sized = await client.downloadMxcCached(
+        if (attachmentUri == null) return;
+        better = await client
+            .downloadMxcCached(
               attachmentUri,
               width: realWidth,
               height: realHeight,
               thumbnailMethod: widget.thumbnailMethod,
               isThumbnail: true,
               animated: widget.animated,
-            );
-            return (bytes: sized, file: null);
-          } catch (_) {
-            // Le serveur ne sait pas (ou ne veut pas) produire cette miniature.
-          }
-        }
+            )
+            .timeout(const Duration(seconds: 20));
+      } else {
+        final size = event.infoMap['size'];
+        if (size is int && size > 8 * 1024 * 1024) return; // trop lourd
+        final full = await event
+            .downloadAndDecryptAttachment(getThumbnail: false)
+            .timeout(const Duration(seconds: 30));
+        better = full.bytes;
       }
-      // 2) la miniature de l'event suffit-elle ? Une image trop petite ne
-      //    peut pas être agrandie proprement : on part alors sur le fichier
-      //    complet. (Les vidéos gardent leur miniature : télécharger le film
-      //    pour une vignette serait absurde.)
-      final thumbPx = _eventThumbnailSize(event);
-      final isImage = event.attachmentMimetype.startsWith('image/');
-      if (!isImage || (thumbPx > 0 && thumbPx >= displayPx * 0.5)) {
-        final thumb = await event.downloadAndDecryptAttachment(
-          getThumbnail: true,
-        );
-        if (thumb.detectFileType is MatrixImageFile || widget.isThumbnail) {
-          return (bytes: thumb.bytes, file: thumb);
-        }
-        return null;
-      }
-      // 3) image dont la miniature est trop petite : on prend le fichier
-      //    complet, que le widget décodera à la taille d'affichage.
+      if (better.isEmpty || !mounted) return;
+      setState(() {
+        _imageData = better;
+      });
+    } catch (e) {
+      Logs().w('MxcImage: version plus nette indisponible', e);
     }
-    final data = await event.downloadAndDecryptAttachment(
-      getThumbnail: widget.isThumbnail,
-    );
-    if (data.detectFileType is MatrixImageFile || widget.isThumbnail) {
-      return (bytes: data.bytes, file: data);
-    }
-    return null;
   }
 
   /// Taille en px (côté long) de la miniature portée par l'event, 0 si
@@ -197,10 +226,14 @@ class _MxcImageState extends State<MxcImage> {
     if (_imageData != null) {
       return;
     }
+    // Au bout de quelques échecs on abandonne : une boucle de retry infinie
+    // sature le réseau et laisse l'app sur un écran de chargement.
+    if (_retries >= 3) return;
     try {
       await _load();
     } on IOException catch (_) {
       if (!mounted) return;
+      _retries++;
       await Future.delayed(widget.retryDuration);
       _tryLoad();
     }
