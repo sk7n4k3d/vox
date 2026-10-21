@@ -447,6 +447,10 @@ object VoipBridge {
                 .setOngoing(ongoing)
                 .setContentIntent(openPending)
                 .setCategory(Notification.CATEGORY_CALL)
+                // Groupe explicite : sans lui Android regroupe la notification
+                // dans son agregat systeme, et le resume du groupe reste
+                // affiche apres la fin de l'appel.
+                .setGroup("voip_call")
                 .addAction(
                     Notification.Action.Builder(
                         android.R.drawable.ic_menu_close_clear_cancel,

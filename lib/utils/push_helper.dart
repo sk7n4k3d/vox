@@ -179,10 +179,10 @@ Future<void> _tryPushHelper(
       playSound: ringtone != 'silent',
       sound: channelSound,
       enableVibration: true,
-      // Route through the ringtone stream so the volume follows the
-      // phone-call volume slider instead of the (much quieter) default
-      // notification stream.
-      audioAttributesUsage: AudioAttributesUsage.notificationRingtone,
+      // Flux ALARME et non RING : pendant un appel, Android reroute le flux
+      // RING vers l'ecouteur de l'appareil -> la sonnerie devenait
+      // inaudible. Le flux alarme reste sur le haut-parleur.
+      audioAttributesUsage: AudioAttributesUsage.alarm,
     );
     await flutterLocalNotificationsPlugin
         .resolvePlatformSpecificImplementation<
@@ -202,7 +202,7 @@ Future<void> _tryPushHelper(
       autoCancel: false,
       playSound: ringtone != 'silent',
       sound: channelSound,
-      audioAttributesUsage: AudioAttributesUsage.notificationRingtone,
+      audioAttributesUsage: AudioAttributesUsage.alarm,
       ticker: '${l10n.voiceCall} — $callerDisplayName',
     );
     await flutterLocalNotificationsPlugin.show(

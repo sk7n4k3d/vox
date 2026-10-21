@@ -78,6 +78,12 @@ class VoipPlugin with WidgetsBindingObserver implements WebRTCDelegate {
       _showOverlay(() => ActiveCallPage(controller: controller));
       return;
     }
+    // Aucun appel en cours : la notification d'appel doit disparaitre (l'appel
+    // a pu se terminer pendant que l'app etait en arriere-plan, sans que le
+    // callback de fin ne passe).
+    if (rtcCall == null && session == null) {
+      unawaited(_bridge.clearCallNotification());
+    }
     // Aucun appel vivant mais la trace en dit le contraire : l'activity a
     // été recréée pendant l'appel → l'appel est mort, on le dit et on nettoie
     // le service natif (sinon la notification d'appel reste en fond).
@@ -467,13 +473,9 @@ class VoipPlugin with WidgetsBindingObserver implements WebRTCDelegate {
     final callerName = call.remoteUserId ?? call.room.getLocalizedDisplayname();
     Logs().w('[VOIP] appel entrant de $callerName (${call.type})');
 
-    unawaited(
-      _bridge.showCallNotification(
-        title: 'Appel entrant de $callerName',
-        text: call.type == CallType.kVideo ? 'Appel vidéo' : 'Appel audio',
-        ongoing: false,
-      ),
-    );
+    // Pas de notification ici : le SDK en poste deja une pour l'appel entrant
+    // legacy (avec fullScreenIntent, elle remonte l'ecran d'appel). On ne la
+    // duplique pas. L'appel entrant RTC, lui, n'a rien : c'est poste plus bas.
     _showOverlay(
       () => IncomingCallPage(
         callId: call.callId,
