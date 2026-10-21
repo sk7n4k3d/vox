@@ -117,38 +117,62 @@ class _MxcImageState extends State<MxcImage> {
   ///
   /// L'event transporte souvent une miniature minuscule (96x96 px sur Synapse,
   /// 320x240 sur Element X) : la rendre telle quelle dans une bulle de
-  /// 400x300 = gros pixelisé. Pour un média NON chiffré, on demande donc au
-  /// serveur une miniature à la taille d'affichage (le serveur la génère et la
-  /// met en cache) ; si le serveur refuse, on retombe sur la miniature de
-  /// l'event, et en dernier recours sur le fichier complet.
-  ///
-  /// Un média chiffré reste sur la miniature de l'event : le serveur ne peut
-  /// pas le re-dimensionner, et Télécharger le fichier complet en clair pour
-  /// une bulle serait trop coûteux en data.
+  /// 400x300 = gros pixelisé. La chaîne de chargement est donc, par ordre de
+  /// préférence :
+  /// 1. média NON chiffré : miniature à la taille d'affichage générée par le
+  ///    serveur (il la met en cache) ;
+  /// 2. miniature de l'event, si elle est déjà assez grande pour l'affichage ;
+  /// 3. fichier complet (déchiffré si besoin), que le widget décode à la
+  ///    taille d'affichage : net, mais plus coûteux en data (le SDK le met en
+  ///    cache disque, donc payé une seule fois par média).
   Future<({Uint8List bytes, MatrixFile? file})?> _loadEventMedia(
     Client client, {
     num? realWidth,
     num? realHeight,
   }) async {
     final event = widget.event!;
-    if (widget.isThumbnail && !event.isAttachmentEncrypted) {
-      final attachmentUri = event.attachmentMxcUrl;
-      if (attachmentUri != null && (realWidth != null || realHeight != null)) {
-        try {
-          final sized = await client.downloadMxcCached(
-            attachmentUri,
-            width: realWidth,
-            height: realHeight,
-            thumbnailMethod: widget.thumbnailMethod,
-            isThumbnail: true,
-            animated: widget.animated,
-          );
-          return (bytes: sized, file: null);
-        } catch (_) {
-          // Le serveur ne sait pas (ou ne veut pas) produire cette miniature :
-          // on tente la miniature de l'event ci-dessous.
+    final displayPx = [
+      realWidth,
+      realHeight,
+    ].whereType<num>().fold<num>(0, (a, b) => a > b ? a : b);
+
+    if (widget.isThumbnail) {
+      // 1) média non chiffré : le serveur sait re-dimensionner.
+      if (!event.isAttachmentEncrypted && displayPx > 0) {
+        final attachmentUri = event.attachmentMxcUrl;
+        if (attachmentUri != null) {
+          try {
+            final sized = await client.downloadMxcCached(
+              attachmentUri,
+              width: realWidth,
+              height: realHeight,
+              thumbnailMethod: widget.thumbnailMethod,
+              isThumbnail: true,
+              animated: widget.animated,
+            );
+            return (bytes: sized, file: null);
+          } catch (_) {
+            // Le serveur ne sait pas (ou ne veut pas) produire cette miniature.
+          }
         }
       }
+      // 2) la miniature de l'event suffit-elle ? Une image trop petite ne
+      //    peut pas être agrandie proprement : on part alors sur le fichier
+      //    complet. (Les vidéos gardent leur miniature : télécharger le film
+      //    pour une vignette serait absurde.)
+      final thumbPx = _eventThumbnailSize(event);
+      final isImage = event.attachmentMimetype.startsWith('image/');
+      if (!isImage || (thumbPx > 0 && thumbPx >= displayPx * 0.5)) {
+        final thumb = await event.downloadAndDecryptAttachment(
+          getThumbnail: true,
+        );
+        if (thumb.detectFileType is MatrixImageFile || widget.isThumbnail) {
+          return (bytes: thumb.bytes, file: thumb);
+        }
+        return null;
+      }
+      // 3) image dont la miniature est trop petite : on prend le fichier
+      //    complet, que le widget décodera à la taille d'affichage.
     }
     final data = await event.downloadAndDecryptAttachment(
       getThumbnail: widget.isThumbnail,
@@ -157,6 +181,16 @@ class _MxcImageState extends State<MxcImage> {
       return (bytes: data.bytes, file: data);
     }
     return null;
+  }
+
+  /// Taille en px (côté long) de la miniature portée par l'event, 0 si
+  /// inconnue ou absente.
+  int _eventThumbnailSize(Event event) {
+    final info = event.thumbnailInfoMap;
+    final w = info['w'];
+    final h = info['h'];
+    if (w is int && h is int) return w > h ? w : h;
+    return 0;
   }
 
   Future<void> _tryLoad() async {
