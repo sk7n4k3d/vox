@@ -5,6 +5,7 @@ import 'package:fluffychat/l10n/l10n.dart';
 import 'package:fluffychat/pages/chat_list/chat_list.dart';
 import 'package:fluffychat/pages/chat_list/chat_list_item.dart';
 import 'package:fluffychat/pages/chat_list/dummy_chat_list_item.dart';
+import 'package:fluffychat/pages/chat_list/favourites_row.dart';
 import 'package:fluffychat/pages/chat_list/liquid_glass_app_bar.dart';
 import 'package:fluffychat/pages/chat_list/search_title.dart';
 import 'package:fluffychat/pages/chat_list/sms_list_item.dart';
@@ -171,13 +172,32 @@ class ChatListViewBody extends StatelessWidget {
                               ),
                       ),
                     ],
-                    if (!controller.isSearchMode &&
-                        AppSettings.showPresences.value)
-                      GestureDetector(
-                        onLongPress: controller.dismissStatusList,
-                        child: StatusMessageList(
-                          onStatusEdit: controller.setStatus,
-                        ),
+                    if (!controller.isSearchMode)
+                      // Les conversations favorites d'abord : c'est ce que
+                      // l'utilisateur attend en haut de la liste (la rangee
+                      // des statuts/presences ne se partageait pas et
+                      // prenait la place). Sans favori, on garde les statuts.
+                      Builder(
+                        builder: (context) {
+                          final hasFavourites = client.rooms.any(
+                            (r) =>
+                                r.isFavourite &&
+                                !r.isSpace &&
+                                r.membership == Membership.join,
+                          );
+                          if (hasFavourites) {
+                            return FavouritesRow(controller: controller);
+                          }
+                          if (!AppSettings.showPresences.value) {
+                            return const SizedBox.shrink();
+                          }
+                          return GestureDetector(
+                            onLongPress: controller.dismissStatusList,
+                            child: StatusMessageList(
+                              onStatusEdit: controller.setStatus,
+                            ),
+                          );
+                        },
                       ),
                     // Filter pills moved to a dedicated SliverPersistentHeader
                     // above; see ChatListFilterPills.
