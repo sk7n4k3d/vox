@@ -9,6 +9,7 @@ import android.os.Bundle
 
 import chat.fluffy.fluffychat.wear.WearBridgePlugin
 import chat.fluffy.fluffychat.sms.SmsBridgePlugin
+import chat.fluffy.fluffychat.video.VideoCompressorPlugin
 import chat.fluffy.fluffychat.voip.VoipBridgePlugin
 
 class MainActivity : FlutterFragmentActivity() {
@@ -35,6 +36,7 @@ class MainActivity : FlutterFragmentActivity() {
         WearBridgePlugin.register(applicationContext, flutterEngine)
         SmsBridgePlugin.register(applicationContext, flutterEngine)
         VoipBridgePlugin.register(applicationContext, flutterEngine)
+        VideoCompressorPlugin.register(applicationContext, flutterEngine)
     }
 
     override fun onNewIntent(intent: Intent) {

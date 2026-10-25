@@ -22,6 +22,9 @@ dependencies {
 
     // ML Kit Smart Reply — bundled (PAS play-services-mlkit-smart-reply qui exige GMS)
     implementation("com.google.mlkit:smart-reply:17.0.4")
+
+    // Compression vidéo native (remplace video_compress Flutter)
+    implementation("androidx.media3:media3-transformer:1.9.1")
 }
 
 
