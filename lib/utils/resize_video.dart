@@ -1,47 +1,48 @@
 import 'package:cross_file/cross_file.dart';
-import 'package:fluffychat/utils/platform_infos.dart';
+import 'package:fluffychat/utils/video/video_bridge.dart';
 import 'package:matrix/matrix.dart';
-import 'package:video_compress/video_compress.dart';
 
-extension ResizeImage on XFile {
-  static const int max = 1200;
-  static const int quality = 40;
-
+extension ResizeVideo on XFile {
+  /// Video ready to be sent to Matrix. Compression goes through the native
+  /// Media3 bridge (`VideoBridge`); `video_compress` used to hang forever on
+  /// heavy files. Throws [VideoCompressionException] when compression fails or
+  /// is cancelled — the sender shows a retry instead of a dead spinner.
   Future<MatrixVideoFile> getVideoInfo({bool compress = true}) async {
-    MediaInfo? mediaInfo;
-    try {
-      if (PlatformInfos.isMobile) {
-        // will throw an error e.g. on Android SDK < 18
-        mediaInfo = compress
-            ? await VideoCompress.compressVideo(path, deleteOrigin: true)
-            : await VideoCompress.getMediaInfo(path);
+    if (compress) {
+      final job = await VideoBridge.instance.start(path, compress: true);
+      if (job != null) {
+        final result = await VideoBridge.instance.waitFor(job.jobId);
+        return MatrixVideoFile(
+          bytes: await XFile(result.outputPath).readAsBytes(),
+          name: name,
+          mimeType: mimeType,
+          width: result.width,
+          height: result.height,
+          duration: (result.durationMs / 1000).round(),
+        );
       }
-    } catch (e, s) {
-      Logs().w('Error while fetching video media info', e, s);
     }
-
+    // Pas de compression (interrupteur de la boîte d'envoi) ou pont natif
+    // indisponible : métadonnées lues nativement, octets tels quels.
+    final meta = await VideoBridge.instance.meta(path);
     return MatrixVideoFile(
-      bytes: (await mediaInfo?.file?.readAsBytes()) ?? await readAsBytes(),
+      bytes: await readAsBytes(),
       name: name,
       mimeType: mimeType,
-      // on Android width and height is reversed:
-      // https://github.com/jonataslaw/VideoCompress/issues/172
-      width: PlatformInfos.isAndroid ? mediaInfo?.height : mediaInfo?.width,
-      height: PlatformInfos.isAndroid ? mediaInfo?.width : mediaInfo?.height,
-      duration: mediaInfo?.duration?.round(),
+      width: meta?.width,
+      height: meta?.height,
+      duration: meta == null ? null : (meta.durationMs / 1000).round(),
     );
   }
 
   Future<MatrixImageFile?> getVideoThumbnail() async {
-    if (!PlatformInfos.isMobile) return null;
-
     try {
-      final bytes = await VideoCompress.getByteThumbnail(path);
+      final bytes = await VideoBridge.instance.thumbnail(path);
       if (bytes == null) return null;
       return MatrixImageFile(bytes: bytes, name: name);
-    } catch (e, s) {
-      Logs().w('Error while compressing video', e, s);
+    } on Object catch (e, s) {
+      Logs().w('Error while fetching video thumbnail', e, s);
+      return null;
     }
-    return null;
   }
 }
