@@ -146,10 +146,15 @@ class VideoCompressorBridge(private val context: Context) {
             return
         }
         handle.cancelled = true
-        try {
-            handle.transformer?.cancel()
-        } catch (e: Exception) {
-            Log.w(TAG, "cancel: ${e.message}")
+        // Transformer exige que ses méthodes tournent sur sa thread applicative
+        // (celui du job) — appeler cancel() depuis le main thread lève une
+        // IllegalStateException qui avalerait silencieusement l'annulation.
+        handler.post {
+            try {
+                handle.transformer?.cancel()
+            } catch (e: Exception) {
+                Log.w(TAG, "cancel: ${e.message}")
+            }
         }
     }
 

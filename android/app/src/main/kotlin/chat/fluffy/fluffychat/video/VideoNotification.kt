@@ -150,8 +150,8 @@ class VideoNotification(private val context: Context) {
                 val cancelPending = PendingIntent.getBroadcast(
                     context,
                     REQ_CANCEL,
-                    Intent(context, cancelReceiver.javaClass)
-                        .setAction(ACTION_CANCEL)
+                    Intent(ACTION_CANCEL)
+                        .setPackage(context.packageName)
                         .putExtra(EXTRA_JOB_ID, currentJobId),
                     PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
                 )
