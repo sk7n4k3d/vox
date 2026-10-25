@@ -175,11 +175,12 @@ class VideoBridge {
     }
   }
 
-  /// Deletes the temp output of a finished job. Never deletes the source of a
-  /// passthrough result.
+  /// Deletes the temp output of a finished job. Passthrough outputs are
+  /// copies made under the app cache too — the user's source file itself is
+  /// never in scope (native cleanup is guarded to cacheDir/video).
   Future<void> disposeResult(String jobId) async {
     final result = _finished.remove(jobId);
-    if (result == null || result.passthrough) return;
+    if (result == null) return;
     try {
       await _channel
           .invokeMethod<void>('cleanup', {'paths': [result.outputPath]});

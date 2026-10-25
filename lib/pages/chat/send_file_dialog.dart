@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:async/async.dart' show Result;
 import 'package:cross_file/cross_file.dart';
 import 'package:fluffychat/config/app_config.dart';
@@ -15,6 +17,7 @@ import 'package:matrix/matrix.dart' hide Result;
 import 'package:mime/mime.dart';
 
 import '../../utils/resize_video.dart';
+import '../../utils/video/video_bridge.dart';
 
 class SendFileDialog extends StatefulWidget {
   final Room room;
@@ -38,6 +41,10 @@ class SendFileDialog extends StatefulWidget {
 class SendFileDialogState extends State<SendFileDialog> {
   bool compress = true;
 
+  /// Files already pushed to the server in this send — a compression failure
+  /// mid-list must retry where it stopped, not re-send what already went out.
+  int _sentFiles = 0;
+
   /// Images smaller than 20kb don't need compression.
   static const int minSizeToCompress = 20 * 1000;
 
@@ -57,34 +64,49 @@ class SendFileDialogState extends State<SendFileDialog> {
       if (!widget.room.otherPartyCanReceiveMessages) {
         throw OtherPartyCanNotReceiveMessages();
       }
+      VideoBridge.instance.lastCompressJobId = null;
       scaffoldMessenger.showLoadingSnackBar(l10n.prepareSendingAttachment);
       Navigator.of(context, rootNavigator: false).pop();
       final clientConfig = await Result.capture(widget.room.client.getConfig());
       final maxUploadSize =
           clientConfig.asValue?.value.mUploadSize ?? 100 * 1000 * 1000;
 
-      for (final xfile in widget.files) {
+      for (final xfile in widget.files.sublist(_sentFiles)) {
         final MatrixFile file;
         MatrixImageFile? thumbnail;
         final length = await xfile.length();
         final mimeType = xfile.mimeType ?? lookupMimeType(xfile.path);
 
         // Generate video thumbnail
-        if (PlatformInfos.isMobile &&
+        final isVideo = PlatformInfos.isMobile &&
             mimeType != null &&
-            mimeType.startsWith('video')) {
+            mimeType.startsWith('video');
+        if (isVideo) {
           scaffoldMessenger.showLoadingSnackBar(l10n.generatingVideoThumbnail);
           thumbnail = await xfile.getVideoThumbnail();
         }
 
         // If file is a video, shrink it!
-        if (PlatformInfos.isMobile &&
-            mimeType != null &&
-            mimeType.startsWith('video')) {
+        if (isVideo) {
+          final compressThis = length > minSizeToCompress && compress;
           scaffoldMessenger.showLoadingSnackBar(l10n.compressVideo);
-          file = await xfile.getVideoInfo(
-            compress: length > minSizeToCompress && compress,
-          );
+          // live percent from the native encoder (the in-app surface for the
+          // same progress is the ongoing notification, see VideoNotification)
+          StreamSubscription<VideoProgress>? progressSub;
+          if (compressThis) {
+            progressSub = VideoBridge.instance.progress.listen((p) {
+              if (p.percent > 0) {
+                scaffoldMessenger.showLoadingSnackBar(
+                  l10n.compressingVideoPercent(p.percent),
+                );
+              }
+            });
+          }
+          try {
+            file = await xfile.getVideoInfo(compress: compressThis);
+          } finally {
+            await progressSub?.cancel();
+          }
         } else {
           if (length > maxUploadSize) {
             throw FileTooBigMatrixException(length, maxUploadSize);
@@ -121,6 +143,14 @@ class SendFileDialogState extends State<SendFileDialog> {
             threadRootEventId: widget.threadRootEventId,
             threadLastEventId: widget.threadLastEventId,
           );
+          _sentFiles++;
+          // upload succeeded → the compressed temp copy can go (never the
+          // user's source file; native cleanup is cache-guarded)
+          final jobId = VideoBridge.instance.lastCompressJobId;
+          if (jobId != null) {
+            VideoBridge.instance.lastCompressJobId = null;
+            await VideoBridge.instance.disposeResult(jobId);
+          }
         } on MatrixException catch (e) {
           final retryAfterMs = e.retryAfterMs;
           if (e.error != MatrixError.M_LIMIT_EXCEEDED || retryAfterMs == null) {
@@ -147,9 +177,31 @@ class SendFileDialogState extends State<SendFileDialog> {
             shrinkImageMaxDimension: compress ? 1600 : null,
             extraContent: label.isEmpty ? null : {'body': label},
           );
+          _sentFiles++;
+          final jobId = VideoBridge.instance.lastCompressJobId;
+          if (jobId != null) {
+            VideoBridge.instance.lastCompressJobId = null;
+            await VideoBridge.instance.disposeResult(jobId);
+          }
         }
       }
+      _sentFiles = 0;
       scaffoldMessenger.clearSnackBars();
+    } on VideoCompressionException catch (e) {
+      scaffoldMessenger.clearSnackBars();
+      if (e.code != 'cancelled') {
+        scaffoldMessenger.showSnackBar(
+          SnackBar(
+            content: Text(L10n.of(context).videoCompressionFailed),
+            duration: const Duration(seconds: 30),
+            action: SnackBarAction(
+              label: L10n.of(context).retryCompression,
+              onPressed: _send,
+            ),
+          ),
+        );
+      }
+      return;
     } catch (e) {
       scaffoldMessenger.clearSnackBars();
       final theme = Theme.of(context);

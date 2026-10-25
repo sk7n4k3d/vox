@@ -208,14 +208,15 @@ void main() {
       expect(cleanup.arguments['paths'], ['/cache/video/j1.mp4']);
     });
 
-    test('passthrough result is never deleted', () async {
+    test('passthrough output is a cache copy and IS deleted', () async {
       bridgeWith((m, a) async => {'jobId': 'j1'});
       final job = (await bridge.start('/v.mp4', compress: true))!;
       final future = bridge.waitFor(job.jobId);
       streamHandler.emit(doneEvent('j1', passthrough: true));
       await future;
       await bridge.disposeResult(job.jobId);
-      expect(native.calls.where((c) => c.method == 'cleanup'), isEmpty);
+      final cleanup = native.calls.lastWhere((c) => c.method == 'cleanup');
+      expect(cleanup.arguments['paths'], ['/orig.mp4']);
     });
   });
 

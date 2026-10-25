@@ -2538,6 +2538,10 @@
     "sendingAttachment": "Sending attachment...",
     "generatingVideoThumbnail": "Generating video thumbnail...",
     "compressVideo": "Compressing video...",
+    "compressingVideoPercent": "Compressing video… {percent}%",
+    "@compressingVideoPercent": {"placeholders": {"percent": {"type": "int"}}},
+    "videoCompressionFailed": "Video compression failed",
+    "retryCompression": "Retry",
     "sendingAttachmentCountOfCount": "Sending attachment {index} of {length}...",
     "@sendingAttachmentCountOfCount": {
         "type": "integer",
