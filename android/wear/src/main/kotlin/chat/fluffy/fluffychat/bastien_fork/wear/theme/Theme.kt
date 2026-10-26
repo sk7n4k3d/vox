@@ -6,13 +6,15 @@ import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.Font
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.wear.compose.material3.ColorScheme
 import androidx.wear.compose.material3.MaterialTheme
 import androidx.wear.compose.material3.Typography
 import chat.fluffy.fluffychat.bastien_fork.wear.R
 
-// Sprint 2 V2 — palette CYBERCORE alignée avec le phone (FluffyColors).
+// Palette CYBERCORE alignée avec le phone (FluffyColors), revue pour la
+// lisibilité sur le cadran (contrastes AA+ sur noir, surfaces étagées).
 private val CyberCyan = Color(0xFF00F0FF)
 private val CyberCyanDim = Color(0xFF0891B2)
 private val CyberMagenta = Color(0xFFFF2E92)
@@ -29,8 +31,8 @@ private val CyberBg = Color(0xFF000000)              // AOD-safe pur
 private val CyberSurfaceLow = Color(0xFF0A0511)
 private val CyberSurface = Color(0xFF130A1F)
 private val CyberSurfaceHigh = Color(0xFF1F1233)
-private val CyberOnSurface = Color(0xFFF0EAFF)       // ~ 95% white pour contraste >7
-private val CyberOnSurfaceVariant = Color(0xFFB8AECC)
+private val CyberOnSurface = Color(0xFFF3EFFA)       // ~96% white — texte le plus présent possible
+private val CyberOnSurfaceVariant = Color(0xFFC3B9D6) // rehaussé : 12sp reste lisible sur noir
 
 private val CyberpunkColors = ColorScheme(
     primary = CyberCyan,
@@ -64,7 +66,7 @@ private val CyberpunkColors = ColorScheme(
     onErrorContainer = CyberMagenta
 )
 
-// Sprint 2 V2 — fonts custom Wear (Rajdhani titres + Inter body).
+// Fonts custom Wear : Rajdhani (titres, signature du fork) + Inter (lecture).
 private val Rajdhani = FontFamily(
     Font(R.font.rajdhani, FontWeight.Normal),
     Font(R.font.rajdhani_semibold, FontWeight.SemiBold),
@@ -77,26 +79,29 @@ private val Inter = FontFamily(
     Font(R.font.inter_semibold, FontWeight.SemiBold),
 )
 
+// Rampe 2026-10-26 — repensée pour le poignet : le corps de message passe de
+// 11 à 15sp (minimum confortable sur 1,5"), les titres de room à 17sp, les
+// horodatages restent petits mais montent d'un cran.
 private val CyberpunkTypography = Typography(
-    // Display = Rajdhani Bold, room names + screen headers Wear.
-    displayLarge = TextStyle(fontFamily = Rajdhani, fontWeight = FontWeight.Bold, fontSize = 26.sp, letterSpacing = (-0.3).sp),
-    displayMedium = TextStyle(fontFamily = Rajdhani, fontWeight = FontWeight.Bold, fontSize = 22.sp),
-    displaySmall = TextStyle(fontFamily = Rajdhani, fontWeight = FontWeight.SemiBold, fontSize = 18.sp),
+    // Display = Rajdhani Bold, entêtes d'écran.
+    displayLarge = TextStyle(fontFamily = Rajdhani, fontWeight = FontWeight.Bold, fontSize = 28.sp, letterSpacing = (-0.5).sp),
+    displayMedium = TextStyle(fontFamily = Rajdhani, fontWeight = FontWeight.Bold, fontSize = 24.sp, letterSpacing = (-0.4).sp),
+    displaySmall = TextStyle(fontFamily = Rajdhani, fontWeight = FontWeight.SemiBold, fontSize = 20.sp),
 
-    // Title = Rajdhani SemiBold pour bubble headers / section labels.
-    titleLarge = TextStyle(fontFamily = Rajdhani, fontWeight = FontWeight.SemiBold, fontSize = 16.sp),
-    titleMedium = TextStyle(fontFamily = Rajdhani, fontWeight = FontWeight.SemiBold, fontSize = 14.sp),
-    titleSmall = TextStyle(fontFamily = Rajdhani, fontWeight = FontWeight.SemiBold, fontSize = 12.sp),
+    // Title = Rajdhani SemiBold : noms de rooms, en-têtes de cartes.
+    titleLarge = TextStyle(fontFamily = Rajdhani, fontWeight = FontWeight.SemiBold, fontSize = 17.sp),
+    titleMedium = TextStyle(fontFamily = Rajdhani, fontWeight = FontWeight.SemiBold, fontSize = 15.sp),
+    titleSmall = TextStyle(fontFamily = Rajdhani, fontWeight = FontWeight.SemiBold, fontSize = 13.sp, letterSpacing = 0.1.sp),
 
-    // Body = Inter pour lecture longue (timestamps, body messages, hints).
-    bodyLarge = TextStyle(fontFamily = Inter, fontWeight = FontWeight.Normal, fontSize = 14.sp, lineHeight = 19.sp),
-    bodyMedium = TextStyle(fontFamily = Inter, fontWeight = FontWeight.Normal, fontSize = 13.sp, lineHeight = 17.sp),
-    bodySmall = TextStyle(fontFamily = Inter, fontWeight = FontWeight.Normal, fontSize = 11.sp, lineHeight = 14.sp),
+    // Body = Inter : le vrai contenu. bodyLarge est la taille des messages.
+    bodyLarge = TextStyle(fontFamily = Inter, fontWeight = FontWeight.Normal, fontSize = 15.sp, lineHeight = 20.sp),
+    bodyMedium = TextStyle(fontFamily = Inter, fontWeight = FontWeight.Normal, fontSize = 14.sp, lineHeight = 19.sp),
+    bodySmall = TextStyle(fontFamily = Inter, fontWeight = FontWeight.Normal, fontSize = 12.sp, lineHeight = 16.sp),
 
-    // Labels = Inter Medium uppercase-ish via letterSpacing.
-    labelLarge = TextStyle(fontFamily = Inter, fontWeight = FontWeight.Medium, fontSize = 12.sp, letterSpacing = 0.1.sp),
-    labelMedium = TextStyle(fontFamily = Inter, fontWeight = FontWeight.Medium, fontSize = 10.sp, letterSpacing = 0.5.sp),
-    labelSmall = TextStyle(fontFamily = Inter, fontWeight = FontWeight.Medium, fontSize = 9.sp, letterSpacing = 0.5.sp),
+    // Labels = Inter Medium, capitales espacées pour les micro-informations.
+    labelLarge = TextStyle(fontFamily = Inter, fontWeight = FontWeight.Medium, fontSize = 13.sp, letterSpacing = 0.2.sp),
+    labelMedium = TextStyle(fontFamily = Inter, fontWeight = FontWeight.Medium, fontSize = 11.sp, letterSpacing = 0.6.sp),
+    labelSmall = TextStyle(fontFamily = Inter, fontWeight = FontWeight.Medium, fontSize = 10.sp, letterSpacing = 0.8.sp),
 )
 
 @Composable
@@ -108,11 +113,23 @@ fun CyberpunkWearTheme(content: @Composable () -> Unit) {
     )
 }
 
-// Tokens exportés pour usage direct (glow accents, etc.)
+// Tokens exportés pour usage direct (glow accents, espacements, rayons).
 object CyberTokens {
     val cyan = CyberCyan
     val magenta = CyberMagenta
     val violet = CyberViolet
     val warn = CyberWarn
     val success = CyberSuccess
+}
+
+/** Espacements et rayons du design system Wear — une seule échelle pour tous les écrans. */
+object WearDimens {
+    val gapXs = 2.dp
+    val gapSm = 4.dp
+    val gapMd = 8.dp
+    val gapLg = 12.dp
+    val gapXl = 16.dp
+    val bubbleCorner = 18.dp
+    val bubbleTail = 6.dp
+    val cardCorner = 20.dp
 }

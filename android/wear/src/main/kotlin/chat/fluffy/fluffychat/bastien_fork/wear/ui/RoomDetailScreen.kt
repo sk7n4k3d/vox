@@ -2,6 +2,10 @@ package chat.fluffy.fluffychat.bastien_fork.wear.ui
 
 import android.Manifest
 import android.content.pm.PackageManager
+import android.content.Intent
+import android.graphics.BitmapFactory
+import android.net.Uri
+import android.util.Base64 as AndroidBase64
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.core.EaseInOut
@@ -10,26 +14,22 @@ import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
-import android.content.Intent
-import android.graphics.BitmapFactory
-import android.net.Uri
-import android.util.Base64 as AndroidBase64
-import androidx.concurrent.futures.await
-import androidx.wear.remote.interactions.RemoteActivityHelper
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.Stop
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -37,30 +37,29 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
-import kotlinx.coroutines.launch
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
-import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
-import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.concurrent.futures.await
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.wear.compose.foundation.lazy.TransformingLazyColumn
 import androidx.wear.compose.foundation.lazy.rememberTransformingLazyColumnState
 import androidx.wear.compose.material3.ButtonDefaults
-import androidx.wear.compose.material3.Card
-import androidx.wear.compose.material3.CardDefaults
 import androidx.wear.compose.material3.EdgeButton
 import androidx.wear.compose.material3.EdgeButtonSize
 import androidx.wear.compose.material3.FailureConfirmationDialog
@@ -70,14 +69,31 @@ import androidx.wear.compose.material3.ScreenScaffold
 import androidx.wear.compose.material3.SuccessConfirmationDialog
 import androidx.wear.compose.material3.Text
 import androidx.wear.compose.material3.curvedText
+import androidx.wear.remote.interactions.RemoteActivityHelper
 import chat.fluffy.fluffychat.bastien_fork.wear.data.RoomEntry
 import chat.fluffy.fluffychat.bastien_fork.wear.data.RoomMessage
+import chat.fluffy.fluffychat.bastien_fork.wear.theme.CyberTokens
+import chat.fluffy.fluffychat.bastien_fork.wear.theme.WearDimens
 import chat.fluffy.fluffychat.bastien_fork.wear.voice.RecordingState
 import chat.fluffy.fluffychat.bastien_fork.wear.voice.UploadState
 import chat.fluffy.fluffychat.bastien_fork.wear.voice.VoiceRecordingService
 import chat.fluffy.fluffychat.bastien_fork.wear.voice.VoiceUploader
-import kotlin.math.abs
+import kotlinx.coroutines.launch
 
+/**
+ * Conversation — refonte premium 2026-10-26.
+ *
+ * Nouveautés contre la V2 « moche » :
+ *  - scroll automatique vers le dernier message (l'appelant du bug historique) ;
+ *  - séparateurs de jour (Aujourd'hui / Hier / lun. 12 janv.) ;
+ *  - bulles asymétriques à queue : les miennes en dégradé cyan→violet avec halo,
+ *    celles des autres en surface + nom de l'expéditeur ;
+ *  - corps de message en 15sp (contre 11sp — illisibles au poignet) ;
+ *  - pastille vocale : onde animée + durée, tap = ouvrir sur le téléphone ;
+ *  - enregistrement : bandeau dégradé magenta avec waveform vivante, minuteur et
+ *    consigne explicite, plus de bannière texte grise ;
+ *  - bouton bord : icônes vectorielles (mic → stop), spinner pendant l'envoi.
+ */
 @Composable
 fun RoomDetailScreen(
     roomId: String,
@@ -90,15 +106,12 @@ fun RoomDetailScreen(
     val messagesState by rememberRoomMessagesState(roomId)
     val context = LocalContext.current
     val scrollState = rememberTransformingLazyColumnState()
-    // Rotary bezel : géré automatiquement par ScreenScaffold + TLC en Wear Compose 1.6+.
-    // Pas besoin de FocusRequester ni rotaryScrollable Modifier (cf. recherche dev Wear OS 2026).
 
     val room = remember(roomListState, roomId) {
         when (val s = roomListState) {
-            is RoomListUiState.Ready -> {
+            is RoomListUiState.Ready ->
                 s.snapshot.favorites.firstOrNull { it.id == roomId }
                     ?: s.snapshot.recents.firstOrNull { it.id == roomId }
-            }
             else -> null
         }
     }
@@ -117,26 +130,30 @@ fun RoomDetailScreen(
     LaunchedEffect(recordingState) {
         when (val s = recordingState) {
             is RecordingState.Done -> {
-                // En mode headless (déclenché depuis une notif), le service a déjà
-                // lancé l'upload : ne pas doubler l'envoi ici.
                 if (!s.autoUpload) {
                     VoiceUploader.upload(context, s.roomId, s.file, s.durationMs)
                 }
                 VoiceRecordingService.resetState()
             }
-            is RecordingState.Error -> {
-                VoiceRecordingService.resetState()
-            }
+            is RecordingState.Error -> VoiceRecordingService.resetState()
             else -> Unit
         }
     }
 
-    // Pas de haptic manuel sur uploadState Success/Error :
-    // SuccessConfirmationDialog / FailureConfirmationDialog M3 jouent leur haptic Confirm/Reject
-    // automatiquement à l'apparition. Doubler ferait un buzz parasite.
-
     val isRecording = recordingState is RecordingState.Recording
     val isUploading = uploadState is UploadState.Uploading || uploadState is UploadState.WaitingAck
+
+    val messages = (messagesState as? MessagesUiState.Ready)?.messages ?: emptyList()
+
+    // ---- Scroll automatique ----
+    // Cible = dernière ligne réelle (header 0, messages 1..n, bandeau recording n+1).
+    // On suit : l'arrivée de messages, et le début/fin de l'enregistrement.
+    val lastItemIndex = messages.size + if (isRecording) 1 else 0
+    LaunchedEffect(messages.size, isRecording) {
+        if (lastItemIndex > 0) {
+            scrollState.animateScrollToItem(lastItemIndex)
+        }
+    }
 
     ScreenScaffold(
         scrollState = scrollState,
@@ -148,7 +165,6 @@ fun RoomDetailScreen(
                 recordingState = recordingState,
                 onTap = {
                     if (isRecording) {
-                        // Tap-to-toggle : 2e tap = stop + send
                         VoiceRecordingService.stop(context)
                     } else {
                         val hasMic = ContextCompat.checkSelfPermission(
@@ -170,37 +186,50 @@ fun RoomDetailScreen(
             state = scrollState,
             contentPadding = contentPadding
         ) {
-            // Header room
             item(key = "header") {
-                RoomHeader(room = room, fallbackId = roomId)
+                RoomHeader(room = room, fallbackId = roomId, messagesState = messagesState)
             }
 
             when (val s = messagesState) {
-                is MessagesUiState.Loading -> {
-                    item(key = "loading") {
-                        CenteredHint("Chargement…")
+                is MessagesUiState.Loading -> item(key = "skeleton") {
+                    Column {
+                        repeat(2) { i ->
+                            ShimmerBlock(
+                                modifier = Modifier.padding(
+                                    top = if (i == 0) WearDimens.gapMd else WearDimens.gapSm
+                                ),
+                                height = if (i % 2 == 0) 44.dp else 60.dp
+                            )
+                        }
                     }
                 }
-                is MessagesUiState.Empty -> {
-                    item(key = "empty") {
-                        CenteredHint("Aucun message")
-                    }
+                is MessagesUiState.Empty -> item(key = "empty") {
+                    CenteredHint("Aucun message — appuie sur le micro pour parler")
                 }
                 is MessagesUiState.Ready -> {
-                    items(messages = s.messages, roomId = roomId)
+                    s.messages.forEachIndexed { index, msg ->
+                        val prevTs = s.messages.getOrNull(index - 1)?.ts
+                        if (needsDaySeparator(msg.ts, prevTs)) {
+                            item(key = "day-${msg.id}") {
+                                DateSeparator(dayLabel(msg.ts, System.currentTimeMillis()))
+                            }
+                        }
+                        item(key = msg.id) {
+                            MessageBubble(msg, roomId)
+                        }
+                    }
                 }
             }
 
             if (isRecording) {
                 item(key = "recording") {
-                    RecordingBanner(recordingState)
+                    RecordingPill(recordingState)
                 }
             }
         }
     }
 
-    // Confirmation dialogs Wear M3 — overlay system-style + curved text + haptic auto.
-    // Durée par défaut : ConfirmationDialogDefaults.DurationMillis (~2 s) puis auto-dismiss.
+    // Confirmation dialogs Wear M3 — haptic auto à l'apparition.
     val isSuccess = uploadState is UploadState.Success
     val isFailure = uploadState is UploadState.Error
     SuccessConfirmationDialog(
@@ -219,111 +248,159 @@ fun RoomDetailScreen(
     )
 }
 
-private fun androidx.wear.compose.foundation.lazy.TransformingLazyColumnScope.items(
-    messages: List<RoomMessage>,
-    roomId: String
-) {
-    messages.forEach { msg ->
-        item(key = msg.id) {
-            MessageItem(msg, roomId)
-        }
-    }
-}
+/* ============================ Bulles ============================ */
 
 @Composable
-private fun MessageItem(msg: RoomMessage, roomId: String) {
+private fun MessageBubble(msg: RoomMessage, roomId: String) {
     val cs = MaterialTheme.colorScheme
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
-    val containerColor = if (msg.isOwn) cs.primaryContainer else cs.surfaceContainer
-    val onContainerColor = if (msg.isOwn) cs.onPrimaryContainer else cs.onSurface
 
-    val onClick: () -> Unit = remember(msg.id, msg.type, roomId) {
-        when (msg.type) {
-            "video", "image", "file" -> {
-                {
-                    scope.launch {
-                        openMessageOnPhone(context, roomId = roomId, eventId = msg.id)
-                    }
-                }
-            }
-            else -> { -> {} }
-        }
+    val openOnPhone: () -> Unit = {
+        scope.launch { openMessageOnPhone(context, roomId = roomId, eventId = msg.id) }
+    }
+    val mediaClickable = msg.type == "video" || msg.type == "image" || msg.type == "file" || msg.type == "audio"
+
+    val bubbleShape = if (msg.isOwn) {
+        RoundedCornerShape(
+            topStart = WearDimens.bubbleCorner, topEnd = WearDimens.bubbleCorner,
+            bottomStart = WearDimens.bubbleCorner, bottomEnd = WearDimens.bubbleTail
+        )
+    } else {
+        RoundedCornerShape(
+            topStart = WearDimens.bubbleCorner, topEnd = WearDimens.bubbleCorner,
+            bottomStart = WearDimens.bubbleTail, bottomEnd = WearDimens.bubbleCorner
+        )
     }
 
-    Card(
-        onClick = onClick,
+    Box(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(vertical = 2.dp),
-        colors = CardDefaults.cardColors(
-            containerColor = containerColor,
-            contentColor = onContainerColor
-        ),
-        shape = RoundedCornerShape(16.dp)
+            .padding(
+                start = if (msg.isOwn) 26.dp else 2.dp,
+                end = if (msg.isOwn) 2.dp else 26.dp,
+                top = WearDimens.gapXs, bottom = WearDimens.gapXs
+            )
     ) {
-        if (!msg.isOwn) {
-            Text(
-                text = msg.senderName,
-                style = MaterialTheme.typography.labelSmall,
-                color = cs.tertiary,
-                maxLines = 1
-            )
-            Spacer(modifier = Modifier.size(2.dp))
+        val bubbleModifier = if (msg.isOwn) {
+            Modifier
+                .glow(color = CyberTokens.cyan.copy(alpha = 0.5f), radius = 7.dp)
+                .clip(bubbleShape)
+                .background(VoxGradients.ownBubble)
+        } else {
+            Modifier
+                .clip(bubbleShape)
+                .background(cs.surfaceContainer)
         }
-        when (msg.type) {
-            "audio" -> AudioMessageContent(msg)
-            "image" -> ImageMessageContent(msg)
-            "video" -> VideoMessageContent(msg)
-            "system" -> Text(
-                text = msg.body,
-                style = MaterialTheme.typography.bodyExtraSmall,
-                color = cs.onSurfaceVariant,
-                maxLines = 2
-            )
-            else -> {
-                val rendered = remember(msg.id, msg.body, msg.formattedBody) {
-                    MarkdownRenderer.render(
-                        body = msg.body.ifBlank { "—" },
-                        formattedBody = msg.formattedBody
+        Column(
+            modifier = bubbleModifier
+                .then(
+                    if (mediaClickable) Modifier.clickable(onClick = openOnPhone) else Modifier
+                )
+                .padding(horizontal = 11.dp, vertical = 8.dp)
+        ) {
+            if (!msg.isOwn && msg.senderName.isNotBlank()) {
+                Text(
+                    text = msg.senderName,
+                    style = MaterialTheme.typography.labelMedium,
+                    color = CyberTokens.violet,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+                Spacer(modifier = Modifier.size(2.dp))
+            }
+            when {
+                msg.isRedacted -> Text(
+                    text = "Message supprimé",
+                    style = MaterialTheme.typography.bodyMedium,
+                    fontStyle = FontStyle.Italic,
+                    color = cs.onSurfaceVariant
+                )
+                msg.type == "audio" -> AudioContent(msg)
+                msg.type == "image" -> ImageContent(msg, "Photo")
+                msg.type == "video" -> VideoContent(msg)
+                msg.type == "file" -> Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text("📄", fontSize = 13.sp)
+                    Text(
+                        text = " ${msg.body.ifBlank { "Fichier" }}",
+                        style = MaterialTheme.typography.bodyMedium,
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis
                     )
                 }
-                Text(
-                    text = rendered,
-                    style = MaterialTheme.typography.bodySmall
-                    // Pas de maxLines : le message complet est rendu, le TLC scroll si trop long.
+                msg.type == "system" -> Text(
+                    text = msg.body,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = cs.onSurfaceVariant,
+                    maxLines = 3,
+                    overflow = TextOverflow.Ellipsis
                 )
+                else -> {
+                    val rendered = remember(msg.id, msg.body, msg.formattedBody) {
+                        MarkdownRenderer.render(
+                            body = msg.body.ifBlank { "—" },
+                            formattedBody = msg.formattedBody
+                        )
+                    }
+                    Text(
+                        text = rendered,
+                        style = MaterialTheme.typography.bodyLarge
+                    )
+                }
             }
+            // Horodatage discret en pied de bulle
+            Text(
+                text = clockOf(msg.ts),
+                style = MaterialTheme.typography.labelSmall,
+                color = cs.onSurfaceVariant.copy(alpha = 0.75f),
+                modifier = Modifier
+                    .align(if (msg.isOwn) Alignment.End else Alignment.Start)
+                    .padding(top = 2.dp)
+            )
         }
     }
 }
 
+/* -------- Contenu média -------- */
+
 @Composable
-private fun AudioMessageContent(msg: RoomMessage) {
+private fun AudioContent(msg: RoomMessage) {
+    val cs = MaterialTheme.colorScheme
     Row(verticalAlignment = Alignment.CenterVertically) {
-        Icon(
-            imageVector = Icons.Filled.PlayArrow,
-            contentDescription = "Vocal",
-            modifier = Modifier.size(22.dp)
-        )
-        Spacer(modifier = Modifier.size(6.dp))
+        Box(
+            modifier = Modifier
+                .size(26.dp)
+                .clip(CircleShape)
+                .background(if (msg.isOwn) CyberTokens.cyan.copy(alpha = 0.30f) else CyberTokens.violet.copy(alpha = 0.30f)),
+            contentAlignment = Alignment.Center
+        ) {
+            Icon(
+                imageVector = Icons.Filled.PlayArrow,
+                contentDescription = "Vocal",
+                modifier = Modifier.size(16.dp),
+                tint = if (msg.isOwn) CyberTokens.cyan else CyberTokens.violet
+            )
+        }
+        Spacer(modifier = Modifier.size(WearDimens.gapMd))
+        WaveformBars(active = false, bars = 7, height = 16.dp, color = cs.onSurfaceVariant)
+        Spacer(modifier = Modifier.weight(1f))
         Text(
             text = formatDuration(msg.audioDurationMs ?: 0),
-            style = MaterialTheme.typography.bodySmall,
-            fontWeight = FontWeight.SemiBold
+            style = MaterialTheme.typography.labelMedium,
+            color = cs.onSurfaceVariant
         )
     }
 }
 
 @Composable
-private fun ImageMessageContent(msg: RoomMessage) {
+private fun ImageContent(msg: RoomMessage, label: String) {
     val thumb = remember(msg.id, msg.thumbBase64) {
         msg.thumbBase64?.let { decodeBase64Bitmap(it) }
     }
     if (thumb != null) {
         Image(
             bitmap = thumb,
-            contentDescription = "Photo",
+            contentDescription = label,
             modifier = Modifier
                 .fillMaxWidth()
                 .clip(RoundedCornerShape(12.dp)),
@@ -331,13 +408,13 @@ private fun ImageMessageContent(msg: RoomMessage) {
         )
     } else {
         Row(verticalAlignment = Alignment.CenterVertically) {
-            Text(text = "📷 ${msg.body}", style = MaterialTheme.typography.bodySmall)
+            Text(text = "🖼 ${msg.body}", style = MaterialTheme.typography.bodyMedium)
         }
     }
 }
 
 @Composable
-private fun VideoMessageContent(msg: RoomMessage) {
+private fun VideoContent(msg: RoomMessage) {
     val thumb = remember(msg.id, msg.thumbBase64) {
         msg.thumbBase64?.let { decodeBase64Bitmap(it) }
     }
@@ -354,7 +431,7 @@ private fun VideoMessageContent(msg: RoomMessage) {
         }
         Box(
             modifier = Modifier
-                .size(48.dp)
+                .size(44.dp)
                 .clip(CircleShape)
                 .background(Color.Black.copy(alpha = 0.55f))
                 .align(Alignment.Center),
@@ -363,55 +440,69 @@ private fun VideoMessageContent(msg: RoomMessage) {
             Icon(
                 imageVector = Icons.Filled.PlayArrow,
                 contentDescription = "Lire vidéo",
-                modifier = Modifier.size(28.dp),
+                modifier = Modifier.size(26.dp),
                 tint = Color.White
             )
         }
     }
 }
 
-/**
- * Ouvre la room/event sur le phone via RemoteActivityHelper.
- * Utilise un deep link matrix.to qui sera capturé par FluffyChat fork si installé,
- * sinon fallback navigateur.
- */
-private suspend fun openMessageOnPhone(
-    context: android.content.Context,
-    roomId: String,
-    eventId: String
-) {
-    try {
-        val intent = Intent(Intent.ACTION_VIEW).apply {
-            addCategory(Intent.CATEGORY_BROWSABLE)
-            data = Uri.parse("https://matrix.to/#/$roomId/$eventId")
-        }
-        RemoteActivityHelper(context).startRemoteActivity(intent).await()
-    } catch (_: Throwable) {
-        // fail silencieux — pas grave V1
-    }
-}
-
-private fun decodeBase64Bitmap(base64: String): androidx.compose.ui.graphics.ImageBitmap? {
-    return try {
-        val bytes = AndroidBase64.decode(base64, AndroidBase64.DEFAULT)
-        val bmp = BitmapFactory.decodeByteArray(bytes, 0, bytes.size) ?: return null
-        bmp.asImageBitmap()
-    } catch (_: Throwable) {
-        null
-    }
-}
+/* -------- Enregistrement -------- */
 
 /**
- * EdgeButton mic — Wear M3 native EdgeButton (1.6.0+).
- *
- * Sprint 2 audit finding-022 (CRITICAL): le CustomEdgeMicButton précédent
- * réimplémentait l'arc maison via GenericShape mais avec une hit area
- * rectangulaire — l'utilisateur tapait "à côté" et croyait que ça ne
- * marchait pas. Le natif M3 EdgeButton gère hit area, morphing, padding
- * système, taille edge-hugging correcte.
- *
- * **Tap-to-toggle** : tap = start record, tap = stop+send.
+ * Bandeau d'enregistrement : remplace l'ancienne bannière texte. Dégradé
+ * magenta, waveform vivante, minuteur, consigne — et le message implicite
+ * « appuie sur le bouton bord pour envoyer ».
  */
+@Composable
+private fun RecordingPill(state: RecordingState) {
+    val ms = (state as? RecordingState.Recording)?.elapsedMs ?: 0
+    val pulse = rememberInfiniteTransition(label = "rec-pulse")
+    val scale by pulse.animateFloat(
+        initialValue = 0.92f,
+        targetValue = 1.0f,
+        animationSpec = infiniteRepeatable(tween(600, easing = EaseInOut), RepeatMode.Reverse),
+        label = "rec-scale"
+    )
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(top = WearDimens.gapMd)
+            .glow(color = CyberTokens.magenta, radius = 9.dp)
+            .clip(CircleShape)
+            .background(VoxGradients.record)
+            .padding(horizontal = 14.dp, vertical = 9.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Box(
+            modifier = Modifier
+                .size(9.dp)
+                .scale(scale)
+                .clip(CircleShape)
+                .background(Color.White)
+        )
+        Text(
+            text = formatDuration(ms),
+            style = MaterialTheme.typography.titleLarge,
+            color = Color.White,
+            modifier = Modifier.padding(start = WearDimens.gapMd)
+        )
+        Spacer(modifier = Modifier.weight(1f))
+        WaveformBars(active = true, bars = 5, height = 15.dp, color = Color.White)
+    }
+    Text(
+        text = "Appuie sur le bord pour envoyer",
+        style = MaterialTheme.typography.labelSmall,
+        color = CyberTokens.magenta,
+        textAlign = TextAlign.Center,
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(top = WearDimens.gapSm)
+    )
+}
+
+/* -------- Bouton bord mic -------- */
+
 @Composable
 private fun MicEdgeButton(
     isRecording: Boolean,
@@ -423,7 +514,6 @@ private fun MicEdgeButton(
     val haptic = LocalHapticFeedback.current
     val cs = MaterialTheme.colorScheme
 
-    // Sprint 2 V2 — pulse subtil sur recording (magenta saturated).
     val infinite = rememberInfiniteTransition(label = "mic-pulse")
     val pulseAlpha by infinite.animateFloat(
         initialValue = 0.85f,
@@ -448,8 +538,8 @@ private fun MicEdgeButton(
     EdgeButton(
         onClick = {
             haptic.performHapticFeedback(
-                if (isRecording) HapticFeedbackType.TextHandleMove
-                else HapticFeedbackType.LongPress
+                if (isRecording) HapticFeedbackType.LongPress
+                else HapticFeedbackType.VirtualKey
             )
             onTap()
         },
@@ -460,97 +550,82 @@ private fun MicEdgeButton(
             contentColor = contentColor
         )
     ) {
-        when {
-            isUploading -> {
-                Text(
-                    text = uploadHintText(uploadState),
-                    style = MaterialTheme.typography.labelSmall,
-                    fontWeight = FontWeight.SemiBold
-                )
-            }
-            isRecording -> {
-                val ms = (recordingState as? RecordingState.Recording)?.elapsedMs ?: 0
-                Text(
-                    text = "● ${formatDuration(ms)}",
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.Bold,
-                    fontSize = 16.sp
-                )
-            }
-            else -> {
-                Text(
-                    text = "🎤",
-                    fontSize = 26.sp
-                )
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            when {
+                isUploading -> {
+                    WaveformBars(active = true, bars = 3, height = 12.dp, color = contentColor)
+                    Text(
+                        text = "  " + uploadHintText(uploadState),
+                        style = MaterialTheme.typography.labelMedium,
+                        fontWeight = FontWeight.SemiBold,
+                        color = contentColor
+                    )
+                }
+                isRecording -> {
+                    val ms = (recordingState as? RecordingState.Recording)?.elapsedMs ?: 0
+                    Icon(
+                        imageVector = Icons.Filled.Stop,
+                        contentDescription = "Stop",
+                        modifier = Modifier.size(15.dp)
+                    )
+                    Text(
+                        text = " " + formatDuration(ms),
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold,
+                        color = contentColor
+                    )
+                }
+                else -> {
+                    Icon(
+                        imageVector = Icons.Filled.Mic,
+                        contentDescription = "Message vocal",
+                        modifier = Modifier.size(17.dp)
+                    )
+                    Text(
+                        text = " Vocal",
+                        style = MaterialTheme.typography.labelLarge,
+                        fontWeight = FontWeight.SemiBold,
+                        modifier = Modifier.padding(start = WearDimens.gapSm)
+                    )
+                }
             }
         }
     }
 }
 
-@Composable
-private fun RecordingBanner(state: RecordingState) {
-    val ms = (state as? RecordingState.Recording)?.elapsedMs ?: 0
-    Card(
-        onClick = {},
-        modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
-        colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.secondaryContainer,
-            contentColor = MaterialTheme.colorScheme.onSecondaryContainer
-        )
-    ) {
-        Text(
-            text = "● Enregistrement   ${formatDuration(ms)}",
-            style = MaterialTheme.typography.bodySmall,
-            fontWeight = FontWeight.Bold,
-            textAlign = TextAlign.Center,
-            modifier = Modifier.fillMaxWidth()
-        )
-    }
-}
+/* -------- En-tête, utilitaires -------- */
 
 @Composable
-private fun RoomHeader(room: RoomEntry?, fallbackId: String) {
+private fun RoomHeader(room: RoomEntry?, fallbackId: String, messagesState: MessagesUiState) {
+    val cs = MaterialTheme.colorScheme
     Row(
         verticalAlignment = Alignment.CenterVertically,
         modifier = Modifier
             .fillMaxWidth()
-            .padding(bottom = 6.dp)
+            .padding(bottom = WearDimens.gapSm)
     ) {
-        SmallAvatar(
+        GradientAvatar(
             seed = room?.id ?: fallbackId,
-            initial = room?.name?.firstOrNull()?.uppercaseChar()?.toString() ?: "?"
+            initial = room?.name?.firstOrNull()?.uppercaseChar()?.toString() ?: "?",
+            size = 34.dp
         )
-        Spacer(modifier = Modifier.size(8.dp))
-        Text(
-            text = room?.name ?: "…",
-            style = MaterialTheme.typography.titleSmall,
-            maxLines = 1,
-            modifier = Modifier.weight(1f)
-        )
-    }
-}
-
-@Composable
-private fun SmallAvatar(seed: String, initial: String) {
-    val palette = listOf(
-        Color(0xFF22D3EE), Color(0xFFEC4899), Color(0xFFA78BFA),
-        Color(0xFF34D399), Color(0xFFFBBF24), Color(0xFFF87171),
-        Color(0xFF60A5FA), Color(0xFFC084FC)
-    )
-    val color = palette[abs(seed.hashCode()) % palette.size]
-    Box(
-        modifier = Modifier
-            .size(28.dp)
-            .clip(CircleShape)
-            .background(color),
-        contentAlignment = Alignment.Center
-    ) {
-        Text(
-            text = initial,
-            color = Color.Black,
-            fontWeight = FontWeight.Bold,
-            fontSize = 12.sp
-        )
+        Column(modifier = Modifier.padding(start = WearDimens.gapMd)) {
+            Text(
+                text = room?.name ?: "…",
+                style = MaterialTheme.typography.titleLarge,
+                color = cs.onSurface,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+            Text(
+                text = when (messagesState) {
+                    is MessagesUiState.Loading -> "sync…"
+                    else -> if (room?.isEncrypted == true) "chiffré · E2EE" else "en direct"
+                },
+                style = MaterialTheme.typography.labelSmall,
+                color = if (room?.isEncrypted == true) CyberTokens.success else cs.onSurfaceVariant
+            )
+        }
     }
 }
 
@@ -565,22 +640,51 @@ private fun CenteredHint(text: String) {
         Text(
             text = text,
             style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            textAlign = TextAlign.Center
         )
     }
 }
 
+/**
+ * Ouvre la room/event sur le phone via RemoteActivityHelper (deep link matrix.to).
+ */
+private suspend fun openMessageOnPhone(
+    context: android.content.Context,
+    roomId: String,
+    eventId: String
+) {
+    try {
+        val intent = Intent(Intent.ACTION_VIEW).apply {
+            addCategory(Intent.CATEGORY_BROWSABLE)
+            data = Uri.parse("https://matrix.to/#/$roomId/$eventId")
+        }
+        RemoteActivityHelper(context).startRemoteActivity(intent).await()
+    } catch (_: Throwable) {
+        // fail silencieux — rien d'autre à faire depuis la montre
+    }
+}
+
+private fun decodeBase64Bitmap(base64: String): androidx.compose.ui.graphics.ImageBitmap? {
+    return try {
+        val bytes = AndroidBase64.decode(base64, AndroidBase64.DEFAULT)
+        val bmp = BitmapFactory.decodeByteArray(bytes, 0, bytes.size) ?: return null
+        bmp.asImageBitmap()
+    } catch (_: Throwable) {
+        null
+    }
+}
+
 private fun uploadHintText(state: UploadState): String = when (state) {
-    is UploadState.Uploading -> "Envoi… ${state.attempt}/3"
-    is UploadState.WaitingAck -> "Confirmation…"
-    is UploadState.Success -> "✓ Envoyé"
+    is UploadState.Uploading -> "Envoi ${state.attempt}/3"
+    is UploadState.WaitingAck -> "Confirm…"
+    is UploadState.Success -> "Envoyé"
     is UploadState.Error -> "Échec"
     else -> ""
 }
 
-private fun formatDuration(ms: Int): String {
-    val totalSec = ms / 1000
-    val m = totalSec / 60
-    val s = totalSec % 60
-    return "%d:%02d".format(m, s)
+private fun clockOf(ts: Long): String {
+    if (ts <= 0L) return ""
+    val c = java.util.Calendar.getInstance().apply { timeInMillis = ts }
+    return "%d:%02d".format(c.get(java.util.Calendar.HOUR_OF_DAY), c.get(java.util.Calendar.MINUTE))
 }
