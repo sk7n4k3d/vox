@@ -219,6 +219,21 @@
         <!-- Service permanent VoIP : maintient le client Matrix connecté pour que les
              appels entrants sonnent même app swipée. REDÉMARRE SEUL au boot (voir
              VoipBootReceiver) — VOX n'a pas de FCM, donc c'est le seul chemin. -->
+        <!-- Remplace le service du plugin unifiedpush : tant que le processus est
+             vivant (service VoIP permanent) mais que le moteur Flutter UI est detruit,
+             plus aucun collecteur ne recoit les pushes et ils sont jetes en silence.
+             La sous-classe redemarre un moteur headless dans ce cas. -->
+        <service
+            android:name="org.unifiedpush.flutter.connector.UnifiedPushService"
+            tools:node="remove" />
+        <service
+            android:name=".VoxUnifiedPushService"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="org.unifiedpush.android.connector.PUSH_EVENT" />
+            </intent-filter>
+        </service>
+
         <service android:name=".voip.VoipBridgeService"
             android:exported="false"
             android:foregroundServiceType="specialUse">
