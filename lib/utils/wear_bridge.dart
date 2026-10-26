@@ -51,10 +51,72 @@ class WearBridge {
         case 'onMessagesRequested':
           await _handleMessagesRequested(call.arguments);
           break;
+        case 'onAudioRequested':
+          await _handleAudioRequested(call.arguments);
+          break;
       }
       return null;
     });
     _wired = true;
+  }
+
+  /// Plafond d'un vocal transféré vers la montre : ~900 ko d'Opus (≈ 2 min 30
+  /// à 48 kb/s). MessageClient est un canal de metadata — au-delà on refuse
+  /// proprement plutôt que de saturer le lien BT.
+  static const _maxAudioBytes = 900 * 1024;
+
+  /// La watch veut écouter un vocal : on télécharge la pièce jointe (chiffrée
+  /// si E2EE), on la passe au natif qui la tronçonne vers la montre.
+  Future<void> _handleAudioRequested(dynamic args) async {
+    if (args is! Map) return;
+    final roomId = args['roomId'] as String? ?? '';
+    final eventId = args['eventId'] as String? ?? '';
+    if (roomId.isEmpty || eventId.isEmpty) return;
+    final client = _clients.values.firstOrNull;
+    final room = client?.getRoomById(roomId);
+    if (room == null) {
+      Logs().w('[WearBridge] audio request for unknown room $roomId');
+      await _sendAudioError(eventId, 'Room introuvable');
+      return;
+    }
+    try {
+      final event = await room.getEventById(eventId);
+      if (event == null) {
+        await _sendAudioError(eventId, 'Message introuvable');
+        return;
+      }
+      final file = await event.downloadAndDecryptAttachment();
+      final bytes = file.bytes;
+      if (bytes.isEmpty) {
+        await _sendAudioError(eventId, 'Vocal vide');
+        return;
+      }
+      if (bytes.length > _maxAudioBytes) {
+        await _sendAudioError(eventId, 'Vocal trop long pour la montre');
+        return;
+      }
+      await _channel.invokeMethod('sendAudioToWatch', {
+        'eventId': eventId,
+        'b64': base64Encode(bytes),
+      });
+      Logs().d('[WearBridge] audio pushed to watch '
+          '($bytes.length bytes for $eventId)');
+    } catch (e, st) {
+      Logs().w('[WearBridge] audio transfer failed for $eventId', e, st);
+      await _sendAudioError(eventId, 'Échec téléchargement');
+    }
+  }
+
+  Future<void> _sendAudioError(String eventId, String reason) async {
+    if (eventId.isEmpty) return;
+    try {
+      await _channel.invokeMethod('sendAudioErrorToWatch', {
+        'eventId': eventId,
+        'reason': reason,
+      });
+    } catch (e) {
+      Logs().w('[WearBridge] sendAudioErrorToWatch channel error', e);
+    }
   }
 
   Future<void> _handleVoiceReceived(dynamic args) async {

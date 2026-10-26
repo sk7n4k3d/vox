@@ -8,7 +8,10 @@ import android.net.Uri
 import android.util.Base64 as AndroidBase64
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.EaseInOut
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.infiniteRepeatable
@@ -19,6 +22,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -31,6 +35,7 @@ import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Stop
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -74,8 +79,11 @@ import chat.fluffy.fluffychat.bastien_fork.wear.data.RoomEntry
 import chat.fluffy.fluffychat.bastien_fork.wear.data.RoomMessage
 import chat.fluffy.fluffychat.bastien_fork.wear.theme.CyberTokens
 import chat.fluffy.fluffychat.bastien_fork.wear.theme.WearDimens
+import chat.fluffy.fluffychat.bastien_fork.wear.voice.AudioStore
+import chat.fluffy.fluffychat.bastien_fork.wear.voice.AudioState
 import chat.fluffy.fluffychat.bastien_fork.wear.voice.RecordingState
 import chat.fluffy.fluffychat.bastien_fork.wear.voice.UploadState
+import chat.fluffy.fluffychat.bastien_fork.wear.voice.VoicePlayer
 import chat.fluffy.fluffychat.bastien_fork.wear.voice.VoiceRecordingService
 import chat.fluffy.fluffychat.bastien_fork.wear.voice.VoiceUploader
 import kotlinx.coroutines.launch
@@ -89,7 +97,8 @@ import kotlinx.coroutines.launch
  *  - bulles asymétriques à queue : les miennes en dégradé cyan→violet avec halo,
  *    celles des autres en surface + nom de l'expéditeur ;
  *  - corps de message en 15sp (contre 11sp — illisibles au poignet) ;
- *  - pastille vocale : onde animée + durée, tap = ouvrir sur le téléphone ;
+ *  - pastille vocale : onde animée + durée, tap = écoute directe sur la montre
+ *    (transfert à la demande depuis le phone, plus d'ouverture d'une page phone) ;
  *  - enregistrement : bandeau dégradé magenta avec waveform vivante, minuteur et
  *    consigne explicite, plus de bannière texte grise ;
  *  - bouton bord : icônes vectorielles (mic → stop), spinner pendant l'envoi.
@@ -106,6 +115,11 @@ fun RoomDetailScreen(
     val messagesState by rememberRoomMessagesState(roomId)
     val context = LocalContext.current
     val scrollState = rememberTransformingLazyColumnState()
+
+    // Quitter la conversation stoppe la lecture en cours.
+    DisposableEffect(Unit) {
+        onDispose { VoicePlayer.stop() }
+    }
 
     val room = remember(roomListState, roomId) {
         when (val s = roomListState) {
@@ -146,15 +160,16 @@ fun RoomDetailScreen(
     val messages = (messagesState as? MessagesUiState.Ready)?.messages ?: emptyList()
 
     // ---- Scroll automatique ----
-    // Cible = dernière ligne réelle (header 0, messages 1..n, bandeau recording n+1).
-    // On suit : l'arrivée de messages, et le début/fin de l'enregistrement.
-    val lastItemIndex = messages.size + if (isRecording) 1 else 0
-    LaunchedEffect(messages.size, isRecording) {
-        if (lastItemIndex > 0) {
-            scrollState.animateScrollToItem(lastItemIndex)
+    // Uniquement à l'arrivée de messages. L'enregistrement ne défile plus :
+    // son bandeau est un overlay fixe (bug terrain 2026-10-26 : le saut de
+    // liste au début du vocal emportait l'écran et le point d'envoi hors zone).
+    LaunchedEffect(messages.size) {
+        if (messages.size > 0) {
+            scrollState.animateScrollToItem(messages.size)
         }
     }
 
+    Box(modifier = Modifier.fillMaxSize()) {
     ScreenScaffold(
         scrollState = scrollState,
         edgeButton = {
@@ -221,11 +236,17 @@ fun RoomDetailScreen(
                 }
             }
 
-            if (isRecording) {
-                item(key = "recording") {
-                    RecordingPill(recordingState)
-                }
-            }
+        }
+    }
+
+        // Bandeau d'enregistrement : overlay fixe, jamais dans le défilé.
+        AnimatedVisibility(
+            visible = isRecording,
+            enter = fadeIn(tween(150)),
+            exit = fadeOut(tween(120)),
+            modifier = Modifier.align(Alignment.BottomCenter)
+        ) {
+            RecordingPill(recordingState)
         }
     }
 
@@ -259,7 +280,9 @@ private fun MessageBubble(msg: RoomMessage, roomId: String) {
     val openOnPhone: () -> Unit = {
         scope.launch { openMessageOnPhone(context, roomId = roomId, eventId = msg.id) }
     }
-    val mediaClickable = msg.type == "video" || msg.type == "image" || msg.type == "file" || msg.type == "audio"
+    // Le vocal s'écoute ici (bouton propre dans AudioContent) ; les autres médias
+    // restent « ouvrir sur le téléphone » (non transférables sur la montre).
+    val mediaClickable = msg.type == "video" || msg.type == "image" || msg.type == "file"
 
     val bubbleShape = if (msg.isOwn) {
         RoundedCornerShape(
@@ -316,7 +339,7 @@ private fun MessageBubble(msg: RoomMessage, roomId: String) {
                     fontStyle = FontStyle.Italic,
                     color = cs.onSurfaceVariant
                 )
-                msg.type == "audio" -> AudioContent(msg)
+                msg.type == "audio" -> AudioContent(msg, roomId)
                 msg.type == "image" -> ImageContent(msg, "Photo")
                 msg.type == "video" -> VideoContent(msg)
                 msg.type == "file" -> Row(verticalAlignment = Alignment.CenterVertically) {
@@ -364,30 +387,81 @@ private fun MessageBubble(msg: RoomMessage, roomId: String) {
 /* -------- Contenu média -------- */
 
 @Composable
-private fun AudioContent(msg: RoomMessage) {
+private fun AudioContent(msg: RoomMessage, roomId: String) {
     val cs = MaterialTheme.colorScheme
-    Row(verticalAlignment = Alignment.CenterVertically) {
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    val states by AudioStore.states.collectAsStateWithLifecycle()
+    val playingId by VoicePlayer.playingId.collectAsStateWithLifecycle()
+    val state = states[msg.id]
+    val isPlaying = playingId == msg.id
+    val isRequesting = state is AudioState.Requesting
+    val failure = state as? AudioState.Failed
+
+    // Le vocal demandé s'est chargé → lecture immédiate.
+    LaunchedEffect(state) {
+        val ready = state as? AudioState.Ready ?: return@LaunchedEffect
+        if (VoicePlayer.playingId.value != msg.id) VoicePlayer.toggle(msg.id, ready.file)
+    }
+
+    val onToggle: () -> Unit = {
+        val cached = AudioStore.cachedFile(context, msg.id)
+        when {
+            cached != null -> VoicePlayer.toggle(msg.id, cached)
+            !isRequesting -> scope.launch { AudioStore.requestAudio(context, roomId, msg.id) }
+        }
+    }
+
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 2.dp)
+            .clickable(onClick = onToggle)
+    ) {
         Box(
             modifier = Modifier
                 .size(26.dp)
                 .clip(CircleShape)
-                .background(if (msg.isOwn) CyberTokens.cyan.copy(alpha = 0.30f) else CyberTokens.violet.copy(alpha = 0.30f)),
+                .background(
+                    when {
+                        failure != null -> cs.error.copy(alpha = 0.35f)
+                        isPlaying -> CyberTokens.cyan.copy(alpha = 0.45f)
+                        msg.isOwn -> CyberTokens.cyan.copy(alpha = 0.30f)
+                        else -> CyberTokens.violet.copy(alpha = 0.30f)
+                    }
+                ),
             contentAlignment = Alignment.Center
         ) {
             Icon(
-                imageVector = Icons.Filled.PlayArrow,
-                contentDescription = "Vocal",
+                imageVector = if (isPlaying) Icons.Filled.Stop else Icons.Filled.PlayArrow,
+                contentDescription = if (isPlaying) "Arrêter" else "Écouter sur la montre",
                 modifier = Modifier.size(16.dp),
-                tint = if (msg.isOwn) CyberTokens.cyan else CyberTokens.violet
+                tint = when {
+                    failure != null -> cs.error
+                    msg.isOwn -> CyberTokens.cyan
+                    else -> CyberTokens.violet
+                }
             )
         }
         Spacer(modifier = Modifier.size(WearDimens.gapMd))
-        WaveformBars(active = false, bars = 7, height = 16.dp, color = cs.onSurfaceVariant)
+        WaveformBars(
+            active = isPlaying || isRequesting,
+            bars = 7,
+            height = 16.dp,
+            color = if (failure != null) cs.error else cs.onSurfaceVariant
+        )
         Spacer(modifier = Modifier.weight(1f))
         Text(
-            text = formatDuration(msg.audioDurationMs ?: 0),
+            text = when {
+                failure != null -> "✕ ${failure.reason}".let { if (it.length > 14) it.take(13) + "…" else it }
+                isRequesting -> "…"
+                else -> formatDuration(msg.audioDurationMs ?: 0)
+            },
             style = MaterialTheme.typography.labelMedium,
-            color = cs.onSurfaceVariant
+            color = if (failure != null) cs.error else cs.onSurfaceVariant,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis
         )
     }
 }
@@ -467,7 +541,7 @@ private fun RecordingPill(state: RecordingState) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(top = WearDimens.gapMd)
+            .padding(horizontal = 10.dp, vertical = 12.dp)
             .glow(color = CyberTokens.magenta, radius = 9.dp)
             .clip(CircleShape)
             .background(VoxGradients.record)

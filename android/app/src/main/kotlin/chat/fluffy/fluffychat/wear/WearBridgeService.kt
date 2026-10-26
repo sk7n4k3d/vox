@@ -47,6 +47,19 @@ class WearBridgeService : WearableListenerService() {
                     Log.w(TAG, "roomId invalide ignoré")
                 }
             }
+            path == PATH_AUDIO_REQUEST -> {
+                // La watch veut écouter un vocal : payload JSON {roomId, eventId}
+                // (les deux contiennent des caractères réservés → pas dans le path).
+                val req = runCatching {
+                    val obj = org.json.JSONObject(String(messageEvent.data, Charsets.UTF_8))
+                    obj.optString("roomId") to obj.optString("eventId")
+                }.getOrNull()
+                if (req != null && ROOM_ID_RE.matches(req.first) && EVENT_ID_RE.matches(req.second)) {
+                    WearBridge.notifyAudioRequested(applicationContext, req.first, req.second)
+                } else {
+                    Log.w(TAG, "demande audio invalide ignorée")
+                }
+            }
         }
     }
 
@@ -135,12 +148,17 @@ class WearBridgeService : WearableListenerService() {
         // `/`, `..` et tout séparateur de chemin.
         private val UUID_RE = Regex("""^[A-Za-z0-9-]{8,64}$""")
 
+        // Forme d'un event id Matrix `$` + base64url (validé avant re-expédition
+        // vers Dart ; le `$` passe par \x24 pour éviter les templates Kotlin).
+        private val EVENT_ID_RE = Regex("^[\\x24][A-Za-z0-9_-]{8,128}\$")
+
         // MIME audio autorisés pour un vocal watch → Content-Type Matrix.
         private val ALLOWED_VOICE_MIME =
             setOf("audio/ogg", "audio/aac", "audio/mp4", "audio/mpeg", "audio/amr", "audio/webm")
         const val PATH_REQUEST_ROOMS = "/wear/rooms/request"
         private const val PATH_ROOMS_PREFIX = "/wear/rooms"
         private const val PATH_REQUEST_SUFFIX = "/request"
+        private const val PATH_AUDIO_REQUEST = "/wear/audio/request"
         private const val PATH_VOICE_PREFIX = "/wear/voice"
         private const val PATH_VOICE_ACK_PREFIX = "/wear/voice/ack"
         private const val KEY_AUDIO = "audio"

@@ -48,7 +48,19 @@ class WearBridgePlugin private constructor(
         WearBridge.drainPendingVoices(context)
         WearBridge.messagesRequestedCallback = { roomId ->
             Handler(Looper.getMainLooper()).post {
-                channel.invokeMethod("onMessagesRequested", mapOf("roomId" to roomId))
+                runCatching {
+                    channel.invokeMethod("onMessagesRequested", mapOf("roomId" to roomId))
+                }
+            }
+        }
+        WearBridge.audioRequestedCallback = { roomId, eventId ->
+            Handler(Looper.getMainLooper()).post {
+                runCatching {
+                    channel.invokeMethod(
+                        "onAudioRequested",
+                        mapOf("roomId" to roomId, "eventId" to eventId)
+                    )
+                }
             }
         }
     }
@@ -82,6 +94,27 @@ class WearBridgePlugin private constructor(
                     return
                 }
                 WearBridge.pushMessagesJson(context, roomId, json)
+                result.success(true)
+            }
+            "sendAudioToWatch" -> {
+                val eventId = call.argument<String>("eventId")
+                val b64 = call.argument<String>("b64")
+                if (eventId.isNullOrEmpty() || b64.isNullOrEmpty()) {
+                    result.error("BAD_ARGS", "eventId or b64 missing", null)
+                    return
+                }
+                WearBridge.sendAudioToWatch(context, eventId, b64)
+                result.success(true)
+            }
+            "sendAudioErrorToWatch" -> {
+                val eventId = call.argument<String>("eventId")
+                if (eventId.isNullOrEmpty()) {
+                    result.error("BAD_ARGS", "eventId missing", null)
+                    return
+                }
+                WearBridge.sendAudioErrorToWatch(
+                    context, eventId, call.argument<String>("reason") ?: "",
+                )
                 result.success(true)
             }
             else -> result.notImplemented()

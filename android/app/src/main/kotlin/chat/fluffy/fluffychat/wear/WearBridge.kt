@@ -38,6 +38,19 @@ object WearBridge {
     // forgé/volumineux). 8 Mo = très large pour un message vocal Opus.
     private const val MAX_VOICE_BYTES = 8 * 1024 * 1024
 
+    // Transfert audio phone→watch (écoute locale sur la montre) : MessageClient
+    // est plafonné ~100 KB par Google → tronçons de 60 000 caractères base64
+    // (multiple de 4 → chaque tronçon se décode proprement côté watch).
+    private const val AUDIO_CHUNK_PATH = "/wear/audio/chunk"
+    private const val AUDIO_ERROR_PATH = "/wear/audio/error"
+    private const val AUDIO_CHUNK_CHARS = 60_000
+    private const val AUDIO_CHUNK_DELAY_MS = 120L
+
+    // Forme d'un event id Matrix : `$` + base64url. Validé avant concaténation
+    // dans un path MessageClient ou un log. [\x24] = littéral `$` (le dollar
+    // sinon active les templates Kotlin dans les chaînes brutes).
+    private val EVENT_ID_RE = Regex("^[\\x24][A-Za-z0-9_-]{8,128}\$")
+
     // Forme d'un uuid watch acceptable comme composant de nom de fichier / de
     // chemin : alphanumérique + tirets uniquement, longueur bornée. Bloque `../`.
     private val UUID_RE = Regex("""^[A-Za-z0-9-]{8,64}$""")
@@ -63,6 +76,10 @@ object WearBridge {
     /** Callback Flutter pour pousser les messages d'une room donnée. */
     @Volatile
     var messagesRequestedCallback: ((String) -> Unit)? = null
+
+    /** Callback Flutter pour traiter une demande d'écoute de vocal de la watch. */
+    @Volatile
+    var audioRequestedCallback: ((roomId: String, eventId: String) -> Unit)? = null
 
     fun pushRoomsJson(context: Context, json: String) {
         scope.launch {
@@ -119,6 +136,79 @@ object WearBridge {
     fun notifyMessagesRequested(context: Context, roomId: String) {
         Log.d(TAG, "watch requested messages for ${roomId.redact()}")
         messagesRequestedCallback?.invoke(roomId)
+    }
+
+    fun notifyAudioRequested(context: Context, roomId: String, eventId: String) {
+        Log.d(TAG, "watch requested audio ${eventId.redact()} in ${roomId.redact()}")
+        audioRequestedCallback?.invoke(roomId, eventId)
+    }
+
+    /**
+     * Envoie un vocal (base64 produit par Dart) à la watch par tronçons
+     * MessageClient. Frame : `eventId|seq|final|b64chunk`, livrées en ordre.
+     */
+    fun sendAudioToWatch(context: Context, eventId: String, b64: String) {
+        if (!EVENT_ID_RE.matches(eventId)) {
+            Log.w(TAG, "sendAudioToWatch: eventId invalide, ignoré")
+            return
+        }
+        scope.launch {
+            try {
+                val info = Wearable.getCapabilityClient(context)
+                    .getCapability(WATCH_CAPABILITY, CapabilityClient.FILTER_REACHABLE)
+                    .await()
+                val node = info.nodes.firstOrNull { it.isNearby } ?: info.nodes.firstOrNull()
+                if (node == null) {
+                    Log.w(TAG, "sendAudioToWatch: aucune watch joignable")
+                    return@launch
+                }
+                val total = (b64.length + AUDIO_CHUNK_CHARS - 1) / AUDIO_CHUNK_CHARS
+                val messageClient = Wearable.getMessageClient(context)
+                for (seq in 0 until total) {
+                    val from = seq * AUDIO_CHUNK_CHARS
+                    val to = minOf(from + AUDIO_CHUNK_CHARS, b64.length)
+                    val frame = "$eventId|$seq|${if (seq == total - 1) 1 else 0}|" +
+                        b64.substring(from, to)
+                    messageClient
+                        .sendMessage(node.id, AUDIO_CHUNK_PATH, frame.toByteArray(StandardCharsets.UTF_8))
+                        .await()
+                    if (seq < total - 1) kotlinx.coroutines.delay(AUDIO_CHUNK_DELAY_MS)
+                }
+                Log.d(TAG, "audio pushed to watch: $total tronçons (${b64.length} b64)")
+            } catch (t: Throwable) {
+                Log.w(TAG, "sendAudioToWatch failed pour ${eventId.redact()}", t)
+                sendAudioErrorToWatch(context, eventId, "Transfert interrompu")
+            }
+        }
+    }
+
+    /** Notifie la watch qu'un vocal demandé n'a pas pu être servi. */
+    fun sendAudioErrorToWatch(context: Context, eventId: String, reason: String) {
+        if (!EVENT_ID_RE.matches(eventId)) {
+            Log.w(TAG, "sendAudioErrorToWatch: eventId invalide, ignoré")
+            return
+        }
+        scope.launch {
+            try {
+                val info = Wearable.getCapabilityClient(context)
+                    .getCapability(WATCH_CAPABILITY, CapabilityClient.FILTER_REACHABLE)
+                    .await()
+                val messageClient = Wearable.getMessageClient(context)
+                for (node in info.nodes) {
+                    try {
+                        messageClient.sendMessage(
+                            node.id,
+                            "$AUDIO_ERROR_PATH/$eventId",
+                            reason.toByteArray(StandardCharsets.UTF_8),
+                        ).await()
+                    } catch (t: Throwable) {
+                        Log.w(TAG, "audio error nack failed for ${node.displayName}", t)
+                    }
+                }
+            } catch (t: Throwable) {
+                Log.w(TAG, "sendAudioErrorToWatch failed", t)
+            }
+        }
     }
 
     /**

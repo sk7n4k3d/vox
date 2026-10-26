@@ -3,6 +3,7 @@ package chat.fluffy.fluffychat.bastien_fork.wear.bridge
 import android.util.Log
 import chat.fluffy.fluffychat.bastien_fork.wear.data.RoomsRepository
 import chat.fluffy.fluffychat.bastien_fork.wear.notif.MessageNotifier
+import chat.fluffy.fluffychat.bastien_fork.wear.voice.AudioStore
 import chat.fluffy.fluffychat.bastien_fork.wear.voice.VoiceUploader
 import com.google.android.gms.wearable.DataEvent
 import com.google.android.gms.wearable.DataEventBuffer
@@ -26,6 +27,8 @@ import kotlinx.coroutines.tasks.await
  *  - `/wear/rooms/ping` → force readCurrent du DataItem rooms
  *  - `/wear/voice/ack/{uuid}` → success ack du phone après upload Matrix
  *  - `/wear/voice/nack/{uuid}` → fail ack du phone
+ *  - `/wear/audio/chunk` → tronçon d'un vocal demandé pour écoute locale
+ *  - `/wear/audio/error/{eventId}` → le phone n'a pas pu servir le vocal
  */
 class WearListenerService : WearableListenerService() {
 
@@ -112,6 +115,14 @@ class WearListenerService : WearableListenerService() {
                     VoiceUploader.notifyAck(uuid, success = false)
                 }
             }
+            path == PATH_AUDIO_CHUNK -> {
+                AudioStore.onChunk(applicationContext, messageEvent.data ?: ByteArray(0))
+            }
+            path.startsWith(PATH_AUDIO_ERROR_PREFIX) -> {
+                val id = path.removePrefix("$PATH_AUDIO_ERROR_PREFIX/")
+                val reason = String(messageEvent.data ?: ByteArray(0), Charsets.UTF_8)
+                if (id.isNotEmpty()) AudioStore.onPhoneError(id, reason)
+            }
         }
     }
 
@@ -120,5 +131,7 @@ class WearListenerService : WearableListenerService() {
         private const val PATH_ROOMS_PING = "/wear/rooms/ping"
         private const val PATH_VOICE_ACK_PREFIX = "/wear/voice/ack"
         private const val PATH_VOICE_NACK_PREFIX = "/wear/voice/nack"
+        private const val PATH_AUDIO_CHUNK = "/wear/audio/chunk"
+        private const val PATH_AUDIO_ERROR_PREFIX = "/wear/audio/error"
     }
 }
