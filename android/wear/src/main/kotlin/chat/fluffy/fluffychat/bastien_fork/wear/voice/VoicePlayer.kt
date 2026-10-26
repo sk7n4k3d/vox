@@ -24,19 +24,23 @@ object VoicePlayer {
         }
         stop()
         return try {
-            player = MediaPlayer().apply {
-                setAudioAttributes(
-                    AudioAttributes.Builder()
-                        .setUsage(AudioAttributes.USAGE_MEDIA)
-                        .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
-                        .build()
-                )
-                setDataSource(file.absolutePath)
-                setOnCompletionListener { stop() }
-                setOnErrorListener { _, _, _ -> stop(); true }
-                prepare()
-                start()
-            }
+            // PAS de MediaPlayer().apply { … } ici : dans ce scope le `stop()`
+            // des callbacks se résout à MediaPlayer.stop() et jamais à notre
+            // VoicePlayer.stop() — l'UI restait bloquée sur « stop » après la
+            // fin de lecture (bug terrain 2026-10-26). Instance explicative.
+            val mp = MediaPlayer()
+            mp.setAudioAttributes(
+                AudioAttributes.Builder()
+                    .setUsage(AudioAttributes.USAGE_MEDIA)
+                    .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
+                    .build()
+            )
+            mp.setDataSource(file.absolutePath)
+            mp.setOnCompletionListener { stop() }
+            mp.setOnErrorListener { _, _, _ -> stop(); true }
+            mp.prepare()
+            mp.start()
+            player = mp
             playingId.value = eventId
             true
         } catch (t: Throwable) {

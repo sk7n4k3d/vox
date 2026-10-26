@@ -38,6 +38,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -163,9 +164,29 @@ fun RoomDetailScreen(
     // Uniquement à l'arrivée de messages. L'enregistrement ne défile plus :
     // son bandeau est un overlay fixe (bug terrain 2026-10-26 : le saut de
     // liste au début du vocal emportait l'écran et le point d'envoi hors zone).
-    LaunchedEffect(messages.size) {
-        if (messages.size > 0) {
-            scrollState.animateScrollToItem(messages.size)
+    // resumeTick : un message qui arrive écran éteint ne peut pas animer
+    // (pas de frames) → on rejoue le scroll au retour de l'écran.
+    var resumeTick by remember { mutableIntStateOf(0) }
+    val lifecycleOwner = androidx.compose.ui.platform.LocalLifecycleOwner.current
+    DisposableEffect(lifecycleOwner) {
+        val obs = androidx.lifecycle.LifecycleEventObserver { _, event ->
+            if (event == androidx.lifecycle.Lifecycle.Event.ON_RESUME) resumeTick++
+        }
+        lifecycleOwner.lifecycle.addObserver(obs)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(obs) }
+    }
+    LaunchedEffect(messages.size, resumeTick) {
+        if (messages.size == 0) return@LaunchedEffect
+        val target = messages.size
+        try {
+            scrollState.animateScrollToItem(target)
+        } catch (ce: kotlinx.coroutines.CancellationException) {
+            throw ce
+        } catch (_: Exception) {
+        }
+        try {
+            scrollState.scrollToItem(target)
+        } catch (_: Exception) {
         }
     }
 
