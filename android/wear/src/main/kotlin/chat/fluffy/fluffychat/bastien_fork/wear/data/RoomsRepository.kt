@@ -41,7 +41,10 @@ class RoomsRepository(private val context: Context) {
                 for (event in buf) {
                     if (event.type != DataEvent.TYPE_CHANGED) continue
                     if (event.dataItem.uri.path != ROOMS_PATH) continue
-                    val snap = decode(event.dataItem.data)
+                    val raw = runCatching {
+                        DataMapItem.fromDataItem(event.dataItem).dataMap.getByteArray(ROOMS_KEY)
+                    }.getOrNull() ?: event.dataItem.data
+                    val snap = decode(raw)
                     if (snap != null) trySend(snap)
                 }
             }
