@@ -201,8 +201,27 @@ class WebhookQueue {
   /// refuser.
   Future<void> add(String rawBody) async {
     await _ensureLoaded();
+    // Un corps seul au-dessus du budget (un média 16 Mo en base64 ≈ 21 Mo) ne
+    // JAMAIS tenir : l'éviction FIFO qui le suivrait viderait la file
+    // entièrement, lui compris — perte sèche et silencieuse de tous les
+    // événements non envoyés (audit suite, régression F3). On le refuse, les
+    // autres restent intacts.
+    if (rawBody.length > maxQueuedBytes) {
+      debugPrint(
+        'WebhookQueue: corps trop volumineux (${rawBody.length} octets > '
+        '$maxQueuedBytes) écarté, file inchangée',
+      );
+      return;
+    }
     final now = DateTime.now().millisecondsSinceEpoch;
     final base = AppSettings.webhookRetryBackoffS.value;
+    // Éviction anticipée : on ne chasse les plus anciens que dans la mesure où
+    // le nouveau corps tient ensuite dans le budget — jamais le nouveau lui-
+    // même (il est ajouté après la boucle).
+    var bytes = _totalBytes();
+    while (bytes + rawBody.length > maxQueuedBytes && _items.isNotEmpty) {
+      bytes -= _items.removeAt(0).rawBody.length;
+    }
     _items.add(
       PendingWebhook(
         rawBody: rawBody,
@@ -212,14 +231,6 @@ class WebhookQueue {
     );
     if (_items.length > maxItems) {
       _items.removeRange(0, _items.length - maxItems);
-    }
-    // budget d'octets : on garde les plus récents tant qu'ils tiennent dans
-    // maxQueuedBytes (les médias base64 pèsent lourd, le compteur seul non plus
-    // ne borne pas la taille réelle).
-    var bytes = _totalBytes();
-    for (var i = 0; i < _items.length && bytes > maxQueuedBytes; ) {
-      bytes -= _items[i].rawBody.length;
-      _items.removeAt(i);
     }
     pending.value = _items.length;
     await _persist();

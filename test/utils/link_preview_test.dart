@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:fluffychat/utils/sms/link_preview.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -311,6 +312,56 @@ void main() {
     });
   });
 
+  group('cache vignettes — compta exacte sous résolutions concurrentes '
+      '(audit suite)', () {
+    test('entrées évictées en vol : compteur exact et rétention sous le '
+        'plafond après rafales', () async {
+      // Même patron que la sonde blue-team : 6 fetch simultanés par rafale,
+      // résolus APRÈS éviction (scroll d une conversation à liens). Le déficit
+      // comptable d hier (2 Mo retirés à éviction, 1,5 Mo rendus à résolution
+      // d une entrée déjà sortie) désarmait le plafond de 8 Mo.
+      final gated = <String, Completer<http.StreamedResponse>>{};
+      final svc = LinkPreviewService.forTesting(
+        newClient: (_) => _GatedClient(gated),
+        lookup: (_) async => [InternetAddress('93.184.216.34')],
+      );
+      const thumb = 1536 * 1024;
+      Future<void> round(int r) async {
+        for (var i = 0; i < 6; i++) {
+          final url = 'https://cdn.example/r${r}-i${i}.png';
+          gated[url] = Completer<http.StreamedResponse>();
+          svc.fetchImage(url);
+        }
+        for (var i = 0; i < 6; i++) {
+          final url = 'https://cdn.example/r${r}-i${i}.png';
+          gated[url]!.complete(
+            http.StreamedResponse(
+              Stream.value(Uint8List(thumb)),
+              200,
+              headers: {'content-type': 'image/png'},
+            ),
+          );
+        }
+        await Future<void>.delayed(Duration.zero);
+      }
+
+      await round(0);
+      // compteur exactement égal à la rétention, pas (2 Mo − réel) de dette
+      expect(svc.imageCacheBytesForTest, 4 * thumb);
+
+      for (var r = 1; r <= 8; r++) {
+        await round(r);
+      }
+      final count = svc.imageCacheCountForTest;
+      final bytes = svc.imageCacheBytesForTest;
+      expect(bytes, count * thumb,
+          reason: 'le compteur doit rester la photographie exacte de la '
+              'mémoire retenue, sinon l éviction ne se déclenche plus');
+      expect(count * thumb, lessThanOrEqualTo(8 * 1024 * 1024),
+          reason: 'la rétention réelle ne dépasse jamais le plafond voulu');
+    });
+  });
+
   group('délais — plus de Future éternel', () {
     test(
       'un corps qui ne finit jamais est abandonné (deadline globale)',
@@ -358,4 +409,16 @@ void main() {
       expect(visited.length, lessThanOrEqualTo(7));
     });
   });
+}
+
+class _GatedClient extends http.BaseClient {
+  _GatedClient(this.completers);
+  final Map<String, Completer<http.StreamedResponse>> completers;
+
+  @override
+  Future<http.StreamedResponse> send(http.BaseRequest request) =>
+      completers[request.url.toString()]!.future;
+
+  @override
+  void close() {}
 }

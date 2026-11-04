@@ -355,6 +355,11 @@ class LinkPreviewService {
     // compter dans le budget, sinon l'éviction sous-compte.
     _imageCacheSizes[imageUrl] = _maxImageBytes;
     final future = _fetchImage(imageUrl).then((bytes) {
+      // L'entrée a pu être évictée pendant que sa future était en vol : son
+      // quota a déjà été rendu au budget à l'éviction. Toute correction ici
+      // créerait un déficit comptable (le plafond se désarme) et une taille
+      // orpheline dans la map. Entrée sortie = on ne comptabilise rien.
+      if (!_imageCache.containsKey(imageUrl)) return bytes;
       final actual = bytes?.length ?? 0;
       final reserved = _imageCacheSizes[imageUrl] ?? _maxImageBytes;
       _imageCacheSizes[imageUrl] = actual;
