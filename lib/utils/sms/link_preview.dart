@@ -1,6 +1,8 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:io';
 
+import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 
 /// Which provider a preview came from — drives whether the tap opens the raw
@@ -46,8 +48,16 @@ class LinkPreviewData {
 /// from the HTML. Safety limits everywhere: short timeout, capped response
 /// size, only http(s), neutral UA. Results are cached per-URL for the session.
 class LinkPreviewService {
-  LinkPreviewService._();
+  LinkPreviewService._() : _newClient = http.Client.new;
+
+  @visibleForTesting
+  LinkPreviewService.forTesting(http.Client Function() newClient)
+      : _newClient = newClient;
+
   static final LinkPreviewService instance = LinkPreviewService._();
+
+  /// Fabrique de client HTTP, injectable dans les tests.
+  final http.Client Function() _newClient;
 
   static const Duration _timeout = Duration(seconds: 6);
   static const int _maxBytes = 256 * 1024; // only need the <head>
@@ -77,7 +87,7 @@ class LinkPreviewService {
     if (uri == null || (uri.scheme != 'http' && uri.scheme != 'https')) {
       return null;
     }
-    if (_isBlockedHost(uri.host)) {
+    if (isBlockedPreviewHost(uri.host)) {
       return null;
     }
     final host = uri.host.toLowerCase();
@@ -199,14 +209,18 @@ class LinkPreviewService {
 
   Future<LinkPreviewData?> _fetchOg(Uri uri) async {
     try {
-      final client = http.Client();
+      final client = _newClient();
       try {
-        final request = http.Request('GET', uri)
-          ..followRedirects = true
-          ..maxRedirects = 5
-          ..headers['User-Agent'] = _ua
-          ..headers['Accept'] = 'text/html,application/xhtml+xml,*/*';
-        final streamed = await client.send(request).timeout(_timeout);
+        final streamed = await _sendGuarded(
+          client,
+          uri,
+          headers: {
+            'User-Agent': _ua,
+            'Accept': 'text/html,application/xhtml+xml,*/*',
+          },
+          maxRedirects: 5,
+        );
+        if (streamed == null) return null;
         if (streamed.statusCode ~/ 100 != 2) return null;
         final ct = streamed.headers['content-type'] ?? '';
         if (ct.isNotEmpty && !ct.contains('html')) {
@@ -230,17 +244,45 @@ class LinkPreviewService {
     }
   }
 
+  /// GET en suivant les redirections **à la main** : chaque saut est revérifié
+  /// (schéma + hôte bloqué). Suivre les redirections en interne laisserait un
+  /// site public renvoyer vers le réseau local sans qu'on le voie (SSRF).
+  Future<http.StreamedResponse?> _sendGuarded(
+    http.Client client,
+    Uri start, {
+    required Map<String, String> headers,
+    required int maxRedirects,
+  }) async {
+    var current = start;
+    for (var hop = 0; hop <= maxRedirects; hop++) {
+      final request = http.Request('GET', current)
+        ..followRedirects = false
+        ..headers.addAll(headers);
+      final response = await client.send(request).timeout(_timeout);
+      final status = response.statusCode;
+      if (status < 300 || status >= 400) return response;
+      final location = response.headers['location'];
+      if (location == null || location.isEmpty) return response;
+      final next = current.resolve(location);
+      if (next.scheme != 'http' && next.scheme != 'https') return null;
+      if (isBlockedPreviewHost(next.host)) return null;
+      current = next;
+    }
+    return null;
+  }
+
   /// Minimal GET returning the decoded body (capped) or null on any failure.
   Future<String?> _get(String url, {required String accept}) async {
     try {
-      final client = http.Client();
+      final client = _newClient();
       try {
-        final request = http.Request('GET', Uri.parse(url))
-          ..followRedirects = true
-          ..maxRedirects = 3
-          ..headers['User-Agent'] = _ua
-          ..headers['Accept'] = accept;
-        final streamed = await client.send(request).timeout(_timeout);
+        final streamed = await _sendGuarded(
+          client,
+          Uri.parse(url),
+          headers: {'User-Agent': _ua, 'Accept': accept},
+          maxRedirects: 3,
+        );
+        if (streamed == null) return null;
         if (streamed.statusCode ~/ 100 != 2) return null;
         final bytes = <int>[];
         await for (final chunk in streamed.stream) {
@@ -315,15 +357,50 @@ class LinkPreviewService {
         .replaceAll('&#x27;', "'")
         .trim();
   }
+}
 
-  bool _isBlockedHost(String host) {
-    final h = host.toLowerCase();
-    return h == 'localhost' ||
-        h.startsWith('127.') ||
-        h.startsWith('10.') ||
-        h.startsWith('192.168.') ||
-        h.startsWith('169.254.') ||
-        h == '::1' ||
-        RegExp(r'^172\.(1[6-9]|2\d|3[01])\.').hasMatch(h);
+/// Vrai quand [host] désigne le téléphone lui-même ou son réseau local : une
+/// miniature ne doit jamais aller gratter une adresse interne (un SMS malveillant
+/// peut contenir n'importe quel lien, et un lien public peut rediriger vers
+/// `http://127.0.0.1:…`). Les noms de domaine ne sont jamais testés ici — seuls
+/// les littéraux d'adresse, qui sont la voie directe vers l'interne.
+@visibleForTesting
+bool isBlockedPreviewHost(String host) {
+  var h = host.toLowerCase();
+  if (h.isEmpty) return true;
+  if (h == 'localhost' || h.endsWith('.localhost')) return true;
+  if (h.startsWith('[') && h.endsWith(']')) h = h.substring(1, h.length - 1);
+  final ip = InternetAddress.tryParse(h);
+  if (ip != null) return isBlockedIpAddress(ip);
+  // Une écriture numérique ou hexadécimale du tout (2130706433, 0x7f000001) est
+  // une adresse IP sous une forme que certains résolveurs acceptent : jamais un
+  // nom de domaine légitime.
+  if (RegExp(r'^0[xX][0-9a-fA-F]+$').hasMatch(h)) return true;
+  if (RegExp(r'^[0-9.]+$').hasMatch(h)) return true;
+  return false;
+}
+
+@visibleForTesting
+bool isBlockedIpAddress(InternetAddress ip) {
+  final b = ip.rawAddress;
+  if (b.length == 4) return _blockedV4(b);
+  // IPv4 mappé en IPv6 (::ffff:a.b.c) : juger l'IPv4 qu'il contient.
+  if (b[10] == 0xff && b[11] == 0xff && b.sublist(0, 10).every((x) => x == 0)) {
+    return _blockedV4(b.sublist(12));
   }
+  if (ip.isLoopback || ip.isLinkLocal) return true;
+  if (b.every((x) => x == 0)) return true; // ::
+  // ULA fc00::/7 (équivalent privé du v6).
+  return (b[0] & 0xfe) == 0xfc;
+}
+
+bool _blockedV4(List<int> b) {
+  final a = b[0];
+  if (a == 0 || a == 10 || a == 127) return true;
+  if (a == 100 && b[1] >= 64 && b[1] <= 127) return true; // CGNAT 100.64/10
+  if (a == 169 && b[1] == 254) return true; // link-local
+  if (a == 172 && b[1] >= 16 && b[1] <= 31) return true;
+  if (a == 192 && b[1] == 168) return true;
+  if (a >= 224) return true; // multicast et réservé
+  return false;
 }
