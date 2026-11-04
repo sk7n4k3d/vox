@@ -98,6 +98,10 @@ class WebhookService {
     }
   }
 
+  /// Test-visible : fabrique de client HTTP pour [postRaw] (null = réel).
+  @visibleForTesting
+  http.Client Function()? httpClientFactory;
+
   /// POST signé d'un corps **déjà sérialisé** (le dispatch direct, comme les
   /// réessais de la file). Re-signe à chaque appel : l'horodatage fait partie de
   /// la signature HMAC V2, on ne peut donc pas rejouer la signature d'origine.
@@ -121,10 +125,19 @@ class WebhookService {
         ),
     };
 
+    final client = (httpClientFactory ?? http.Client.new)();
     try {
-      final response = await http
-          .post(uri, headers: headers, body: rawBody)
-          .timeout(timeoutFor(rawBody.length));
+      // Suivre les redirections rejouerait le corps ET l'en-tête signé vers
+      // l'hôte d'un 302 pris depuis le serveur d'en-face (audit 2026-11-04).
+      // Une redirection = échec : le corps repart en file vers l'URL
+      // configurée, jamais vers la cible du redirect.
+      final request = http.Request('POST', uri)
+        ..followRedirects = false
+        ..headers.addAll(headers)
+        ..body = rawBody;
+      final streamed =
+          await client.send(request).timeout(timeoutFor(rawBody.length));
+      final response = await http.Response.fromStream(streamed);
       if (response.statusCode >= 200 && response.statusCode < 300) {
         stats.value = stats.value.sent1();
         return true;
@@ -136,6 +149,8 @@ class WebhookService {
       stats.value = stats.value.failed1('$e');
       debugPrint('WebhookService: envoi échoué: $e');
       return false;
+    } finally {
+      client.close();
     }
   }
 

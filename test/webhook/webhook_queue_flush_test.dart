@@ -141,6 +141,29 @@ void main() {
       expect(queue.length, 0);
     });
 
+    test('le budget d octets evince les plus anciens corps geants', () async {
+      final queue = WebhookQueue.forTest(postRaw: (_) async => false);
+      addTearDown(queue.stop);
+      // 3 × 9 Mo > maxQueuedBytes (20 Mo) : il faut que ça rentre en FIFO.
+      final gros = 'x' * (9 * 1024 * 1024);
+      await queue.add(gros);
+      await queue.add(gros);
+      await queue.add(gros);
+      expect(queue.length, lessThanOrEqualTo(2),
+          reason: 'au-delà du budget, les plus anciens partent');
+    });
+
+    test('les orphelins .part d un crash sont purgés au chargement',
+        () async {
+      final orphelin = File('${appDir.path}/webhook_queue.json.part.123456');
+      orphelin.writeAsStringSync('restes d un crash');
+      final queue = WebhookQueue.forTest(postRaw: (_) async => true);
+      addTearDown(queue.stop);
+      await queue.add('{"event_id":"a"}');
+      expect(orphelin.existsSync(), isFalse,
+          reason: 'le fichier temporaire orphelin doit être nettoyé');
+    });
+
     test('la cadence de premier réessai est décalée, pas immédiate', () async {
       final queue = WebhookQueue.forTest(postRaw: (_) async => false);
       addTearDown(queue.stop);

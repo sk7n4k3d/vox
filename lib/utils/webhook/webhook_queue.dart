@@ -89,6 +89,11 @@ class WebhookQueue {
   /// pendant des jours ne doit pas faire grossir le fichier sans borne.
   static const int maxItems = 500;
 
+  /// Budget d'octets en plus du compteur : les corps portent parfois des
+  /// médias base64 de plusieurs Mo — 500 entrées seules ne bornent pas la
+  /// taille du fichier (audit 2026-11-04). Au-delà, éviction FIFO.
+  static const int maxQueuedBytes = 20 * 1024 * 1024;
+
   /// Cadence du réveil.
   static const Duration tick = Duration(seconds: 60);
 
@@ -124,6 +129,7 @@ class WebhookQueue {
     _loaded = true;
     try {
       final file = await _queueFile();
+      await _purgeStaleParts(file);
       if (!await file.exists()) return;
       final decoded = jsonDecode(await file.readAsString());
       if (decoded is! List) {
@@ -139,6 +145,34 @@ class WebhookQueue {
     } catch (e) {
       _unreadable = true;
       debugPrint('WebhookQueue: file illisible, fichier préservé: $e');
+    }
+  }
+
+  int _totalBytes() {
+    var n = 0;
+    for (final i in _items) {
+      n += i.rawBody.length;
+    }
+    return n;
+  }
+
+  /// Les écritures atomiques passent par un fichier temporaire renommé
+  /// ensuite. Un crash entre write et rename laisse des orphelins
+  /// `<file>.part.<µs>` que plus personne ne vise : on les purge au
+  /// chargement.
+  Future<void> _purgeStaleParts(File queueFile) async {
+    try {
+      final dir = queueFile.parent;
+      final prefix = '${queueFile.path}.part';
+      await for (final entity in dir.list()) {
+        if (entity is! File) continue;
+        if (!entity.path.startsWith(prefix)) continue;
+        try {
+          await entity.delete();
+        } catch (_) {}
+      }
+    } catch (_) {
+      // repertoire illisible : rien à purger de toute façon
     }
   }
 
@@ -178,6 +212,14 @@ class WebhookQueue {
     );
     if (_items.length > maxItems) {
       _items.removeRange(0, _items.length - maxItems);
+    }
+    // budget d'octets : on garde les plus récents tant qu'ils tiennent dans
+    // maxQueuedBytes (les médias base64 pèsent lourd, le compteur seul non plus
+    // ne borne pas la taille réelle).
+    var bytes = _totalBytes();
+    for (var i = 0; i < _items.length && bytes > maxQueuedBytes; ) {
+      bytes -= _items[i].rawBody.length;
+      _items.removeAt(i);
     }
     pending.value = _items.length;
     await _persist();
