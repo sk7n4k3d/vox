@@ -244,6 +244,73 @@ void main() {
     });
   });
 
+  group('ports autorisés — pas de scanner de ports (audit F2)', () {
+    test('un lien vers un port non standard ne part pas', () async {
+      final visited = <String>[];
+      final svc = _svc(visited: visited);
+      expect(await svc.fetch('http://public.example:8123/api'), isNull);
+      expect(visited, isEmpty, reason: 'le port 8123 ne doit jamais être dialé');
+    });
+
+    test('le port 80 expresse passe', () async {
+      final visited = <String>[];
+      final svc = _svc(visited: visited);
+      final data = await svc.fetch('http://public.example:80/article');
+      expect(data?.title, 'OK');
+    });
+
+    test('une redirection changeant de port est refusee', () async {
+      final visited = <String>[];
+      final svc = _svc(
+        visited: visited,
+        handler: (request) => http.Response('', 302,
+            headers: {'location': 'https://public.example:8443/admin'}),
+      );
+      expect(await svc.fetch('https://public.example/x'), isNull);
+      expect(visited.length, 1);
+    });
+  });
+
+  group('cache vignettes — plafond en octets (audit F6)', () {
+    test('les insertions au-delà du budget évictent les plus anciennes',
+        () async {
+      // 5 vignettes de 2 Mo pour un budget de 8 Mo : la toute première doit
+      // avoir été évincée (et être re-dialée si on la redemande).
+      final visited = <String>[];
+      final svc = _svc(
+        visited: visited,
+        handler: (request) => http.Response.bytes(
+          List.filled(2 * 1024 * 1024, 7),
+          200,
+          headers: {'content-type': 'image/png'},
+        ),
+      );
+      for (var i = 0; i < 5; i++) {
+        await svc.fetchImage('https://cdn.example/i$i.png');
+      }
+      expect(svc.imageCacheBytesForTest, lessThanOrEqualTo(8 * 1024 * 1024));
+      final before = visited.length; // 5
+      await svc.fetchImage('https://cdn.example/i0.png');
+      expect(visited.length, before + 1,
+          reason: 'i0 évincée : un nouveau fetch doit repartir');
+    });
+
+    test('les octets réellement rendus remplacent la réservation', () async {
+      final visited = <String>[];
+      final svc = _svc(
+        visited: visited,
+        handler: (request) => http.Response.bytes(
+          [0x89, 0x50],
+          200,
+          headers: {'content-type': 'image/png'},
+        ),
+      );
+      await svc.fetchImage('https://cdn.example/petit.png');
+      // 2 octets réels, pas les 2 Mo réservés au pire
+      expect(svc.imageCacheBytesForTest, lessThan(1024));
+    });
+  });
+
   group('délais — plus de Future éternel', () {
     test(
       'un corps qui ne finit jamais est abandonné (deadline globale)',

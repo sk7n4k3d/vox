@@ -92,32 +92,83 @@ class LinkPreviewService {
 
   /// Client dont les connexions sortantes sont **fixées** sur les adresses
   /// déjà jugées : entre notre résolution et le dial du client, le DNS n'a
-  /// plus sa mot à dire (anti rebinding). Le nom d'origine reste utilisé
-  /// pour TLS/SNI par `dart:io`.
+  /// plus sa mot à dire (anti rebinding). Pour https, la socket est montée
+  /// en TLS **ici** : `HttpClient.connectionFactory` fait confiance à la
+  /// socket retournée et n'ajoute jamais TLS lui-même (http_impl.dart ne
+  /// wrappe que le chemin proxy CONNECT). On appelle donc nous-mêmes
+  /// [SecureSocket.secure] avec `host:` = nom d'origine, ce qui conserve
+  /// SNI **et** vérification de certificat (rejet par défaut d'un
+  /// certificat non inspiré ou mal nommé).
   static http.Client _pinningClient(
-    List<InternetAddress> addresses,
-  ) => IOClient(
-    HttpClient()
+    List<InternetAddress> addresses, {
+    SecurityContext? trustedRootsOverride,
+  }) => IOClient(
+    HttpClient(context: trustedRootsOverride)
       ..connectionFactory =
           (Uri target, String? proxyHost, int? proxyPort) async {
-            Object? lastError;
-            for (final addr in addresses) {
-              try {
-                // Dial sur l'adresse **jugée**, jamais sur une re-résolution.
-                return await Socket.startConnect(
-                  addr.address,
-                  target.hasPort
-                      ? target.port
-                      : (target.scheme == 'https' ? 443 : 80),
-                );
-              } catch (e) {
-                lastError = e;
-              }
-            }
-            throw lastError ??
-                const SocketException('no resolved address could be dialed');
+            final secure = target.scheme == 'https';
+            final dialed = _dialPinned(
+              addresses,
+              target,
+              secure,
+              trustedRootsOverride,
+            );
+            return ConnectionTask.fromSocket<Socket>(
+              dialed,
+              () => dialed.then(
+                (s) => s.destroy(),
+                onError: (Object _) {}, // échec de dial : rien à détruire
+              ),
+            );
           },
   );
+
+  /// Test-visible : le client épinglé réel de la prod, avec une racine de
+  /// confiance optionnelle pour servir aux tests TLS réels.
+  @visibleForTesting
+  static http.Client pinningClientForTesting(
+    List<InternetAddress> addresses, {
+    SecurityContext? trustedRootsOverride,
+  }) => _pinningClient(
+    addresses,
+    trustedRootsOverride: trustedRootsOverride,
+  );
+
+  static Future<Socket> _dialPinned(
+    List<InternetAddress> addresses,
+    Uri target,
+    bool secure, [
+    // Racine personnalisée : uniquement pour les tests TLS réels ; la prod
+    // passe null et SecureSocket.secure utilise les racines système.
+    SecurityContext? context,
+  ]) async {
+    Object? lastError;
+    for (final addr in addresses) {
+      Socket? raw;
+      try {
+        raw = await Socket.connect(
+          addr,
+          target.hasPort ? target.port : (secure ? 443 : 80),
+          timeout: _timeout,
+        );
+        if (!secure) return raw;
+        return await SecureSocket.secure(
+          raw,
+          // Nom d'ORIGINE (jamais l'IP) : SNI + vérification du certificat
+          // contre le nom demandé. Pas d'onBadCertificate = rejet par défaut.
+          host: target.host,
+          context: context,
+        );
+      } catch (e) {
+        lastError = e;
+        try {
+          raw?.destroy();
+        } catch (_) {}
+      }
+    }
+    throw lastError ??
+        const SocketException('no resolved address could be dialed');
+  }
 
   final Map<String, Future<LinkPreviewData?>> _cache = {};
   // Synchronous result cache: lets a recycled list cell render the preview
@@ -281,24 +332,50 @@ class LinkPreviewService {
 
   /// Cache des vignettes déjà demandées : la carte se reconstruit à chaque
   /// interaction, sans clé de cache chaque rebuild relancerait un fetch.
+  /// Plafonné en OCTETS (audit 2026-11-04) : l'ancien plafond de 64 entrées
+  /// laissait traîner jusqu'à 64 × 2 Mo de décodés. Chaque insertion réserve
+  /// le pire cas ([_maxImageBytes]), corrigé à la résolution de la future.
   final Map<String, Future<Uint8List?>> _imageCache = {};
+  final Map<String, int> _imageCacheSizes = {};
+  int _imageCacheBytes = 0;
 
-  /// Vignette d'une miniature : **même** pipeline gardé que les pages
-  /// (schéma https seul, résolution validée, connexion épinglée, taille et
-  /// durée plafonnées). Une chaîne `og:image` vient du HTML distant et peut
-  /// pointer vers le téléphone : elle ne doit jamais finir dans un
-  /// `Image.network` brut.
-  Future<Uint8List?> fetchImage(String imageUrl) =>
-      _imageCache.putIfAbsent(imageUrl, () => _fetchImage(imageUrl));
+  static const int _maxImageCacheBytes = 8 * 1024 * 1024;
 
-  Future<Uint8List?> _fetchImage(String imageUrl) async {
-    if (_imageCache.length > 64) {
-      // éviction en ordre d'insertion : on garde les 32 plus récentes
-      for (final key
-          in _imageCache.keys.take(_imageCache.length - 32).toList()) {
-        _imageCache.remove(key);
-      }
+  Future<Uint8List?> fetchImage(String imageUrl) {
+    final existing = _imageCache[imageUrl];
+    if (existing != null) return existing;
+    while (_imageCacheBytes + _maxImageBytes > _maxImageCacheBytes &&
+        _imageCache.isNotEmpty) {
+      final oldest = _imageCache.keys.first;
+      _imageCache.remove(oldest);
+      _imageCacheBytes -= _imageCacheSizes.remove(oldest) ?? 0;
     }
+    _imageCacheBytes += _maxImageBytes;
+    // réserve le pire cas dès l'insertion : une entrée non résolue doit déjà
+    // compter dans le budget, sinon l'éviction sous-compte.
+    _imageCacheSizes[imageUrl] = _maxImageBytes;
+    final future = _fetchImage(imageUrl).then((bytes) {
+      final actual = bytes?.length ?? 0;
+      final reserved = _imageCacheSizes[imageUrl] ?? _maxImageBytes;
+      _imageCacheSizes[imageUrl] = actual;
+      _imageCacheBytes = (_imageCacheBytes + actual - reserved).clamp(0, 1 << 30);
+      return bytes;
+    });
+    _imageCache[imageUrl] = future;
+    return future;
+  }
+
+  @visibleForTesting
+  int get imageCacheBytesForTest => _imageCacheBytes;
+
+  @visibleForTesting
+  int get imageCacheCountForTest => _imageCache.length;
+
+  /// Vignette : **même** pipeline gardé que les pages (https seul, résolution
+  /// validée, connexion épinglée, taille et durée plafonnées). Une chaîne
+  /// `og:image` vient du HTML distant et peut pointer vers le téléphone :
+  /// elle ne doit jamais finir dans un `Image.network` brut.
+  Future<Uint8List?> _fetchImage(String imageUrl) async {
     final img = Uri.tryParse(imageUrl);
     if (img == null || img.scheme != 'https') return null;
     final r = await _guardedFetch(
@@ -328,6 +405,9 @@ class LinkPreviewService {
     for (var hop = 0; hop <= maxRedirects; hop++) {
       if (DateTime.now().isAfter(deadline)) return null;
       if (current.scheme != 'http' && current.scheme != 'https') return null;
+      // Ports autorisés uniquement (audit 2026-11-04) : un lien de SMS ne
+      // doit pas transformer l'app en scanner de ports pour tout Internet.
+      if (!_allowedPort(current)) return null;
       if (isBlockedPreviewHost(current.host)) return null;
       final addrs = await _resolveSafe(current.host);
       if (addrs == null || addrs.isEmpty) return null;
@@ -377,6 +457,10 @@ class LinkPreviewService {
     }
     return null;
   }
+
+  /// Uniquement les ports standards 80/443 ([Uri.port] vaut déjà le port par
+  /// défaut du schéma quand l'URL n'en porte pas).
+  static bool _allowedPort(Uri uri) => uri.port == 80 || uri.port == 443;
 
   /// Adresses dialables pour [host] : les réponses du DNS une par une —
   /// **toute** réponse interne fait rejeter l'hôte entier (un seul enregistrement

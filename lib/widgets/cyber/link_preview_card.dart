@@ -1,4 +1,5 @@
 import 'package:fluffychat/config/design_tokens.dart';
+import 'package:fluffychat/config/setting_keys.dart';
 import 'package:fluffychat/utils/sms/link_preview.dart';
 import 'package:fluffychat/widgets/cyber/cyber_widgets.dart';
 import 'package:flutter/material.dart';
@@ -54,6 +55,15 @@ class _LinkPreviewCardState extends State<LinkPreviewCard> {
 
   void _load(String url) {
     final svc = LinkPreviewService.instance;
+    // L'aperçu part tout seul dès qu'un SMS contient une URL — donc confirme à
+    // l'émetteur que le message a été ouvert depuis cette IP (audit
+    // 2026-11-04). Activable/désactivable par l'utilisateur ; désactivé, la
+    // carte ne se charge pas et le lien reste un lien.
+    if (!AppSettings.linkPreviewsEnabled.value) {
+      _data = null;
+      _done = true;
+      return;
+    }
     // Already fetched (cache hit) → render synchronously, NO loading state.
     // This is what kills the flicker when a list cell is recycled on scroll.
     if (svc.isResolved(url)) {
