@@ -425,13 +425,21 @@ class SettingsWebhookView extends StatelessWidget {
                 children: [
                   ValueListenableBuilder<WebhookStats>(
                     valueListenable: WebhookService.instance.stats,
-                    builder: (context, stats, _) => Text(
-                      '${stats.sent} envoyé(s), ${stats.failed} échec(s)'
-                      '${stats.lastError != null ? ' — ${stats.lastError}' : ''}',
-                      style: theme.textTheme.bodySmall?.copyWith(
-                        color: theme.colorScheme.onSurfaceVariant,
-                      ),
-                    ),
+                    builder: (context, stats, _) {
+                      final dropped = stats.dropped > 0
+                          ? ', ${stats.dropped} rebuté(s) (plein ou trop gros)'
+                          : '';
+                      final error = stats.lastError != null
+                          ? ' — ${stats.lastError}'
+                          : '';
+                      return Text(
+                        '${stats.sent} envoyé(s), ${stats.failed} échec(s)'
+                        '$dropped$error',
+                        style: theme.textTheme.bodySmall?.copyWith(
+                          color: theme.colorScheme.onSurfaceVariant,
+                        ),
+                      );
+                    },
                   ),
                   const SizedBox(height: FluffySpacing.sm),
                   OutlinedButton.icon(

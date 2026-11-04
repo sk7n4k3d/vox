@@ -409,6 +409,78 @@ void main() {
       expect(visited.length, lessThanOrEqualTo(7));
     });
   });
+
+  group('cache vignettes — identité de future, pas présence de clé '
+      '(audit 8960c5cc)', () {
+    test('entrée évictée, réinsérée, future stale résolue en retard : compta '
+        'intacte et plafond armé', () async {
+      // Pattern scroll réel : une vignette lente est évincée du cache pendant
+      // son vol, la MÊME URL est réinsérée (retour arrière), la nouvelle
+      // requête aboutit, puis l'ancienne — trop lente — se résout après coup.
+      // Avec un garde `containsKey`, la stale écrasait la réservation de la
+      // fraîche : compteur sous la rétention réelle, plafond désarmé. Le garde
+      // d'IDENTITÉ doit rendre la stale comptablement muette.
+      const thumb = 2 * 1024 * 1024;
+      http.StreamedResponse png() => http.StreamedResponse(
+        Stream.value(Uint8List(thumb)),
+        200,
+        headers: {'content-type': 'image/png'},
+      );
+      final slots = <String, List<_Slot>>{};
+      final svc = LinkPreviewService.forTesting(
+        newClient: (_) => _SlotGateClient(slots),
+        lookup: (_) async => [InternetAddress('93.184.216.34')],
+      );
+      Future<void> settle() => Future<void>.delayed(Duration.zero);
+      Future<void> load(String url) async {
+        final slot = _Slot();
+        slots.putIfAbsent(url, () => <_Slot>[]).add(slot);
+        final f = svc.fetchImage(url);
+        slot.completer.complete(png());
+        await f;
+        await settle();
+      }
+
+      for (var i = 0; i < 4; i++) {
+        await load('https://cdn.example/plein$i.png');
+      }
+      expect(svc.imageCacheBytesForTest, 4 * thumb);
+      expect(svc.imageCacheCountForTest, 4);
+
+      final slow = 'https://cdn.example/lent.png';
+      final slowSlot = _Slot();
+      slots[slow] = [slowSlot];
+      final stale = svc.fetchImage(slow);
+      await settle();
+      for (var i = 0; i < 4; i++) {
+        await load('https://cdn.example/churn$i.png');
+      }
+      final freshSlot = _Slot();
+      slots[slow]!.add(freshSlot);
+      final fresh = svc.fetchImage(slow);
+      expect(identical(fresh, stale), isFalse,
+          reason: 'l entrée a bien été évictée puis RÉINSÉRÉE : deux futures '
+              'distinctes pour la même clé');
+      freshSlot.completer.complete(png());
+      await fresh;
+      await settle();
+      expect(svc.imageCacheBytesForTest, 4 * thumb);
+
+      slowSlot.completer.completeError(const SocketException('beaucoup trop '
+          'tard'));
+      await stale;
+      await settle();
+      expect(svc.imageCacheBytesForTest, 4 * thumb,
+          reason: 'la stale ne doit RIEN corriger : sa part a déjà été rendue '
+              'à l éviction, la fraîche compte pour la sienne');
+      expect(svc.imageCacheCountForTest, 4);
+
+      // Conséquence directe : le plafond se déclenche toujours au bon seuil.
+      await load('https://cdn.example/debordement.png');
+      expect(svc.imageCacheCountForTest * thumb, lessThanOrEqualTo(8 * 1024 * 1024),
+          reason: 'rétention réelle = compteur : pas de dépassement du plafond');
+    });
+  });
 }
 
 class _GatedClient extends http.BaseClient {
@@ -421,4 +493,29 @@ class _GatedClient extends http.BaseClient {
 
   @override
   void close() {}
+}
+
+/// Une place par APPEL `send`, dans l'ordre : permet de faire résoudre la
+/// 2e requête d'une URL avant la 1re (résolution hors ordre, pattern ABA).
+/// L'état « réclamée » vit SUR le slot, pas dans le client : un nouveau
+/// client est créé par fetch, seul l'ordre global dans [slots] compte.
+class _SlotGateClient extends http.BaseClient {
+  _SlotGateClient(this.slots);
+  final Map<String, List<_Slot>> slots;
+
+  @override
+  Future<http.StreamedResponse> send(http.BaseRequest request) {
+    final url = request.url.toString();
+    final slot = slots[url]!.firstWhere((s) => !s.claimed);
+    slot.claimed = true;
+    return slot.completer.future;
+  }
+
+  @override
+  void close() {}
+}
+
+class _Slot {
+  final completer = Completer<http.StreamedResponse>();
+  bool claimed = false;
 }

@@ -354,20 +354,23 @@ class LinkPreviewService {
     // réserve le pire cas dès l'insertion : une entrée non résolue doit déjà
     // compter dans le budget, sinon l'éviction sous-compte.
     _imageCacheSizes[imageUrl] = _maxImageBytes;
-    final future = _fetchImage(imageUrl).then((bytes) {
-      // L'entrée a pu être évictée pendant que sa future était en vol : son
-      // quota a déjà été rendu au budget à l'éviction. Toute correction ici
-      // créerait un déficit comptable (le plafond se désarme) et une taille
-      // orpheline dans la map. Entrée sortie = on ne comptabilise rien.
-      if (!_imageCache.containsKey(imageUrl)) return bytes;
+    // Garde d'IDENTITÉ, pas de présence (audit 8960c5cc) : entre l'éviction
+    // de cette future et sa résolution, la MÊME URL a pu être réinsérée
+    // (scroll arrière/avant sur un lien lent) — deux futures en vol pour une
+    // clé. `containsKey` laissait la stale écraser la réservation de la
+    // fraîche. Ici : si la clé ne pointe plus sur CETTE future, sa part a
+    // déjà été rendue au budget à l'éviction ; on ne touche rien.
+    late final Future<Uint8List?> guarded;
+    guarded = _fetchImage(imageUrl).then((bytes) {
+      if (!identical(_imageCache[imageUrl], guarded)) return bytes;
       final actual = bytes?.length ?? 0;
       final reserved = _imageCacheSizes[imageUrl] ?? _maxImageBytes;
       _imageCacheSizes[imageUrl] = actual;
       _imageCacheBytes = (_imageCacheBytes + actual - reserved).clamp(0, 1 << 30);
       return bytes;
     });
-    _imageCache[imageUrl] = future;
-    return future;
+    _imageCache[imageUrl] = guarded;
+    return guarded;
   }
 
   @visibleForTesting

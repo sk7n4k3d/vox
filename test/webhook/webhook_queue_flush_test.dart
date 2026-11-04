@@ -141,16 +141,25 @@ void main() {
       expect(queue.length, 0);
     });
 
-    test('le budget d octets evince les plus anciens corps geants', () async {
+    test('au-dela du budget, le nouvel entrant est rebuté, pas les anciens',
+        () async {
       final queue = WebhookQueue.forTest(postRaw: (_) async => false);
       addTearDown(queue.stop);
-      // 3 × 9 Mo > maxQueuedBytes (20 Mo) : il faut que ça rentre en FIFO.
+      // 3 × 9 Mo > maxQueuedBytes : le troisième ne passe plus.
+      // Politique « zéro éviction » (audit 8960c5cc) : c'est LUI qui est
+      // refusé, les deux premiers restent, rien n'est purgé pour lui faire
+      // de la place.
       final gros = 'x' * (9 * 1024 * 1024);
-      await queue.add(gros);
-      await queue.add(gros);
-      await queue.add(gros);
-      expect(queue.length, lessThanOrEqualTo(2),
-          reason: 'au-delà du budget, les plus anciens partent');
+      expect(await queue.add(gros), isTrue);
+      expect(await queue.add(gros), isTrue);
+      expect(await queue.add(gros), isFalse,
+          reason: 'au-dessus du budget global : rejet explicite');
+      expect(queue.length, 2);
+      expect(queue.droppedCount, 1);
+      expect(queue.lastRejectReason, contains('budget'));
+      // Le fichier, lui, porte bien les deux survivants.
+      final decoded = jsonDecode(queueFile.readAsStringSync());
+      expect((decoded as List).length, 2);
     });
 
     test('les orphelins .part d un crash sont purgés au chargement',

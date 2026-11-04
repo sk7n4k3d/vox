@@ -26,18 +26,25 @@ class PendingWebhook {
     required this.createdAtMs,
     this.attempts = 0,
     this.nextAttemptAtMs = 0,
-  });
+    int? byteLength,
+  }) : byteLength = byteLength ?? utf8.encode(rawBody).length;
 
   final String rawBody;
   final int createdAtMs;
   int attempts;
   int nextAttemptAtMs;
 
+  /// Vrai poids du corps sur le disque : OCTETS UTF-8, pas unités UTF-16.
+  /// `String.length` comptait un SMS chargé en emoji ~2 × moins que sa taille
+  /// réelle (audit 8960c5cc) — le « budget d'octets » n'en était pas un.
+  final int byteLength;
+
   Map<String, Object?> toJson() => <String, Object?>{
     'raw_body': rawBody,
     'created_at_ms': createdAtMs,
     'attempts': attempts,
     'next_attempt_at_ms': nextAttemptAtMs,
+    'bytes': byteLength,
   };
 
   static PendingWebhook? fromJson(Object? value) {
@@ -49,6 +56,8 @@ class PendingWebhook {
       createdAtMs: (value['created_at_ms'] as num?)?.toInt() ?? 0,
       attempts: (value['attempts'] as num?)?.toInt() ?? 0,
       nextAttemptAtMs: (value['next_attempt_at_ms'] as num?)?.toInt() ?? 0,
+      // Absent des fichiers écrits avant ce commit : recalculé, jamais déviné.
+      byteLength: (value['bytes'] as num?)?.toInt(),
     );
   }
 }
@@ -85,19 +94,52 @@ class WebhookQueue {
     _timer = null;
   }
 
-  /// Plafond de la file : au-delà, on jette les plus anciens. Un webhook muet
-  /// pendant des jours ne doit pas faire grossir le fichier sans borne.
+  /// Plafond de la file. Atteint, le NOUVEL entrant est refusé — jamais les
+  /// anciens chassés : un événement pas encore envoyé est une donnée, pas un
+  /// cache que l'on peut purger pour faire de la place (audit 8960c5cc).
   static const int maxItems = 500;
 
-  /// Budget d'octets en plus du compteur : les corps portent parfois des
-  /// médias base64 de plusieurs Mo — 500 entrées seules ne bornent pas la
-  /// taille du fichier (audit 2026-11-04). Au-delà, éviction FIFO.
-  static const int maxQueuedBytes = 20 * 1024 * 1024;
+  /// Budget d'octets UTF-8 réels des corps en attente. 26 MiB : choisi pour
+  /// que le média NOMINAL tienne toujours — [maxWebhookMediaBytes] (16 MiB)
+  /// encodé en base64 pèse 22 369 624 octets, plus l'ossature JSON de
+  /// l'événement (audit 8960c5cc : à 20 MiB, ces corps-là étaient
+  /// structurellement rejetés, et leur rejet était invisible).
+  static const int maxQueuedBytes = 26 * 1024 * 1024;
+
+  /// Plafond d'un SEUL corps : le média nominal + marge. Un corps au-dessus
+  /// ne peut jamais cohabiter avec quoi que ce soit d'utile ; il est refusé
+  /// avec motif, la file existante reste intacte.
+  static const int maxQueuedItemBytes = 23 * 1024 * 1024;
 
   /// Cadence du réveil.
   static const Duration tick = Duration(seconds: 60);
 
   final List<PendingWebhook> _items = [];
+
+  /// Entrées en cours de POST. Elles restent dans [_items] (donc sur le
+  /// fichier : un crash pendant l'envoi ne les perd pas) et cette liste les
+  /// signale « en vol » : protection contre toute éviction future, et garde
+  /// contre la résurrection après un `clear()` demandé pendant l'envoi.
+  final List<PendingWebhook> _inFlight = [];
+
+  /// incrémenté à chaque `clear()` : un envoi qui échoue APRÈS un clear
+  /// volontaire de l'utilisateur ne doit pas réinsérer son corps.
+  int _clearGeneration = 0;
+
+  int _dropped = 0;
+  String? _lastRejectReason;
+  String? _lastRejectBody;
+
+  /// Nombre d'événements écartés de la file (taille, budget ou compteur),
+  /// pour l'UI des réglages.
+  int get droppedCount => _dropped;
+
+  /// Motif du dernier refus — observable par l'appelant, pas un simple log.
+  String? get lastRejectReason => _lastRejectReason;
+
+  /// Corps du dernier événement rebuté : l'appelant peut en tirer un repli
+  /// (métadonnées seules) au lieu de le perdre.
+  String? get lastRejectBody => _lastRejectBody;
 
   /// Nombre d'envois en attente, pour l'afficher dans les réglages.
   final ValueNotifier<int> pending = ValueNotifier<int>(0);
@@ -141,6 +183,7 @@ class WebhookQueue {
         final item = PendingWebhook.fromJson(entry);
         if (item != null) _items.add(item);
       }
+      _reconcileBudgetOnLoad();
       pending.value = _items.length;
     } catch (e) {
       _unreadable = true;
@@ -148,10 +191,38 @@ class WebhookQueue {
     }
   }
 
+  /// Une file écrite par une build antérieure (sans budget d'octets, ou avec
+  /// d'anciennes constantes) peut être héritée hors budget. La laisser telle
+  /// quelle reporterait la perte sur le premier `add` — même de 13 octets —
+  /// via l'éviction (audit 8960c5cc, sonde P3). La purge a lieu ICI, une
+  /// seule fois, en tête (les plus anciens), et elle est comptée et journalisée
+  /// : plus rien ne disparaît sans trace ni sans que l'ajout courant soit
+  /// refusé à tort.
+  void _reconcileBudgetOnLoad() {
+    var bytes = _totalBytes();
+    var purged = 0;
+    while ((bytes > maxQueuedBytes || _items.length > maxItems) &&
+        _items.isNotEmpty) {
+      final gone = _items.removeAt(0);
+      bytes -= gone.byteLength;
+      purged++;
+      _dropped++;
+      _lastRejectReason =
+          'file héritée hors budget : entrée de ${gone.byteLength} octets '
+          'purgée';
+    }
+    if (purged > 0) {
+      debugPrint(
+        'WebhookQueue: $purged entrée(s) trop ancienne(s) purgée(s) au '
+        'chargement ($bytes octets retenus / budget $maxQueuedBytes)',
+      );
+    }
+  }
+
   int _totalBytes() {
     var n = 0;
     for (final i in _items) {
-      n += i.rawBody.length;
+      n += i.byteLength;
     }
     return n;
   }
@@ -199,48 +270,66 @@ class WebhookQueue {
   /// Met un corps d'événement en attente. Le premier réessai est déjà décalé du
   /// délai de base : inutile de retaper tout de suite un serveur qui vient de
   /// refuser.
-  Future<void> add(String rawBody) async {
+  ///
+  /// Retourne `true` si le corps est en file. Sinon **rejet explicite et
+  /// observable** : motif dans [lastRejectReason], corps dans [lastRejectBody],
+  /// compteur dans [droppedCount] — jamais d'éviction d'un élément existant
+  /// pour faire de la place (audit 8960c5cc : chasser des événements non
+  /// envoyés est une perte de données, y compris « en vol »).
+  Future<bool> add(String rawBody) async {
     await _ensureLoaded();
-    // Un corps seul au-dessus du budget (un média 16 Mo en base64 ≈ 21 Mo) ne
-    // JAMAIS tenir : l'éviction FIFO qui le suivrait viderait la file
-    // entièrement, lui compris — perte sèche et silencieuse de tous les
-    // événements non envoyés (audit suite, régression F3). On le refuse, les
-    // autres restent intacts.
-    if (rawBody.length > maxQueuedBytes) {
-      debugPrint(
-        'WebhookQueue: corps trop volumineux (${rawBody.length} octets > '
-        '$maxQueuedBytes) écarté, file inchangée',
+    final bodyBytes = utf8.encode(rawBody).length;
+    if (bodyBytes > maxQueuedItemBytes) {
+      return _reject(
+        rawBody,
+        'corps de $bodyBytes octets > plafond par entrée ($maxQueuedItemBytes)',
       );
-      return;
+    }
+    if (_items.length >= maxItems) {
+      return _reject(rawBody, 'file saturée (${_items.length} entrées)');
+    }
+    if (_totalBytes() + bodyBytes > maxQueuedBytes) {
+      return _reject(
+        rawBody,
+        'budget d\'octets atteint (${_totalBytes()} + $bodyBytes > '
+        '$maxQueuedBytes)',
+      );
     }
     final now = DateTime.now().millisecondsSinceEpoch;
     final base = AppSettings.webhookRetryBackoffS.value;
-    // Éviction anticipée : on ne chasse les plus anciens que dans la mesure où
-    // le nouveau corps tient ensuite dans le budget — jamais le nouveau lui-
-    // même (il est ajouté après la boucle).
-    var bytes = _totalBytes();
-    while (bytes + rawBody.length > maxQueuedBytes && _items.isNotEmpty) {
-      bytes -= _items.removeAt(0).rawBody.length;
-    }
     _items.add(
       PendingWebhook(
         rawBody: rawBody,
         createdAtMs: now,
         nextAttemptAtMs: now + retryDelayMs(base, 1),
+        byteLength: bodyBytes,
       ),
     );
-    if (_items.length > maxItems) {
-      _items.removeRange(0, _items.length - maxItems);
-    }
     pending.value = _items.length;
     await _persist();
     if (_autoStart) start();
+    return true;
+  }
+
+  /// Refus motivé et tracé : compteur pour l'UI, raison pour l'appelant,
+  /// corps conservé pour un repli éventuel. La file, elle, ne bouge pas.
+  bool _reject(String rawBody, String reason) {
+    _dropped++;
+    _lastRejectReason = reason;
+    _lastRejectBody = rawBody;
+    WebhookService.instance.recordQueueReject(reason);
+    debugPrint('WebhookQueue: $reason — événement écarté, file inchangée');
+    return false;
   }
 
   /// Vide la file (réglages : « vider maintenant »).
   Future<void> clear() async {
     await _ensureLoaded();
     _items.clear();
+    // Un envoi en vol dont l'échec tomberait APRÈS ce clear ne réinsérera
+    // pas son corps : la demande explicite de l'utilisateur prime.
+    _inFlight.clear();
+    _clearGeneration++;
     pending.value = 0;
     if (_unreadable) {
       // Demande explicite de l'utilisateur : on supprime le fichier qu'on
@@ -289,25 +378,46 @@ class WebhookQueue {
     final ttlMs = AppSettings.webhookRetryTtlH.value * 3600 * 1000;
     final maxAttempts = AppSettings.webhookRetryAttempts.value;
     final base = AppSettings.webhookRetryBackoffS.value;
+    var changed = false;
 
     for (final item in List<PendingWebhook>.of(_items)) {
       if (!force && item.nextAttemptAtMs > now) continue;
       if (now - item.createdAtMs > ttlMs) {
+        // TTL dépassée : politique explicite (l'événement est trop vieux pour
+        // intéresser Hermes), pas une eviction « pour faire de la place ».
         _items.remove(item);
+        changed = true;
         continue;
       }
-      if (await _postRaw(item.rawBody)) {
+      // En vol : l'entrée RESTE dans _items (donc dans le fichier — un crash
+      // pendant l'envoi ne la perd pas) et _inFlight la signale protégée :
+      // son échec ne peut la faire disparaître (audit 8960c5cc, sonde P4).
+      final generationAtSend = _clearGeneration;
+      _inFlight.add(item);
+      final sent = await _postRaw(item.rawBody);
+      _inFlight.remove(item);
+      if (sent) {
         _items.remove(item);
+        changed = true;
         continue;
       }
       item.attempts++;
       if (item.attempts >= maxAttempts) {
         _items.remove(item);
+        changed = true;
         continue;
       }
       item.nextAttemptAtMs = now + retryDelayMs(base, item.attempts);
+      // Réinsertion en tête : le prochain FIFO le retentera en premier.
+      // Sauf si l'utilisateur a vidé la file pendant l'envoi — un clear
+      // volontaire ne doit pas être contredit par un échec tardif.
+      if (generationAtSend == _clearGeneration && _items.contains(item)) {
+        _items.remove(item);
+        _items.insert(0, item);
+      }
+      changed = true;
     }
     pending.value = _items.length;
-    await _persist();
+    if (changed) await _persist();
   }
 }

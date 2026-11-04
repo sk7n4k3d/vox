@@ -12,15 +12,35 @@ import 'package:http/http.dart' as http;
 /// Compteurs affichés sur la page de réglages.
 @immutable
 class WebhookStats {
-  const WebhookStats({this.sent = 0, this.failed = 0, this.lastError});
+  const WebhookStats({
+    this.sent = 0,
+    this.failed = 0,
+    this.dropped = 0,
+    this.lastError,
+  });
 
   final int sent;
   final int failed;
+
+  /// Événements écartés de la file de réessai (taille, budget ou compteur) :
+  /// ni envoyés, ni en attente — un rejet ne doit jamais être muet (audit
+  /// 8960c5cc).
+  final int dropped;
   final String? lastError;
 
-  WebhookStats sent1() => WebhookStats(sent: sent + 1, failed: failed);
-  WebhookStats failed1(String error) =>
-      WebhookStats(sent: sent, failed: failed + 1, lastError: error);
+  WebhookStats sent1() => WebhookStats(sent: sent + 1, failed: failed, dropped: dropped);
+  WebhookStats failed1(String error) => WebhookStats(
+    sent: sent,
+    failed: failed + 1,
+    dropped: dropped,
+    lastError: error,
+  );
+  WebhookStats dropped1(String error) => WebhookStats(
+    sent: sent,
+    failed: failed,
+    dropped: dropped + 1,
+    lastError: error,
+  );
 }
 
 /// Pousse chaque message vers l'URL configurée, signé en HMAC V2 comme la
@@ -94,8 +114,24 @@ class WebhookService {
     final rawBody = jsonEncode(event.toJson());
     final ok = await postRaw(rawBody);
     if (!ok && AppSettings.webhookRetryEnabled.value) {
-      await WebhookQueue.instance.add(rawBody);
+      final queued = await WebhookQueue.instance.add(rawBody);
+      if (!queued) {
+        // Ni envoyé, ni en file : l'événement est perdu ICI, bruyamment —
+        // compteur `dropped` + motif sur la page de réglages, corps
+        // consultable via WebhookQueue.instance.lastRejectBody. Jamais
+        // l'illusion d'une livraison ou d'une file.
+        debugPrint(
+          'WebhookService: événement non livré et NON mis en file: '
+          '${WebhookQueue.instance.lastRejectReason}',
+        );
+      }
     }
+  }
+
+  /// Appelé par [WebhookQueue] quand elle écarte un événement : le rejet doit
+  /// être visible de l'utilisateur, pas cantonné au journal debug.
+  void recordQueueReject(String reason) {
+    stats.value = stats.value.dropped1(reason);
   }
 
   /// Test-visible : fabrique de client HTTP pour [postRaw] (null = réel).
