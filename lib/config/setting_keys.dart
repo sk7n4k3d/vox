@@ -62,6 +62,10 @@ enum AppSettings<T> {
   // un compte Matrix. Réversible (Réglages → SMS), sans effet une fois un
   // compte Matrix connecté.
   smsOnlyMode<bool>('chat.fluffy.sms_only_mode', false),
+  // Aperçus automatiques des liens (cartes avec titre/vignette). Activé par
+  // défaut (comportement actuel) ; l'utilisateur peut le couper pour ne pas
+  // révéler son IP au simple rendu d'un message contenant une URL.
+  linkPreviewsEnabled<bool>('chat.fluffy.link_previews_enabled', true),
   // Journal d'appels poussé vers la boîte Hermes : un appel sortant compte
   // comme réponse à un SMS. Nécessite READ_CALL_LOG (demande explicite).
   webhookCallsEnabled<bool>('chat.fluffy.webhook_calls', false),

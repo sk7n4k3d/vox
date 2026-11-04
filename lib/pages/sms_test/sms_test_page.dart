@@ -102,6 +102,15 @@ class _SmsTestPageState extends State<SmsTestPage> with WidgetsBindingObserver {
               if (!logged) context.go('/home');
             },
           ),
+          SettingsSwitchListTile.adaptive(
+            setting: AppSettings.linkPreviewsEnabled,
+            title: 'Aperçus automatiques des liens',
+            subtitle:
+                'Chaque message contenant un lien déclenche un téléchargement '
+                'de sa vignette, ce qui révèle votre adresse IP à l'
+                '\'expéditeur. Désactivez pour ne charger les aperçus que '
+                'sur demande.',
+          ),
           const SizedBox(height: FluffySpacing.md),
           CyberGlass(
             child: Row(

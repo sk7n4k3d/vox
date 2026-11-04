@@ -48,4 +48,17 @@ void main() {
       expect(AppSettings.smsOnlyMode.value, isFalse);
     });
   });
+
+  group('aperçus de liens — interrupteur vie privée (audit F5)', () {
+    test('clé de stockage figée et défaut activé (comportement actuel)',
+        () async {
+      SharedPreferences.setMockInitialValues({});
+      await AppSettings.init();
+      expect(AppSettings.linkPreviewsEnabled.key,
+          'chat.fluffy.link_previews_enabled');
+      expect(AppSettings.linkPreviewsEnabled.value, isTrue);
+      await AppSettings.linkPreviewsEnabled.setItem(false);
+      expect(AppSettings.linkPreviewsEnabled.value, isFalse);
+    });
+  });
 }
