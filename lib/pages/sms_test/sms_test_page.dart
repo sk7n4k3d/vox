@@ -3,9 +3,11 @@ import 'package:fluffychat/config/setting_keys.dart';
 import 'package:fluffychat/l10n/l10n.dart';
 import 'package:fluffychat/utils/sms/sms_bridge.dart';
 import 'package:fluffychat/widgets/cyber/cyber_widgets.dart';
+import 'package:fluffychat/widgets/matrix.dart';
 import 'package:fluffychat/widgets/settings_switch_list_tile.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:go_router/go_router.dart';
 
 /// SMS settings screen.
 ///
@@ -82,6 +84,25 @@ class _SmsTestPageState extends State<SmsTestPage> with WidgetsBindingObserver {
       body: ListView(
         padding: const EdgeInsets.all(FluffySpacing.lg),
         children: [
+          // Entrée/sortie du mode SMS/MMS seul. Désactivé = retour au
+          // sélecteur de compte Matrix ; activé = la liste des conversations
+          // s'ouvre sans jamais exiger de connexion.
+          SettingsSwitchListTile.adaptive(
+            setting: AppSettings.smsOnlyMode,
+            title: 'Mode SMS/MMS sans compte Matrix',
+            subtitle:
+                'Utiliser VoxOne uniquement comme messagerie SMS, MMS et '
+                'appels. Aucune connexion Matrix requise ; vous pourrez en '
+                'ajouter une plus tard.',
+            onChanged: (enabled) {
+              if (enabled || !mounted) return;
+              final logged = Matrix.of(
+                context,
+              ).widget.clients.any((c) => c.isLogged());
+              if (!logged) context.go('/home');
+            },
+          ),
+          const SizedBox(height: FluffySpacing.md),
           CyberGlass(
             child: Row(
               children: [
@@ -93,10 +114,11 @@ class _SmsTestPageState extends State<SmsTestPage> with WidgetsBindingObserver {
                 Expanded(
                   child: Text(
                     _isDefault
-                        ? 'VOX est l\'app SMS par défaut'
-                        : 'VOX n\'est PAS l\'app SMS par défaut',
-                    style: FluffyTypography.title
-                        .copyWith(color: theme.colorScheme.onSurface),
+                        ? 'VoxOne est l\'app SMS par défaut'
+                        : 'VoxOne n\'est PAS l\'app SMS par défaut',
+                    style: FluffyTypography.title.copyWith(
+                      color: theme.colorScheme.onSurface,
+                    ),
                   ),
                 ),
               ],
@@ -105,7 +127,7 @@ class _SmsTestPageState extends State<SmsTestPage> with WidgetsBindingObserver {
           const SizedBox(height: FluffySpacing.md),
           if (!_isDefault)
             CyberPrimaryButton(
-              label: 'Définir VOX comme app SMS par défaut',
+              label: 'Définir VoxOne comme app SMS par défaut',
               icon: Icons.sms_outlined,
               onPressed: () async {
                 await SmsBridge.instance.requestDefaultSmsRole();
@@ -155,12 +177,16 @@ class _SmsTestPageState extends State<SmsTestPage> with WidgetsBindingObserver {
                     label: 'Envoyer',
                     icon: Icons.send_rounded,
                     onPressed: () async {
-                      final id = await SmsBridge.instance
-                          .sendSms(_addr.text.trim(), _body.text.trim());
+                      final id = await SmsBridge.instance.sendSms(
+                        _addr.text.trim(),
+                        _body.text.trim(),
+                      );
                       if (!mounted) return;
-                      setState(() => _log = id == null
-                          ? '❌ échec envoi\n$_log'
-                          : '✅ envoyé (row $id)\n$_log');
+                      setState(
+                        () => _log = id == null
+                            ? '❌ échec envoi\n$_log'
+                            : '✅ envoyé (row $id)\n$_log',
+                      );
                       _refresh();
                     },
                   ),
@@ -196,8 +222,9 @@ class _SmsTestPageState extends State<SmsTestPage> with WidgetsBindingObserver {
               CyberGlass(
                 child: Text(
                   _log,
-                  style: FluffyTypography.code
-                      .copyWith(color: theme.colorScheme.onSurfaceVariant),
+                  style: FluffyTypography.code.copyWith(
+                    color: theme.colorScheme.onSurfaceVariant,
+                  ),
                 ),
               ),
             ],

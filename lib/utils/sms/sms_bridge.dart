@@ -101,6 +101,9 @@ class SmsBridge {
       return await _channel.invokeMethod<bool>('isDefaultSmsApp') ?? false;
     } on PlatformException {
       return false;
+    } on MissingPluginException {
+      // Plateformes sans couche SMS (desktop, web, tests) : jamais défaut.
+      return false;
     }
   }
 
@@ -199,6 +202,8 @@ class SmsBridge {
       return await _channel.invokeMethod<bool>('requestDefaultSmsRole') ??
           false;
     } on PlatformException {
+      return false;
+    } on MissingPluginException {
       return false;
     }
   }

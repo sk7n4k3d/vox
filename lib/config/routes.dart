@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:animations/animations.dart';
 import 'package:fluffychat/config/design_tokens.dart';
+import 'package:fluffychat/config/setting_keys.dart';
 import 'package:fluffychat/config/themes.dart';
 import 'package:fluffychat/pages/archive/archive.dart';
 import 'package:fluffychat/pages/bootstrap/bootstrap_dialog.dart';
@@ -44,6 +45,22 @@ import 'package:go_router/go_router.dart';
 import 'package:matrix/matrix.dart';
 
 abstract class AppRoutes {
+  /// Le compte Matrix connecté (ou le mode SMS/MMS seul activé) ouvre la
+  /// conversation. Pure pour rester testable sans widget ni contexte.
+  @visibleForTesting
+  static bool chatAccessible({required bool loggedIn, required bool smsOnly}) =>
+      loggedIn || smsOnly;
+
+  static bool _canChat(BuildContext context) => chatAccessible(
+    loggedIn: Matrix.of(
+      context,
+    ).widget.clients.any((client) => client.isLogged()),
+    smsOnly: AppSettings.smsOnlyMode.value,
+  );
+
+  /// Garde du tunnel de login : un compte connecté n'a rien à faire sur
+  /// /home. Volontairement **sans** smsOnly — un utilisateur en mode SMS doit
+  /// pouvoir ouvrir la page de connexion pour ajouter Matrix plus tard.
   static FutureOr<String?> loggedInRedirect(
     BuildContext context,
     GoRouterState state,
@@ -54,19 +71,14 @@ abstract class AppRoutes {
   static FutureOr<String?> loggedOutRedirect(
     BuildContext context,
     GoRouterState state,
-  ) => Matrix.of(context).widget.clients.any((client) => client.isLogged())
-      ? null
-      : '/home';
+  ) => _canChat(context) ? null : '/home';
 
   AppRoutes();
 
   static final List<RouteBase> routes = [
     GoRoute(
       path: '/',
-      redirect: (context, state) =>
-          Matrix.of(context).widget.clients.any((client) => client.isLogged())
-          ? '/rooms'
-          : '/home',
+      redirect: (context, state) => _canChat(context) ? '/rooms' : '/home',
     ),
     GoRoute(
       path: '/home',

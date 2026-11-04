@@ -151,8 +151,7 @@ class IntroPage extends StatelessWidget {
                             ),
                             child: CyberGlass(
                               child: SelectableLinkify(
-                                text:
-                                    welcomeText ?? L10n.of(context).appIntro,
+                                text: welcomeText ?? L10n.of(context).appIntro,
                                 textScaleFactor: MediaQuery.textScalerOf(
                                   context,
                                 ).scale(1),
@@ -190,6 +189,34 @@ class IntroPage extends StatelessWidget {
                                   icon: Icons.login_outlined,
                                   onPressed: login,
                                 ),
+                                if (PlatformInfos.isAndroid) ...[
+                                  const SizedBox(height: FluffySpacing.md),
+                                  // Entrée du mode SMS/MMS seul : utiliser
+                                  // VoxOne comme app SMS par défaut sans
+                                  // jamais créer de compte Matrix.
+                                  OutlinedButton.icon(
+                                    style: OutlinedButton.styleFrom(
+                                      foregroundColor: cyber.cyan,
+                                      side: BorderSide(
+                                        color: cyber.cyan.withValues(
+                                          alpha: 0.5,
+                                        ),
+                                      ),
+                                      minimumSize: const Size.fromHeight(48),
+                                    ),
+                                    icon: const Icon(Icons.sms_outlined),
+                                    label: Text(
+                                      'Utiliser sans compte Matrix (SMS / MMS)',
+                                    ),
+                                    onPressed: () async {
+                                      await AppSettings.smsOnlyMode.setItem(
+                                        true,
+                                      );
+                                      if (!context.mounted) return;
+                                      context.go('/rooms');
+                                    },
+                                  ),
+                                ],
                                 if (!hasPresetHomeserver) ...[
                                   const SizedBox(height: FluffySpacing.sm),
                                   TextButton(

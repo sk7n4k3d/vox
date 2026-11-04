@@ -11,6 +11,7 @@ import 'package:fluffychat/pages/chat_list/search_title.dart';
 import 'package:fluffychat/pages/chat_list/sms_list_item.dart';
 import 'package:fluffychat/pages/chat_list/space_view.dart';
 import 'package:fluffychat/pages/chat_list/status_msg_list.dart';
+import 'package:fluffychat/pages/sms_chat/new_sms_dialog.dart';
 import 'package:fluffychat/utils/sms/sms_bridge.dart';
 import 'package:fluffychat/utils/stream_extension.dart';
 import 'package:fluffychat/widgets/adaptive_dialogs/public_room_dialog.dart';
@@ -253,7 +254,7 @@ class ChatListViewBody extends StatelessWidget {
                     ],
                   ]),
                 ),
-                if (client.prevBatch == null)
+                if (client.prevBatch == null && client.isLogged())
                   SliverList(
                     delegate: SliverChildBuilderDelegate(
                       (context, i) => DummyChatListItem(
@@ -263,7 +264,9 @@ class ChatListViewBody extends StatelessWidget {
                       childCount: dummyChatCount,
                     ),
                   ),
-                if (client.prevBatch != null)
+                if (!client.isLogged())
+                  const SliverToBoxAdapter(child: SmsOnlySetupBanner()),
+                if (client.prevBatch != null || !client.isLogged())
                   Builder(
                     builder: (context) {
                       // Merge Matrix rooms + native SMS conversations into one
@@ -295,7 +298,8 @@ class ChatListViewBody extends StatelessWidget {
                           final entry = entries[i];
                           if (entry.isSpamCounter) {
                             final cyber = CyberColors.of(context);
-                            final count = controller.smsSpamConversations.length;
+                            final count =
+                                controller.smsSpamConversations.length;
                             return ListTile(
                               leading: Icon(
                                 Icons.shield_outlined,

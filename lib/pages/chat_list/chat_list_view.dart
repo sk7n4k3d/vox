@@ -54,8 +54,7 @@ class ChatListView extends StatelessWidget {
                     ? LiquidGlassAppBar(
                         showGreeting: true,
                         onSearchTap: controller.startSearch,
-                        onNewChatTap: () =>
-                            context.go('/rooms/newprivatechat'),
+                        onNewChatTap: () => StartChatFab.tap(context),
                         onSettingsTap: () => context.go('/rooms/settings'),
                       )
                     : null,

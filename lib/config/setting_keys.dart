@@ -58,6 +58,10 @@ enum AppSettings<T> {
   webhookRetryBackoffS<int>('chat.fluffy.webhook_retry_backoff_s', 60),
   webhookRetryTtlH<int>('chat.fluffy.webhook_retry_ttl_h', 24),
   webhookWifiOnly<bool>('chat.fluffy.webhook_wifi_only', false),
+  // Mode SMS/MMS seul : lancer et utiliser l'app sans jamais se connecter à
+  // un compte Matrix. Réversible (Réglages → SMS), sans effet une fois un
+  // compte Matrix connecté.
+  smsOnlyMode<bool>('chat.fluffy.sms_only_mode', false),
   // Journal d'appels poussé vers la boîte Hermes : un appel sortant compte
   // comme réponse à un SMS. Nécessite READ_CALL_LOG (demande explicite).
   webhookCallsEnabled<bool>('chat.fluffy.webhook_calls', false),

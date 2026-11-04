@@ -1,6 +1,7 @@
 import 'package:fluffychat/config/cyberpunk_theme_extension.dart';
 import 'package:fluffychat/config/design_tokens.dart';
 import 'package:fluffychat/l10n/l10n.dart';
+import 'package:fluffychat/pages/sms_chat/new_sms_dialog.dart';
 import 'package:fluffychat/widgets/cyber/cyber_pressable.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -12,6 +13,17 @@ import 'package:go_router/go_router.dart';
 class StartChatFab extends StatelessWidget {
   const StartChatFab({super.key});
 
+  /// In SMS-only mode (no Matrix account), the Matrix room picker is a dead
+  /// end: the FAB writes a new SMS/MMS instead.
+  static void tap(BuildContext context) {
+    HapticFeedback.lightImpact();
+    if (NewSmsDialog.smsOnlyModeActive(context)) {
+      NewSmsDialog.openCompose(context);
+      return;
+    }
+    GoRouter.of(context).go('/rooms/newprivatechat');
+  }
+
   @override
   Widget build(BuildContext context) {
     final cyber =
@@ -21,13 +33,12 @@ class StartChatFab extends StatelessWidget {
       child: Material(
         color: Colors.transparent,
         child: Tooltip(
-          message: L10n.of(context).newChat,
+          message: NewSmsDialog.smsOnlyModeActive(context)
+              ? 'Nouveau SMS'
+              : L10n.of(context).newChat,
           child: CyberPressable(
             child: InkWell(
-              onTap: () {
-                HapticFeedback.lightImpact();
-                context.go('/rooms/newprivatechat');
-              },
+              onTap: () => tap(context),
               customBorder: const CircleBorder(),
               child: Container(
                 width: 56,
@@ -39,8 +50,10 @@ class StartChatFab extends StatelessWidget {
                     begin: Alignment.topLeft,
                     end: Alignment.bottomRight,
                   ),
-                  boxShadow:
-                      FluffyElevation.glowMagenta(cyber.magenta, alpha: 0.5),
+                  boxShadow: FluffyElevation.glowMagenta(
+                    cyber.magenta,
+                    alpha: 0.5,
+                  ),
                 ),
                 child: const Icon(
                   Icons.edit_square,
