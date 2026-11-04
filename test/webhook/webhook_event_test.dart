@@ -57,7 +57,11 @@ void main() {
         body: 'texte secret',
         threadId: '3',
         media: const [
-          WebhookMedia(mimeType: 'image/jpeg', fileName: 'image.jpg', size: 510093),
+          WebhookMedia(
+            mimeType: 'image/jpeg',
+            fileName: 'image.jpg',
+            size: 510093,
+          ),
         ],
         hideBody: true,
       ).toJson();
@@ -133,13 +137,16 @@ void main() {
       expect(normalizeSmsAddress('00336050730202'), '+336050730202');
     });
 
-    test('la forme nationale rejoint la forme internationale (journal d appels)', () {
-      expect(normalizeSmsAddress('06.50.73.02.02'), '+33650730202');
-      expect(normalizeSmsAddress('0769558524'), '+33769558524');
-      expect(normalizeSmsAddress('+33769558524'), '+33769558524');
-      // Un numéro étranger n'est pas touché.
-      expect(normalizeSmsAddress('+447860042009'), '+447860042009');
-    });
+    test(
+      'la forme nationale rejoint la forme internationale (journal d appels)',
+      () {
+        expect(normalizeSmsAddress('06.50.73.02.02'), '+33650730202');
+        expect(normalizeSmsAddress('0769558524'), '+33769558524');
+        expect(normalizeSmsAddress('+33769558524'), '+33769558524');
+        // Un numéro étranger n'est pas touché.
+        expect(normalizeSmsAddress('+447860042009'), '+447860042009');
+      },
+    );
 
     test('un envoi retrouve son fil malgre la mise en forme du numero', () {
       const threads = [
@@ -322,20 +329,41 @@ void main() {
         attempts: 2,
         nextAttemptAtMs: 1700000120000,
       );
-      final back = PendingWebhook.fromJson(
-        jsonDecode(jsonEncode(item.toJson())),
+      final back = PendingWebhook.decode(
+        jsonDecode(jsonEncode(item.toJsonElement())),
       );
 
-      expect(back, isNotNull);
-      expect(back!.rawBody, '{"event_id":"42"}');
+      expect(back.isInvalid, isFalse);
+      expect(back.suspended, isFalse);
+      expect(back.rawBody, '{"event_id":"42"}');
       expect(back.createdAtMs, 1700000000000);
       expect(back.attempts, 2);
       expect(back.nextAttemptAtMs, 1700000120000);
     });
 
-    test('une entree sans corps est ignoree', () {
-      expect(PendingWebhook.fromJson(const {'attempts': 1}), isNull);
-      expect(PendingWebhook.fromJson('pas un objet'), isNull);
+    test('un suspendu fait l aller-retour avec son drapeau (migration : '
+        'absent = actif)', () {
+      final item = PendingWebhook(
+        rawBody: 'x',
+        createdAtMs: 1,
+        suspended: true,
+      );
+      final json = item.toJsonElement() as Map<String, Object?>;
+      expect(json['suspended'], isTrue);
+      expect(PendingWebhook.decode(json).suspended, isTrue);
+      // fichier écrit avant ce champ : jamais déviné comme suspendu
+      final legacy = Map<String, Object?>.of(json)..remove('suspended');
+      expect(PendingWebhook.decode(legacy).suspended, isFalse);
+    });
+
+    test('une entrée invalide est PRÉSERVÉE brute, pas ignorée ni réduite à '
+        'null (mandat 2026-11-05)', () {
+      final weird = PendingWebhook.decode(const {'attempts': 1});
+      expect(weird.isInvalid, isTrue);
+      expect(weird.toJsonElement(), const {'attempts': 1});
+      final scalar = PendingWebhook.decode('pas un objet');
+      expect(scalar.isInvalid, isTrue);
+      expect(scalar.toJsonElement(), 'pas un objet');
     });
   });
 }

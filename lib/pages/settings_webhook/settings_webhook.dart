@@ -21,8 +21,9 @@ class SettingsWebhook extends StatefulWidget {
 }
 
 class SettingsWebhookController extends State<SettingsWebhook> {
-  final TextEditingController urlController =
-      TextEditingController(text: AppSettings.webhookUrl.value);
+  final TextEditingController urlController = TextEditingController(
+    text: AppSettings.webhookUrl.value,
+  );
   final TextEditingController secretController = TextEditingController();
 
   bool enabled = AppSettings.webhookEnabled.value;
@@ -74,8 +75,8 @@ class SettingsWebhookController extends State<SettingsWebhook> {
     final saved = await WebhookStore.instance.loadRooms();
     final savedExcluded = await WebhookStore.instance.loadExcludedRooms();
     final savedSms = await WebhookStore.instance.loadSmsThreads();
-    final savedSmsExcluded =
-        await WebhookStore.instance.loadExcludedSmsThreads();
+    final savedSmsExcluded = await WebhookStore.instance
+        .loadExcludedSmsThreads();
     var conversations = const <SmsConversation>[];
     try {
       conversations = await SmsBridge.instance.listConversations();
@@ -187,6 +188,23 @@ class SettingsWebhookController extends State<SettingsWebhook> {
 
   Future<void> clearQueue() => WebhookQueue.instance.clear();
 
+  /// Bouton « Reprendre » : renvoie en file d'envoi les événements suspendus
+  /// (expirés ou abandonnés). La suspension ne détruit rien — mais sans cette
+  /// reprise explicite, ils restent conservés sans jamais repartir.
+  Future<void> resumeQueue() async {
+    final resumed = await WebhookQueue.instance.resumeSuspended();
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          resumed == 0
+              ? 'Aucun envoi suspendu à reprendre.'
+              : '$resumed événement(s) suspendu(s) remis en file d\'envoi.',
+        ),
+      ),
+    );
+  }
+
   /// Journal d'appels : activer demande la permission READ_CALL_LOG, puis lance
   /// le premier import (48 h) pour que les appels passés comptent.
   Future<void> toggleCalls(bool value) async {
@@ -246,20 +264,20 @@ class SettingsWebhookController extends State<SettingsWebhook> {
 
   /// La conversation part-elle ? Même règle que celle appliquée aux messages.
   bool isRoomSent(String roomId) => isRoomAllowed(
-        rooms,
-        roomId,
-        all: matrixAll,
-        newDefault: matrixNewDefault,
-        excluded: excludedRooms,
-      );
+    rooms,
+    roomId,
+    all: matrixAll,
+    newDefault: matrixNewDefault,
+    excluded: excludedRooms,
+  );
 
   bool isSmsSent(String threadId) => isSmsThreadAllowed(
-        smsThreads,
-        threadId,
-        all: smsAll,
-        newDefault: smsNewDefault,
-        excluded: excludedSmsThreads,
-      );
+    smsThreads,
+    threadId,
+    all: smsAll,
+    newDefault: smsNewDefault,
+    excluded: excludedSmsThreads,
+  );
 
   void onUrlChanged(String value) =>
       unawaited(AppSettings.webhookUrl.setItem(value.trim()));
@@ -301,10 +319,9 @@ class SettingsWebhookController extends State<SettingsWebhook> {
   List<Room> get availableRooms {
     final list = Matrix.of(context).client.rooms.toList();
     list.sort(
-      (a, b) => a
-          .getLocalizedDisplayname()
-          .toLowerCase()
-          .compareTo(b.getLocalizedDisplayname().toLowerCase()),
+      (a, b) => a.getLocalizedDisplayname().toLowerCase().compareTo(
+        b.getLocalizedDisplayname().toLowerCase(),
+      ),
     );
     return list;
   }

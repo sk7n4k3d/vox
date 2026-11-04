@@ -294,6 +294,10 @@ void main() {
           'l échec doit être ATOMIQUE : le fichier reste l instantané '
           'précédent, jamais un tronçon',
     );
+    expect(queue.persistErrorCount, greaterThan(0),
+        reason:
+            'l échec d écriture est compté, pas seulement journalisé '
+            '(audit 6c8a1439, INFO « rien de muet »)');
     final parts = dir
         .listSync()
         .whereType<File>()

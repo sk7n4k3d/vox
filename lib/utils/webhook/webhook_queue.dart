@@ -20,6 +20,14 @@ int retryDelayMs(int baseSeconds, int attempts) {
 /// Un envoi en attente : le corps JSON **brut**. On ne garde pas la signature :
 /// elle couvre l'horodatage, donc chaque tentative est re-signée avec un
 /// horodatage frais (rejouer la signature d'origine serait vu comme un rejeu).
+///
+/// Deux états de conservation, jamais des pertes (mandat 2026-11-05) :
+/// - [suspended] : expiré (TTL) ou abandonné (plafond de tentatives). Reste
+///   dans le fichier, plus jamais POSTé, hors de portée de tout sauf `clear()`
+///   explicite ou [WebhookQueue.resumeSuspended] ;
+/// - [invalidJson] : élément que cette version ne sait pas lire (corruption
+///   externe). Conservé BRUT et réécrit tel quel — la file ne détruit ni
+///   n'écrase ce qu'elle ne comprend pas.
 class PendingWebhook {
   PendingWebhook({
     required this.rawBody,
@@ -27,38 +35,71 @@ class PendingWebhook {
     this.attempts = 0,
     this.nextAttemptAtMs = 0,
     int? byteLength,
-  }) : byteLength = byteLength ?? utf8.encode(rawBody).length;
+    this.suspended = false,
+  }) : invalidJson = null,
+       byteLength = byteLength ?? utf8.encode(rawBody).length;
+
+  /// Élément invalide : valeur d'origine conservée pour round-trip.
+  PendingWebhook.invalid(this.invalidJson)
+    : rawBody = '',
+      createdAtMs = 0,
+      attempts = 0,
+      nextAttemptAtMs = 0,
+      suspended = false,
+      byteLength = utf8.encode(jsonEncode(invalidJson)).length;
 
   final String rawBody;
-  final int createdAtMs;
+
+  /// Horodatage d'entrée en file : borne d'horloge du TTL. Repris à zéro par
+  /// [WebhookQueue.resumeSuspended] — sinon un « Reprendre » sur un expiré
+  /// serait re-suspendu à la passe suivante, ce qui vide le bouton de son
+  /// sens.
+  int createdAtMs;
   int attempts;
   int nextAttemptAtMs;
+
+  /// Expiré ou abandonné : conservé, plus jamais envoyé (voir doc de classe).
+  bool suspended;
+
+  /// Valeur JSON d'un élément illisible, préservée telle quelle.
+  final Object? invalidJson;
+
+  bool get isInvalid => invalidJson != null;
 
   /// Vrai poids du corps sur le disque : OCTETS UTF-8, pas unités UTF-16.
   /// `String.length` comptait un SMS chargé en emoji ~2 × moins que sa taille
   /// réelle (audit 8960c5cc) — le « budget d'octets » n'en était pas un.
   final int byteLength;
 
-  Map<String, Object?> toJson() => <String, Object?>{
-    'raw_body': rawBody,
-    'created_at_ms': createdAtMs,
-    'attempts': attempts,
-    'next_attempt_at_ms': nextAttemptAtMs,
-    'bytes': byteLength,
-  };
+  /// Élément sérialisé de la liste JSON : un invalide ressort byte-à-byte
+  /// (aux re-formatages du ré-encodage près), jamais sous une forme inventée.
+  Object toJsonElement() =>
+      invalidJson ??
+      <String, Object?>{
+        'raw_body': rawBody,
+        'created_at_ms': createdAtMs,
+        'attempts': attempts,
+        'next_attempt_at_ms': nextAttemptAtMs,
+        'bytes': byteLength,
+        if (suspended) 'suspended': true,
+      };
 
-  static PendingWebhook? fromJson(Object? value) {
-    if (value is! Map) return null;
-    final raw = value['raw_body'];
-    if (raw is! String || raw.isEmpty) return null;
-    return PendingWebhook(
-      rawBody: raw,
-      createdAtMs: (value['created_at_ms'] as num?)?.toInt() ?? 0,
-      attempts: (value['attempts'] as num?)?.toInt() ?? 0,
-      nextAttemptAtMs: (value['next_attempt_at_ms'] as num?)?.toInt() ?? 0,
-      // Absent des fichiers écrits avant ce commit : recalculé, jamais déviné.
-      byteLength: (value['bytes'] as num?)?.toInt(),
-    );
+  static PendingWebhook decode(Object? value) {
+    if (value is Map) {
+      final raw = value['raw_body'];
+      if (raw is String && raw.isNotEmpty) {
+        return PendingWebhook(
+          rawBody: raw,
+          createdAtMs: (value['created_at_ms'] as num?)?.toInt() ?? 0,
+          attempts: (value['attempts'] as num?)?.toInt() ?? 0,
+          nextAttemptAtMs: (value['next_attempt_at_ms'] as num?)?.toInt() ?? 0,
+          // Absent des fichiers écrits avant ces champs : faux, jamais déviné.
+          byteLength: (value['bytes'] as num?)?.toInt(),
+          suspended: value['suspended'] == true,
+        );
+      }
+    }
+    return PendingWebhook.invalid(value);
   }
 }
 
@@ -127,6 +168,10 @@ class WebhookQueue {
   int _clearGeneration = 0;
 
   int _dropped = 0;
+  int _persistErrors = 0;
+  int _corrupt = 0;
+  bool _corruptOnLoad = false;
+  bool _corruptBackupDone = false;
   String? _lastRejectReason;
   int? _lastRejectBytes;
   bool _overBudget = false;
@@ -193,15 +238,19 @@ class WebhookQueue {
         return;
       }
       for (final entry in decoded) {
-        final item = PendingWebhook.fromJson(entry);
-        if (item != null) {
-          // 'bytes' absent = fichier écrit avant le comptage UTF-8 : le vrai
-          // poids est recalculé par PendingWebhook, jamais deviné.
-          _items.add(item);
-        } else {
-          // Une ligne illisible dans un fichier sinon valide n'est pas une
-          // raison d'amputer tout le reste : on la compte et on la journalise.
-          _discardExpired(1, 'entrée illisible ignorée au chargement');
+        final item = PendingWebhook.decode(entry);
+        // Un élément qu'on ne sait pas lire N'EST PAS supprimé : il reste
+        // dans _items en brut et ressort du prochain réencodé (audit
+        // 6c8a1439, finding LOW : « ignorée » en mémoire = effacée du
+        // disque au premier persist).
+        _items.add(item);
+        if (item.isInvalid) {
+          _corruptOnLoad = true;
+          _corrupt++;
+          WebhookService.instance.recordQueueCorrupt(
+            'élément de la file non reconnu (${item.byteLength} octets) '
+            'préservé tel quel',
+          );
         }
       }
       // File héritée déjà hors budget (builds antérieures sans plafond) :
@@ -216,7 +265,7 @@ class WebhookQueue {
       debugPrint('WebhookQueue: file illisible, fichier préservé: $e');
     }
     _overBudget = over;
-    pending.value = _items.length;
+    pending.value = _activeCount();
   }
 
   int _totalBytes() {
@@ -273,13 +322,37 @@ class WebhookQueue {
     File? tmp;
     try {
       final file = await _queueFile();
+      // Premier réencodage d un fichier contenant des éléments invalides :
+      // copie de secours des octets d'origine AVANT toute réécriture
+      // (audit 6c8a1439, finding LOW). Une ligne illisible = corruption
+      // externe (bit rot, fs) : on ne la « répare » pas en la supprimant,
+      // et on garde la trace brute de l'état reçu.
+      if (_corruptOnLoad && !_corruptBackupDone) {
+        _corruptBackupDone = true;
+        try {
+          if (await file.exists()) {
+            await file.copy(
+              '${file.path}.corrompu.${DateTime.now().microsecondsSinceEpoch}',
+            );
+            debugPrint(
+              'WebhookQueue: copie de secours du fichier corrompu '
+              'créée avant réencodage',
+            );
+          }
+        } catch (e) {
+          debugPrint(
+            'WebhookQueue: copie de secours impossible: $e — les '
+            'éléments invalides restent néanmoins préservés bruts',
+          );
+        }
+      }
       // snapshot encodé ICI, sous la chaîne : c'est l'état du moment qui
       // part, pas celui capturé avant l'attente
       tmp = File(
         '${file.path}.part.$seq.${DateTime.now().microsecondsSinceEpoch}',
       );
       await tmp.writeAsString(
-        jsonEncode(_items.map((i) => i.toJson()).toList()),
+        jsonEncode(_items.map((i) => i.toJsonElement()).toList()),
         flush: true,
       );
       await tmp.rename(file.path);
@@ -292,6 +365,9 @@ class WebhookQueue {
       try {
         await tmp?.delete();
       } catch (_) {}
+      // « rien de muet » : l échec d écriture est lui aussi compté, pas
+      // seulement journalisé (audit 6c8a1439, INFO).
+      _persistErrors++;
       debugPrint(
         'WebhookQueue: écriture échouée (essayée à nouveau au '
         'prochain changement): $e',
@@ -343,7 +419,7 @@ class WebhookQueue {
         byteLength: bodyBytes,
       ),
     );
-    pending.value = _items.length;
+    pending.value = _activeCount();
     await _persist();
     if (_autoStart) start();
     return true;
@@ -363,16 +439,18 @@ class WebhookQueue {
     return false;
   }
 
-  /// Sortie définitive d'événements DÉJÀ en file (TTL, plafond de tentatives,
-  /// entrée corrompue) : politique explicite, mais perte quand même — comptée
-  /// et visible, jamais muette (audit e98bb2a8, finding LOW).
-  void _discardExpired(int count, String reason) {
-    _dropped += count;
-    _lastRejectReason = reason;
-    WebhookService.instance.recordQueueReject(
-      count == 1 ? reason : '$reason ×$count',
+  /// Sortie de la circulation d'un événement DÉJÀ en file (TTL, plafond de
+  /// tentatives) : il est SUSPENDU, pas supprimé — reste dans le fichier,
+  /// ne sera plus jamais POSTé, ne disparaît que par `clear()` explicite ou
+  /// `resumeSuspended()` (mandat 2026-11-05 : détruire un événement non
+  /// envoyé hors livraison réussie ou demande explicite est interdit).
+  void _suspend(PendingWebhook item, String reason) {
+    item.suspended = true;
+    WebhookService.instance.recordQueueSuspend(reason);
+    debugPrint(
+      'WebhookQueue: $reason — événement suspendu (conservé sur le '
+      'disque, plus envoyé, vidable ou reprenable explicitement)',
     );
-    debugPrint('WebhookQueue: $reason (×$count) — file inchangée par ailleurs');
   }
 
   /// Le budget est redevenu libre (envoi réussi, clear) : la file n'est plus
@@ -381,8 +459,57 @@ class WebhookQueue {
   void _markDrained() {
     if (_overBudget && _totalBytes() <= maxQueuedBytes) {
       _overBudget = false;
-      pending.value = _items.length;
+      pending.value = _activeCount();
     }
+  }
+
+  /// Entrées qui attendent réellement un envoi : ni invalides (jamais
+  /// postables), ni suspendues (plus postables sans reprise explicite).
+  int _activeCount() =>
+      _items.where((i) => !i.isInvalid && !i.suspended).length;
+
+  /// Entrées suspendues (expirées ou abandonnées) : conservées sur le disque,
+  /// plus jamais POSTées, comptées dans WebhookStats.suspended.
+  int get suspendedCount =>
+      _items.where((i) => i.suspended && !i.isInvalid).length;
+
+  /// Nombre d'éléments invalides préservés bruts (corruption externe).
+  int get invalidCount => _items.where((i) => i.isInvalid).length;
+
+  /// Éléments invalides rencontrés (et préservés) depuis ce lancement.
+  int get corruptCount => _corrupt;
+
+  /// Échecs d écriture depuis ce lancement (les données restent en mémoire
+  /// et la dernière écriture réussie porte tout — compteur de santé, pas de
+  /// perte).
+  int get persistErrorCount => _persistErrors;
+
+  /// Reprendre les envois suspendus (bouton Réglages) : la seule voie, avec
+  /// `clear()`, qui sorte une entrée suspendue de son état — donc la
+  /// suspension ne détruit rien et ne devient jamais une poubelle silencieuse.
+  Future<int> resumeSuspended() async {
+    await _ensureLoaded();
+    if (_items.isEmpty) return 0;
+    var resumed = 0;
+    final base = AppSettings.webhookRetryBackoffS.value;
+    for (final item in _items) {
+      if (!item.suspended || item.isInvalid) continue;
+      item.suspended = false;
+      // Cycle neuf : sans ce reset, un item revenu d'un abandon serait
+      // re-suspendu dès son premier nouvel échec, et un expiré le serait
+      // aussitôt de nouveau.
+      item.attempts = 0;
+      item.createdAtMs = DateTime.now().millisecondsSinceEpoch;
+      item.nextAttemptAtMs =
+          DateTime.now().millisecondsSinceEpoch + retryDelayMs(base, 1);
+      resumed++;
+    }
+    if (resumed > 0) {
+      pending.value = _activeCount();
+      await _persist();
+      if (_autoStart) start();
+    }
+    return resumed;
   }
 
   /// Vide la file (réglages : « vider maintenant »).
@@ -455,14 +582,15 @@ class WebhookQueue {
         changed = true;
         break;
       }
+      if (item.isInvalid) continue; // préservé brut, jamais POSTé
+      if (item.suspended) continue; // suspendu : seul resumeSuspended/clear
+      // le concerne (mandat 2026-11-05).
       if (!force && item.nextAttemptAtMs > now) continue;
       if (now - item.createdAtMs > ttlMs) {
-        // TTL dépassée : politique explicite (l'événement est trop vieux pour
-        // intéresser Hermes), pas une eviction « pour faire de la place ».
-        // Mais perte quand même : comptée et visible (audit e98bb2a8).
-        _items.remove(item);
-        _discardExpired(
-          1,
+        // TTL dépassée : SUSPENSION, plus suppression — l'entrée reste des
+        // deux côtés, comptée et visible (audit 6c8a1439, finding HIGH).
+        _suspend(
+          item,
           'événement expiré (TTL ${AppSettings.webhookRetryTtlH.value} h)',
         );
         changed = true;
@@ -487,11 +615,8 @@ class WebhookQueue {
       }
       item.attempts++;
       if (item.attempts >= maxAttempts) {
-        _items.remove(item);
-        _discardExpired(
-          1,
-          'abandon après ${item.attempts} tentatives infructueuses',
-        );
+        // Plafond de tentatives : suspension, plus destruction (mandat).
+        _suspend(item, 'abandon après ${item.attempts} tentatives');
         changed = true;
         continue;
       }
@@ -507,7 +632,7 @@ class WebhookQueue {
       }
       changed = true;
     }
-    pending.value = _items.length;
+    pending.value = _activeCount();
     if (changed) {
       // Un drain par TTL/abandon peut aussi faire repasser sous le seuil :
       // les ajouts reprendront, et le drapeau doit cesser en même temps.

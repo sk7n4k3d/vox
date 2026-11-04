@@ -213,29 +213,47 @@ class SettingsWebhookView extends StatelessWidget {
                   const SizedBox(height: FluffySpacing.sm),
                   ValueListenableBuilder<int>(
                     valueListenable: WebhookQueue.instance.pending,
-                    builder: (context, count, _) => Row(
-                      children: [
-                        Expanded(
-                          child: Text(
-                            count == 0
-                                ? 'Rien en attente'
-                                : '$count envoi(s) en attente'
-                                      '${WebhookQueue.instance.overBudget ? ' · file au-dessus du budget : réessais normaux, nouveaux envois suspendus' : ''}',
-                            style: theme.textTheme.bodySmall?.copyWith(
-                              color: theme.colorScheme.onSurfaceVariant,
+                    builder: (context, count, _) {
+                      final queue = WebhookQueue.instance;
+                      final suspended = queue.suspendedCount;
+                      final invalid = queue.invalidCount;
+                      return Row(
+                        children: [
+                          Expanded(
+                            child: Text(
+                              count == 0
+                                  ? 'Rien en attente'
+                                  : '$count envoi(s) en attente'
+                                        '${suspended > 0 ? ' · $suspended en suspens (conservé(s), non renvoyé(s))' : ''}'
+                                        '${invalid > 0 ? ' · $invalid élément(s) corrompu(s) préservé(s)' : ''}'
+                                        '${queue.overBudget ? ' · file au-dessus du budget : réessais normaux, nouveaux envois suspendus' : ''}',
+                              style: theme.textTheme.bodySmall?.copyWith(
+                                color: theme.colorScheme.onSurfaceVariant,
+                              ),
                             ),
                           ),
-                        ),
-                        TextButton(
-                          onPressed: controller.flushQueue,
-                          child: const Text('Réessayer'),
-                        ),
-                        TextButton(
-                          onPressed: count == 0 ? null : controller.clearQueue,
-                          child: const Text('Vider'),
-                        ),
-                      ],
-                    ),
+                          if (suspended > 0)
+                            TextButton(
+                              onPressed: controller.resumeQueue,
+                              child: const Text('Reprendre'),
+                            ),
+                          TextButton(
+                            onPressed: controller.flushQueue,
+                            child: const Text('Réessayer'),
+                          ),
+                          TextButton(
+                            // « Vider » reste disponible tant que le fichier
+                            // porte quoi que ce soit — suspendus et
+                            // corrompus inclus : clear() est la seule voie
+                            // explicite qui les supprime.
+                            onPressed: count + suspended + invalid == 0
+                                ? null
+                                : controller.clearQueue,
+                            child: const Text('Vider'),
+                          ),
+                        ],
+                      );
+                    },
                   ),
                 ],
               ),
@@ -420,14 +438,24 @@ class SettingsWebhookView extends StatelessWidget {
                     valueListenable: WebhookService.instance.stats,
                     builder: (context, stats, _) {
                       final dropped = stats.dropped > 0
-                          ? ', ${stats.dropped} rebuté(s) (plein ou trop gros)'
+                          ? ', ${stats.dropped} rebuté(s) (ajout refusé : '
+                                'file pleine ou corps trop gros)'
+                          : '';
+                      final suspens = stats.suspended > 0
+                          ? ', ${stats.suspended} en suspens (expiré ou '
+                                'abandonné — toujours sur l\'appareil, '
+                                'jamais renvoyé sans reprise explicite)'
+                          : '';
+                      final corrupt = stats.corrupt > 0
+                          ? ', ${stats.corrupt} élément(s) corrompu(s) '
+                                'préservé(s)'
                           : '';
                       final error = stats.lastError != null
                           ? ' — ${stats.lastError}'
                           : '';
                       return Text(
                         '${stats.sent} envoyé(s), ${stats.failed} échec(s)'
-                        '$dropped$error',
+                        '$dropped$suspens$corrupt$error',
                         style: theme.textTheme.bodySmall?.copyWith(
                           color: theme.colorScheme.onSurfaceVariant,
                         ),

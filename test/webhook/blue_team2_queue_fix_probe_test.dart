@@ -272,38 +272,33 @@ void main() {
     expect(queue.length, 1);
   });
 
-  test(
-    'P6 — un seul corps lourd vide la file des événements non envoyés',
-    () async {
-      // 19 événements texte déjà en file (19 Mo, sous le budget), puis un MMS
-      // de 19,5 Mo qui passe le garde-fous (< budget) : l éviction anticipée
-      // chasse TOUT pour le loger.
-      final raw = List.generate(19, (i) {
-        return <String, Object?>{
-          'raw_body': 'tx'.padRight(1024 * 1024, 't'),
-          'created_at_ms': 1,
-          'attempts': 0,
-          'next_attempt_at_ms': 0,
-        };
-      });
-      File(
-        '${appDir.path}/webhook_queue.json',
-      ).writeAsStringSync(jsonEncode(raw));
-      final queue = WebhookQueue.forTest(postRaw: (_) async => false);
-      addTearDown(queue.stop);
-      await queue.add('mm|${'M' * (19500 * 1024)}');
-      // ignore: avoid_print
-      print(
-        'P6: 19 evenements texte + 1 MMS 19,5 Mo -> length ${queue.length}',
-      );
-      expect(
-        queue.length,
-        greaterThan(1),
-        reason:
-            'les 19 événements non envoyés sont supprimés par un seul '
-            'corps média qui tient pourtant dans le budget',
-      );
-    },
-    timeout: const Timeout(Duration(seconds: 240)),
-  );
+  test('P6 — un corps lourd ne vide PLUS la file : il est refusé, les 19 '
+      'événements survivent (contrat inversé vs le bug d origine)', () async {
+    // 19 événements texte déjà en file (19 Mo, sous le budget), puis un MMS
+    // de 19,5 Mo qui passe le garde-fous (< budget) : l éviction anticipée
+    // chasse TOUT pour le loger.
+    final raw = List.generate(19, (i) {
+      return <String, Object?>{
+        'raw_body': 'tx'.padRight(1024 * 1024, 't'),
+        'created_at_ms': 1,
+        'attempts': 0,
+        'next_attempt_at_ms': 0,
+      };
+    });
+    File(
+      '${appDir.path}/webhook_queue.json',
+    ).writeAsStringSync(jsonEncode(raw));
+    final queue = WebhookQueue.forTest(postRaw: (_) async => false);
+    addTearDown(queue.stop);
+    await queue.add('mm|${'M' * (19500 * 1024)}');
+    // ignore: avoid_print
+    print('P6: 19 evenements texte + 1 MMS 19,5 Mo -> length ${queue.length}');
+    expect(
+      queue.length,
+      greaterThan(1),
+      reason:
+          'les 19 événements non envoyés sont supprimés par un seul '
+          'corps média qui tient pourtant dans le budget',
+    );
+  }, timeout: const Timeout(Duration(seconds: 240)));
 }

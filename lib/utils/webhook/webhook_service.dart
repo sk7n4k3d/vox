@@ -16,30 +16,66 @@ class WebhookStats {
     this.sent = 0,
     this.failed = 0,
     this.dropped = 0,
+    this.suspended = 0,
+    this.corrupt = 0,
     this.lastError,
   });
 
   final int sent;
   final int failed;
 
-  /// Événements écartés de la file de réessai (taille, budget ou compteur) :
+  /// Événements écartés de la file à l'ajout (taille, budget ou compteur) :
   /// ni envoyés, ni en attente — un rejet ne doit jamais être muet (audit
-  /// 8960c5cc).
+  /// 8960c5cc). Ne compte QUE les refus d'ajout depuis l'audit 6c8a1439.
   final int dropped;
+
+  /// Événements mis en suspens par le TTL ou le plafond de tentatives :
+  /// TOUJOURS sur le disque, plus envoyés, reprenables (bouton « Reprendre »)
+  /// — suspendre n'est pas détruire (mandat 2026-11-05).
+  final int suspended;
+
+  /// Éléments du fichier que cette version ne sait pas lire, préservées
+  /// bruts et recopiés intact avant tout réencodage (audit 6c8a1439).
+  final int corrupt;
   final String? lastError;
 
-  WebhookStats sent1() =>
-      WebhookStats(sent: sent + 1, failed: failed, dropped: dropped);
+  WebhookStats sent1() => WebhookStats(
+    sent: sent + 1,
+    failed: failed,
+    dropped: dropped,
+    suspended: suspended,
+    corrupt: corrupt,
+  );
   WebhookStats failed1(String error) => WebhookStats(
     sent: sent,
     failed: failed + 1,
     dropped: dropped,
+    suspended: suspended,
+    corrupt: corrupt,
     lastError: error,
   );
   WebhookStats dropped1(String error) => WebhookStats(
     sent: sent,
     failed: failed,
     dropped: dropped + 1,
+    suspended: suspended,
+    corrupt: corrupt,
+    lastError: error,
+  );
+  WebhookStats suspended1(String error) => WebhookStats(
+    sent: sent,
+    failed: failed,
+    dropped: dropped,
+    suspended: suspended + 1,
+    corrupt: corrupt,
+    lastError: error,
+  );
+  WebhookStats corrupted1(String error) => WebhookStats(
+    sent: sent,
+    failed: failed,
+    dropped: dropped,
+    suspended: suspended,
+    corrupt: corrupt + 1,
     lastError: error,
   );
 }
@@ -131,6 +167,20 @@ class WebhookService {
   /// être visible de l'utilisateur, pas cantonné au journal debug.
   void recordQueueReject(String reason) {
     stats.value = stats.value.dropped1(reason);
+  }
+
+  /// Appelé par [WebhookQueue] quand elle met un événement en suspens (TTL,
+  /// plafond de tentatives) : visible sur la page Réglages, et la donnée
+  /// reste sur le disque — suspendre n'est pas supprimer.
+  void recordQueueSuspend(String reason) {
+    stats.value = stats.value.suspended1(reason);
+  }
+
+  /// Appelé par [WebhookQueue] pour un élément du fichier qu'elle ne sait
+  /// pas lire : compté à part des rejets, jamais effacé sans copie de
+  /// secours.
+  void recordQueueCorrupt(String reason) {
+    stats.value = stats.value.corrupted1(reason);
   }
 
   /// Test-visible : fabrique de client HTTP pour [postRaw] (null = réel).
