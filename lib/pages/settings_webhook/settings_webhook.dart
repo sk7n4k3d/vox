@@ -170,7 +170,20 @@ class SettingsWebhookController extends State<SettingsWebhook> {
   }
 
   /// Bouton « Réessayer » : force l'envoi même si le backoff n'est pas écoulé.
-  Future<void> flushQueue() => WebhookQueue.instance.flush(force: true);
+  /// Si un envoi est déjà en vol, le flush est ignoré — et on le dit, sinon
+  /// le bouton paraît mort sur les gros corps (jusqu'à 2 min par POST).
+  Future<void> flushQueue() async {
+    final ran = await WebhookQueue.instance.flush(force: true);
+    if (!ran && mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'Envoi en cours — réessai ignoré, il repartira automatiquement.',
+          ),
+        ),
+      );
+    }
+  }
 
   Future<void> clearQueue() => WebhookQueue.instance.clear();
 
@@ -199,7 +212,7 @@ class SettingsWebhookController extends State<SettingsWebhook> {
     if (!granted) {
       setState(
         () => callsHint =
-            'Permission refusée : autorise « Appels » pour VOX dans les '
+            'Permission refusée : autorise « Appels » pour VoxOne dans les '
             'réglages Android, puis réessaie.',
       );
       return;

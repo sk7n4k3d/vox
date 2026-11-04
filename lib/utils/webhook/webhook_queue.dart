@@ -34,11 +34,11 @@ class PendingWebhook {
   int nextAttemptAtMs;
 
   Map<String, Object?> toJson() => <String, Object?>{
-        'raw_body': rawBody,
-        'created_at_ms': createdAtMs,
-        'attempts': attempts,
-        'next_attempt_at_ms': nextAttemptAtMs,
-      };
+    'raw_body': rawBody,
+    'created_at_ms': createdAtMs,
+    'attempts': attempts,
+    'next_attempt_at_ms': nextAttemptAtMs,
+  };
 
   static PendingWebhook? fromJson(Object? value) {
     if (value is! Map) return null;
@@ -60,10 +60,11 @@ class PendingWebhook {
 /// [tick]) ; au lancement suivant, la file reprend où elle en était.
 class WebhookQueue {
   WebhookQueue._(this._postRaw, {bool autoStart = true})
-      : _autoStart = autoStart;
+    : _autoStart = autoStart;
 
-  static final WebhookQueue instance =
-      WebhookQueue._(WebhookService.instance.postRaw);
+  static final WebhookQueue instance = WebhookQueue._(
+    WebhookService.instance.postRaw,
+  );
 
   /// Envoi d'un corps brut, injectable pour les tests de la file.
   final Future<bool> Function(String rawBody) _postRaw;
@@ -76,8 +77,7 @@ class WebhookQueue {
   @visibleForTesting
   factory WebhookQueue.forTest({
     required Future<bool> Function(String rawBody) postRaw,
-  }) =>
-      WebhookQueue._(postRaw, autoStart: false);
+  }) => WebhookQueue._(postRaw, autoStart: false);
 
   @visibleForTesting
   void stop() {
@@ -98,6 +98,12 @@ class WebhookQueue {
   final ValueNotifier<int> pending = ValueNotifier<int>(0);
 
   bool _loaded = false;
+
+  /// Le fichier existait mais était illisible : la file mémoire est alors
+  /// potentiellement **amputée** des entrées déjà parties. Écrire par-dessus
+  /// les effacerait sans retour, donc _persist refuse d'écraser un fichier
+  /// qu'on n'a pas réussi à lire.
+  bool _unreadable = false;
   Timer? _timer;
 
   /// Un flush à la fois : un POST de média peut durer plus longtemps que le
@@ -120,21 +126,32 @@ class WebhookQueue {
       final file = await _queueFile();
       if (!await file.exists()) return;
       final decoded = jsonDecode(await file.readAsString());
-      if (decoded is! List) return;
+      if (decoded is! List) {
+        _unreadable = true;
+        debugPrint('WebhookQueue: fichier non reconnu, fichier préservé');
+        return;
+      }
       for (final entry in decoded) {
         final item = PendingWebhook.fromJson(entry);
         if (item != null) _items.add(item);
       }
       pending.value = _items.length;
     } catch (e) {
-      debugPrint('WebhookQueue: file illisible: $e');
+      _unreadable = true;
+      debugPrint('WebhookQueue: file illisible, fichier préservé: $e');
     }
   }
 
   Future<void> _persist() async {
+    if (_unreadable) return;
     try {
       final file = await _queueFile();
-      final tmp = File('${file.path}.part');
+      // suffixe unique : add() peut persister pendant qu'un flush de 2 min
+      // persiste de son côté — deux écritures sur le même .part se
+      // marchaient dessus (le second rename échouait, avalé).
+      final tmp = File(
+        '${file.path}.part.${DateTime.now().microsecondsSinceEpoch}',
+      );
       await tmp.writeAsString(
         jsonEncode(_items.map((i) => i.toJson()).toList()),
         flush: true,
@@ -172,6 +189,15 @@ class WebhookQueue {
     await _ensureLoaded();
     _items.clear();
     pending.value = 0;
+    if (_unreadable) {
+      // Demande explicite de l'utilisateur : on supprime le fichier qu'on
+      // n'arrivait pas à lire, au lieu de le préserver indéfiniment.
+      try {
+        final file = await _queueFile();
+        if (await file.exists()) await file.delete();
+      } catch (_) {}
+      _unreadable = false;
+    }
     await _persist();
   }
 
@@ -186,11 +212,14 @@ class WebhookQueue {
   /// jusqu'au plafond de tentatives ou au TTL.
   ///
   /// [force] ignore le délai d'attente (bouton « Réessayer » des réglages).
-  Future<void> flush({bool force = false}) async {
-    if (_flushing) return;
+  /// Retourne `false` si un envoi était déjà en vol et que ce flush a été
+  /// ignoré — l'appelant peut le dire à l'utilisateur.
+  Future<bool> flush({bool force = false}) async {
+    if (_flushing) return false;
     _flushing = true;
     try {
       await _flushInner(force: force);
+      return true;
     } finally {
       _flushing = false;
     }
