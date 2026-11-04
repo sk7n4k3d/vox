@@ -139,13 +139,12 @@ class _LinkPreviewCardState extends State<LinkPreviewCard> {
                     child: Stack(
                       fit: StackFit.passthrough,
                       children: [
-                        Image.network(
-                          data.imageUrl!,
-                          fit: BoxFit.cover,
-                          width: double.infinity,
-                          errorBuilder: (_, _, _) => const SizedBox.shrink(),
-                          loadingBuilder: (ctx, child, progress) =>
-                              progress == null ? child : const SizedBox.shrink(),
+                        _PreviewThumb(
+                          imageUrl: data.imageUrl!,
+                          semanticLabel: 'Vignette du lien${data.siteName ==
+                                  null ?
+                              '' :
+                              ' ${data.siteName}'}',
                         ),
                         if (_isPlayable)
                           Positioned.fill(
@@ -318,6 +317,40 @@ class _InlinePlayerState extends State<_InlinePlayer> {
           ),
         ),
       ],
+    );
+  }
+}
+
+/// Vignette d'aperçu chargée par le pipeline gardé de [LinkPreviewService]
+/// (résolution validée, épinglage, plafond de taille/temps) — jamais par
+/// `Image.network`, qui enverrait n'importe quelle URL de miniature vers
+/// l'intérieur du réseau. Affiche rien tant qu'elle n'a pas d'octets, comme
+/// l'ancien `errorBuilder`.
+class _PreviewThumb extends StatelessWidget {
+  const _PreviewThumb({required this.imageUrl, this.semanticLabel});
+
+  final String imageUrl;
+  final String? semanticLabel;
+
+  @override
+  Widget build(BuildContext context) {
+    return FutureBuilder(
+      future: LinkPreviewService.instance.fetchImage(imageUrl),
+      builder: (context, snapshot) {
+        final bytes = snapshot.data;
+        if (snapshot.connectionState != ConnectionState.done ||
+            bytes == null) {
+          return const SizedBox.shrink();
+        }
+        return Image.memory(
+          bytes,
+          fit: BoxFit.cover,
+          width: double.infinity,
+          semanticLabel: semanticLabel,
+          filterQuality: FilterQuality.medium,
+          errorBuilder: (_, _, _) => const SizedBox.shrink(),
+        );
+      },
     );
   }
 }

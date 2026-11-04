@@ -4,6 +4,7 @@ import 'dart:io';
 
 import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
+import 'package:http/io_client.dart';
 
 /// Which provider a preview came from — drives whether the tap opens the raw
 /// link or an inline media player/embed.
@@ -48,21 +49,75 @@ class LinkPreviewData {
 /// from the HTML. Safety limits everywhere: short timeout, capped response
 /// size, only http(s), neutral UA. Results are cached per-URL for the session.
 class LinkPreviewService {
-  LinkPreviewService._() : _newClient = http.Client.new;
+  LinkPreviewService._()
+    : _newClient = _pinningClient,
+      _lookup = InternetAddress.lookup,
+      _timeoutOverride = null;
 
   @visibleForTesting
-  LinkPreviewService.forTesting(http.Client Function() newClient)
-      : _newClient = newClient;
+  LinkPreviewService.forTesting({
+    http.Client Function(List<InternetAddress> addresses)? newClient,
+    Future<List<InternetAddress>> Function(String host)? lookup,
+    Duration? timeoutOverride,
+  }) : _newClient = newClient ?? _pinningClient,
+       _lookup = lookup ?? InternetAddress.lookup,
+       _timeoutOverride = timeoutOverride;
 
   static final LinkPreviewService instance = LinkPreviewService._();
 
-  /// Fabrique de client HTTP, injectable dans les tests.
-  final http.Client Function() _newClient;
+  /// Fabrique de client HTTP — en production un client **épinglé** sur les
+  /// adresses déjà validées ; injectable dans les tests.
+  final http.Client Function(List<InternetAddress> addresses) _newClient;
+
+  /// Résolution DNS, injectable dans les tests.
+  final Future<List<InternetAddress>> Function(String host) _lookup;
+
+  /// Échelle de temps réduite pour les tests de délai ; production = null.
+  final Duration? _timeoutOverride;
 
   static const Duration _timeout = Duration(seconds: 6);
+
+  /// Budget total d'un fetch, redirections et lecture du corps comprises :
+  /// sans lui, chaque saut consommait son propre timeout d'en-têtes et un
+  /// corps envoyé au compte-gouttes pouvait laisser le Future pendu.
+  static const Duration _totalTimeout = Duration(seconds: 15);
   static const int _maxBytes = 256 * 1024; // only need the <head>
+  static const int _maxImageBytes = 2 * 1024 * 1024;
   static const String _ua =
       'Mozilla/5.0 (Linux; Android) AppleWebKit/537.36 VOXLinkPreview/1.0';
+
+  Duration get _chunkTimeout => _timeoutOverride ?? _timeout;
+  Duration get _totalBudget =>
+      _timeoutOverride != null ? _timeoutOverride * 3 : _totalTimeout;
+
+  /// Client dont les connexions sortantes sont **fixées** sur les adresses
+  /// déjà jugées : entre notre résolution et le dial du client, le DNS n'a
+  /// plus sa mot à dire (anti rebinding). Le nom d'origine reste utilisé
+  /// pour TLS/SNI par `dart:io`.
+  static http.Client _pinningClient(
+    List<InternetAddress> addresses,
+  ) => IOClient(
+    HttpClient()
+      ..connectionFactory =
+          (Uri target, String? proxyHost, int? proxyPort) async {
+            Object? lastError;
+            for (final addr in addresses) {
+              try {
+                // Dial sur l'adresse **jugée**, jamais sur une re-résolution.
+                return await Socket.startConnect(
+                  addr.address,
+                  target.hasPort
+                      ? target.port
+                      : (target.scheme == 'https' ? 443 : 80),
+                );
+              } catch (e) {
+                lastError = e;
+              }
+            }
+            throw lastError ??
+                const SocketException('no resolved address could be dialed');
+          },
+  );
 
   final Map<String, Future<LinkPreviewData?>> _cache = {};
   // Synchronous result cache: lets a recycled list cell render the preview
@@ -140,7 +195,9 @@ class LinkPreviewService {
     if (v != null && v.isNotEmpty) return v;
     final segs = uri.pathSegments;
     if (segs.length >= 2 &&
-        (segs.first == 'shorts' || segs.first == 'embed' || segs.first == 'v')) {
+        (segs.first == 'shorts' ||
+            segs.first == 'embed' ||
+            segs.first == 'v')) {
       return segs[1];
     }
     return null;
@@ -208,96 +265,148 @@ class LinkPreviewService {
   }
 
   Future<LinkPreviewData?> _fetchOg(Uri uri) async {
-    try {
-      final client = _newClient();
+    final r = await _guardedFetch(
+      uri,
+      accept: 'text/html,application/xhtml+xml,*/*',
+      maxBytes: _maxBytes,
+      maxRedirects: 5,
+    );
+    if (r == null) return null;
+    if (r.contentType.isNotEmpty && !r.contentType.contains('html')) {
+      return null;
+    }
+    // Read at most _maxBytes — the <head> is all we need.
+    return _parse(uri.toString(), utf8.decode(r.bytes, allowMalformed: true));
+  }
+
+  /// Cache des vignettes déjà demandées : la carte se reconstruit à chaque
+  /// interaction, sans clé de cache chaque rebuild relancerait un fetch.
+  final Map<String, Future<Uint8List?>> _imageCache = {};
+
+  /// Vignette d'une miniature : **même** pipeline gardé que les pages
+  /// (schéma https seul, résolution validée, connexion épinglée, taille et
+  /// durée plafonnées). Une chaîne `og:image` vient du HTML distant et peut
+  /// pointer vers le téléphone : elle ne doit jamais finir dans un
+  /// `Image.network` brut.
+  Future<Uint8List?> fetchImage(String imageUrl) =>
+      _imageCache.putIfAbsent(imageUrl, () => _fetchImage(imageUrl));
+
+  Future<Uint8List?> _fetchImage(String imageUrl) async {
+    if (_imageCache.length > 64) {
+      // éviction en ordre d'insertion : on garde les 32 plus récentes
+      for (final key
+          in _imageCache.keys.take(_imageCache.length - 32).toList()) {
+        _imageCache.remove(key);
+      }
+    }
+    final img = Uri.tryParse(imageUrl);
+    if (img == null || img.scheme != 'https') return null;
+    final r = await _guardedFetch(
+      img,
+      accept: 'image/*',
+      maxBytes: _maxImageBytes,
+      maxRedirects: 3,
+    );
+    if (r == null) return null;
+    if (!r.contentType.toLowerCase().startsWith('image/')) return null;
+    return Uint8List.fromList(r.bytes);
+  }
+
+  /// GETs tous azimuts du service : chaque saut est vérifié **après
+  /// résolution DNS**, rejeté si une réponse tombe dans le réseau interne,
+  /// puis épinglé sur les adresses jugées. La lecture du corps est bornée en
+  /// octets et dans le temps, et l'ensemble de la chaîne a une deadline
+  /// globale.
+  Future<_GuardedResponse?> _guardedFetch(
+    Uri start, {
+    required String accept,
+    required int maxBytes,
+    required int maxRedirects,
+  }) async {
+    final deadline = DateTime.now().add(_totalBudget);
+    var current = start;
+    for (var hop = 0; hop <= maxRedirects; hop++) {
+      if (DateTime.now().isAfter(deadline)) return null;
+      if (current.scheme != 'http' && current.scheme != 'https') return null;
+      if (isBlockedPreviewHost(current.host)) return null;
+      final addrs = await _resolveSafe(current.host);
+      if (addrs == null || addrs.isEmpty) return null;
+      final client = _newClient(addrs);
       try {
-        final streamed = await _sendGuarded(
-          client,
-          uri,
-          headers: {
-            'User-Agent': _ua,
-            'Accept': 'text/html,application/xhtml+xml,*/*',
-          },
-          maxRedirects: 5,
-        );
-        if (streamed == null) return null;
-        if (streamed.statusCode ~/ 100 != 2) return null;
-        final ct = streamed.headers['content-type'] ?? '';
-        if (ct.isNotEmpty && !ct.contains('html')) {
-          return null;
+        final request = http.Request('GET', current)
+          ..followRedirects = false
+          ..headers['User-Agent'] = _ua
+          ..headers['Accept'] = accept;
+        final remaining = deadline.difference(DateTime.now());
+        final streamed = await client
+            .send(request)
+            .timeout(remaining.isNegative ? Duration.zero : remaining);
+        final status = streamed.statusCode;
+        if (status >= 300 && status < 400) {
+          final location = streamed.headers['location'];
+          try {
+            await streamed.stream.drain<void>().timeout(_chunkTimeout);
+          } catch (_) {
+            // corps de redirection sans intérêt : on a déjà lu ce qu'on veut.
+          }
+          if (location == null || location.isEmpty) return null;
+          final next = current.resolve(location);
+          if (next.scheme != 'http' && next.scheme != 'https') return null;
+          current = next;
+          continue;
         }
-        // Read at most _maxBytes — the <head> is all we need.
+        if (status ~/ 100 != 2) return null;
         final bytes = <int>[];
-        await for (final chunk in streamed.stream) {
+        await for (final chunk in streamed.stream.timeout(_chunkTimeout)) {
           bytes.addAll(chunk);
-          if (bytes.length >= _maxBytes) break;
+          if (bytes.length >= maxBytes) break;
+          if (DateTime.now().isAfter(deadline)) break;
         }
-        final html = utf8.decode(bytes, allowMalformed: true);
-        return _parse(uri.toString(), html);
+        return _GuardedResponse(
+          status,
+          streamed.headers['content-type'] ?? '',
+          bytes,
+        );
+      } on TimeoutException {
+        return null;
+      } catch (_) {
+        return null;
       } finally {
         client.close();
       }
-    } on TimeoutException {
-      return null;
-    } catch (_) {
-      return null;
-    }
-  }
-
-  /// GET en suivant les redirections **à la main** : chaque saut est revérifié
-  /// (schéma + hôte bloqué). Suivre les redirections en interne laisserait un
-  /// site public renvoyer vers le réseau local sans qu'on le voie (SSRF).
-  Future<http.StreamedResponse?> _sendGuarded(
-    http.Client client,
-    Uri start, {
-    required Map<String, String> headers,
-    required int maxRedirects,
-  }) async {
-    var current = start;
-    for (var hop = 0; hop <= maxRedirects; hop++) {
-      final request = http.Request('GET', current)
-        ..followRedirects = false
-        ..headers.addAll(headers);
-      final response = await client.send(request).timeout(_timeout);
-      final status = response.statusCode;
-      if (status < 300 || status >= 400) return response;
-      final location = response.headers['location'];
-      if (location == null || location.isEmpty) return response;
-      final next = current.resolve(location);
-      if (next.scheme != 'http' && next.scheme != 'https') return null;
-      if (isBlockedPreviewHost(next.host)) return null;
-      current = next;
     }
     return null;
   }
 
-  /// Minimal GET returning the decoded body (capped) or null on any failure.
-  Future<String?> _get(String url, {required String accept}) async {
+  /// Adresses dialables pour [host] : les réponses du DNS une par une —
+  /// **toute** réponse interne fait rejeter l'hôte entier (un seul enregistrement
+  /// `A 127.0.0.1` suffit à annuler le filtre sinon). Les littéraux d'adresse
+  /// sont déjà passés par [isBlockedPreviewHost] en amont.
+  Future<List<InternetAddress>?> _resolveSafe(String host) async {
+    final literal = InternetAddress.tryParse(host);
+    if (literal != null) return [literal];
     try {
-      final client = _newClient();
-      try {
-        final streamed = await _sendGuarded(
-          client,
-          Uri.parse(url),
-          headers: {'User-Agent': _ua, 'Accept': accept},
-          maxRedirects: 3,
-        );
-        if (streamed == null) return null;
-        if (streamed.statusCode ~/ 100 != 2) return null;
-        final bytes = <int>[];
-        await for (final chunk in streamed.stream) {
-          bytes.addAll(chunk);
-          if (bytes.length >= _maxBytes) break;
-        }
-        return utf8.decode(bytes, allowMalformed: true);
-      } finally {
-        client.close();
-      }
-    } on TimeoutException {
-      return null;
+      final answers = await _lookup(host);
+      if (answers.isEmpty) return null;
+      if (answers.any(isBlockedIpAddress)) return null;
+      return answers;
     } catch (_) {
       return null;
     }
+  }
+
+  /// Minimal GET returning the decoded body (capped) or null on any failure.
+  Future<String?> _get(String url, {required String accept}) async {
+    final uri = Uri.tryParse(url);
+    if (uri == null) return null;
+    final r = await _guardedFetch(
+      uri,
+      accept: accept,
+      maxBytes: _maxBytes,
+      maxRedirects: 3,
+    );
+    if (r == null) return null;
+    return utf8.decode(r.bytes, allowMalformed: true);
   }
 
   LinkPreviewData? _parse(String url, String html) {
@@ -382,16 +491,32 @@ bool isBlockedPreviewHost(String host) {
 
 @visibleForTesting
 bool isBlockedIpAddress(InternetAddress ip) {
+  if (ip.isMulticast) return true;
   final b = ip.rawAddress;
   if (b.length == 4) return _blockedV4(b);
-  // IPv4 mappé en IPv6 (::ffff:a.b.c) : juger l'IPv4 qu'il contient.
-  if (b[10] == 0xff && b[11] == 0xff && b.sublist(0, 10).every((x) => x == 0)) {
+  // Adresses "a IPv4 incorporee" : mappee ::ffff:a.b.c, compat depreciee
+  // ::a.b.c, ou prefixe 0/ffff fourre (::ffff:0:a.b.c, releve par l'audit).
+  // Tout prefixe compose uniquement de zeros et de 0xff porte de l'IPv4 dans
+  // les 4 derniers octets : c'est cette IPv4 qu'il faut juger.
+  if (b.sublist(0, 12).every((x) => x == 0 || x == 0xff)) {
     return _blockedV4(b.sublist(12));
   }
   if (ip.isLoopback || ip.isLinkLocal) return true;
   if (b.every((x) => x == 0)) return true; // ::
-  // ULA fc00::/7 (équivalent privé du v6).
-  return (b[0] & 0xfe) == 0xfc;
+  // ULA fc00::/7 (equivalent prive du v6).
+  if ((b[0] & 0xfe) == 0xfc) return true;
+  // Traductions et tunnels : NAT64 64:ff9b::/96 (porte vers de l'IPv4, juge
+  // comme tel), Teredo 2001:0000::/32, 6to4 2002::/16, discard 100::/64. Sur
+  // Android ces prefixes ne sont jamais de vrais sites web.
+  if (b[0] == 0x00 && b[1] == 0x64 && b[2] == 0xff && b[3] == 0x9b) {
+    return _blockedV4(b.sublist(12)); // NAT64 well-known
+  }
+  if (b[0] == 0x20 && b[1] == 0x01 && b[2] == 0x00 && b[3] == 0x00) {
+    return true; // Teredo 2001:0000::/32
+  }
+  if (b[0] == 0x20 && b[1] == 0x02) return true; // 6to4 2002::/16
+  if (b[0] == 0x01 && b[1] == 0x00) return true; // discard 100::/64
+  return false;
 }
 
 bool _blockedV4(List<int> b) {
@@ -403,4 +528,14 @@ bool _blockedV4(List<int> b) {
   if (a == 192 && b[1] == 168) return true;
   if (a >= 224) return true; // multicast et réservé
   return false;
+}
+
+/// Réponse d'un `_guardedFetch` : corps **déjà lu**, borné en taille et en
+/// temps par le pipeline.
+class _GuardedResponse {
+  const _GuardedResponse(this.status, this.contentType, this.bytes);
+
+  final int status;
+  final String contentType;
+  final List<int> bytes;
 }
