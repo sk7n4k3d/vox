@@ -59,8 +59,31 @@ class PendingWebhook {
 /// Les réessais ne tournent que tant que l'app vit (un réveil toutes les
 /// [tick]) ; au lancement suivant, la file reprend où elle en était.
 class WebhookQueue {
-  WebhookQueue._();
-  static final WebhookQueue instance = WebhookQueue._();
+  WebhookQueue._(this._postRaw, {bool autoStart = true})
+      : _autoStart = autoStart;
+
+  static final WebhookQueue instance =
+      WebhookQueue._(WebhookService.instance.postRaw);
+
+  /// Envoi d'un corps brut, injectable pour les tests de la file.
+  final Future<bool> Function(String rawBody) _postRaw;
+
+  /// Démarre la cadence dès un add. Désactivé par [forTest] pour que le test
+  /// déclenche lui-même chaque flush.
+  final bool _autoStart;
+
+  /// File isolée pour les tests : ni disque ni timer, envoi simulé.
+  @visibleForTesting
+  factory WebhookQueue.forTest({
+    required Future<bool> Function(String rawBody) postRaw,
+  }) =>
+      WebhookQueue._(postRaw, autoStart: false);
+
+  @visibleForTesting
+  void stop() {
+    _timer?.cancel();
+    _timer = null;
+  }
 
   /// Plafond de la file : au-delà, on jette les plus anciens. Un webhook muet
   /// pendant des jours ne doit pas faire grossir le fichier sans borne.
@@ -76,6 +99,12 @@ class WebhookQueue {
 
   bool _loaded = false;
   Timer? _timer;
+
+  /// Un flush à la fois : un POST de média peut durer plus longtemps que le
+  /// tick de [tick] (timeout adapté à la taille, jusqu'à 2 min). Sans garde,
+  /// le tick suivant — ou le bouton « Réessayer » — retenterait les mêmes
+  /// corps pendant l'envoi en vol, en double.
+  bool _flushing = false;
 
   int get length => _items.length;
 
@@ -135,7 +164,7 @@ class WebhookQueue {
     }
     pending.value = _items.length;
     await _persist();
-    start();
+    if (_autoStart) start();
   }
 
   /// Vide la file (réglages : « vider maintenant »).
@@ -158,6 +187,16 @@ class WebhookQueue {
   ///
   /// [force] ignore le délai d'attente (bouton « Réessayer » des réglages).
   Future<void> flush({bool force = false}) async {
+    if (_flushing) return;
+    _flushing = true;
+    try {
+      await _flushInner(force: force);
+    } finally {
+      _flushing = false;
+    }
+  }
+
+  Future<void> _flushInner({required bool force}) async {
     await _ensureLoaded();
     if (_items.isEmpty) return;
     if (AppSettings.webhookWifiOnly.value &&
@@ -175,7 +214,7 @@ class WebhookQueue {
         _items.remove(item);
         continue;
       }
-      if (await WebhookService.instance.postRaw(item.rawBody)) {
+      if (await _postRaw(item.rawBody)) {
         _items.remove(item);
         continue;
       }
