@@ -37,9 +37,7 @@ class SettingsWebhookView extends StatelessWidget {
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: FluffySpacing.lg),
               child: CyberGlass(
-                padding: const EdgeInsets.symmetric(
-                  vertical: FluffySpacing.xs,
-                ),
+                padding: const EdgeInsets.symmetric(vertical: FluffySpacing.xs),
                 child: CyberSettingsTile(
                   icon: Icons.webhook_outlined,
                   accent: cyber.cyan,
@@ -221,7 +219,8 @@ class SettingsWebhookView extends StatelessWidget {
                           child: Text(
                             count == 0
                                 ? 'Rien en attente'
-                                : '$count envoi(s) en attente',
+                                : '$count envoi(s) en attente'
+                                      '${WebhookQueue.instance.overBudget ? ' · file au-dessus du budget : réessais normaux, nouveaux envois suspendus' : ''}',
                             style: theme.textTheme.bodySmall?.copyWith(
                               color: theme.colorScheme.onSurfaceVariant,
                             ),
@@ -245,9 +244,7 @@ class SettingsWebhookView extends StatelessWidget {
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: FluffySpacing.lg),
               child: CyberGlass(
-                padding: const EdgeInsets.symmetric(
-                  vertical: FluffySpacing.xs,
-                ),
+                padding: const EdgeInsets.symmetric(vertical: FluffySpacing.xs),
                 child: Column(
                   children: [
                     CyberSettingsTile(
@@ -334,9 +331,7 @@ class SettingsWebhookView extends StatelessWidget {
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: FluffySpacing.lg),
               child: CyberGlass(
-                padding: const EdgeInsets.symmetric(
-                  vertical: FluffySpacing.xs,
-                ),
+                padding: const EdgeInsets.symmetric(vertical: FluffySpacing.xs),
                 child: Column(
                   children: [
                     CyberSettingsTile(
@@ -379,9 +374,7 @@ class SettingsWebhookView extends StatelessWidget {
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: FluffySpacing.lg),
               child: CyberGlass(
-                padding: const EdgeInsets.symmetric(
-                  vertical: FluffySpacing.xs,
-                ),
+                padding: const EdgeInsets.symmetric(vertical: FluffySpacing.xs),
                 child: Column(
                   children: [
                     CyberSettingsTile(
@@ -527,6 +520,7 @@ class SettingsWebhookView extends StatelessWidget {
         )
         .toList();
   }
+
   /// Sous-titre d'une ligne : l'état n'est affiché que quand la case ne suffit
   /// pas à le dire (exclue, ou envoyée par le défaut).
   Widget? _stateSubtitle(
@@ -536,9 +530,7 @@ class SettingsWebhookView extends StatelessWidget {
     bool all, {
     String? extra,
   }) {
-    final parts = <String>[
-      if (extra != null && extra.isNotEmpty) extra,
-    ];
+    final parts = <String>[if (extra != null && extra.isNotEmpty) extra];
     if (!all) {
       if (!sent && excluded) {
         parts.add('exclue');
@@ -547,7 +539,11 @@ class SettingsWebhookView extends StatelessWidget {
       }
     }
     if (parts.isEmpty) return null;
-    return Text(parts.join(' · '), maxLines: 1, overflow: TextOverflow.ellipsis);
+    return Text(
+      parts.join(' · '),
+      maxLines: 1,
+      overflow: TextOverflow.ellipsis,
+    );
   }
 }
 
@@ -558,14 +554,14 @@ class _FieldLabel extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => Padding(
-        padding: const EdgeInsets.only(bottom: FluffySpacing.sm),
-        child: Text(
-          label.toUpperCase(),
-          style: FluffyTypography.labelM.copyWith(
-            color: CyberColors.of(context).cyan,
-            letterSpacing: 1.2,
-            fontWeight: FontWeight.w700,
-          ),
-        ),
-      );
+    padding: const EdgeInsets.only(bottom: FluffySpacing.sm),
+    child: Text(
+      label.toUpperCase(),
+      style: FluffyTypography.labelM.copyWith(
+        color: CyberColors.of(context).cyan,
+        letterSpacing: 1.2,
+        fontWeight: FontWeight.w700,
+      ),
+    ),
+  );
 }

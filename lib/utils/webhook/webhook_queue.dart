@@ -128,7 +128,11 @@ class WebhookQueue {
 
   int _dropped = 0;
   String? _lastRejectReason;
-  String? _lastRejectBody;
+  int? _lastRejectBytes;
+  bool _overBudget = false;
+  int _persistSeq = 0;
+  int _persistedSeq = 0;
+  Future<void> _persistTail = Future.value();
 
   /// Nombre d'événements écartés de la file (taille, budget ou compteur),
   /// pour l'UI des réglages.
@@ -137,9 +141,17 @@ class WebhookQueue {
   /// Motif du dernier refus — observable par l'appelant, pas un simple log.
   String? get lastRejectReason => _lastRejectReason;
 
-  /// Corps du dernier événement rebuté : l'appelant peut en tirer un repli
-  /// (métadonnées seules) au lieu de le perdre.
-  String? get lastRejectBody => _lastRejectBody;
+  /// Taille du dernier corps rebuté. Le corps lui-même n'est PAS conservé
+  /// (audit e98bb2a8, finding LOW : jusqu'à 23 MiB de SMS/MMS sensibles en
+  /// clair en RAM sans borne de durée, et aucun repli ne les lisait) — la
+  /// taille et le motif restent consultables.
+  int? get lastRejectBytes => _lastRejectBytes;
+
+  /// File « sursaturée » : héritée ou grossie au-delà du budget d'une
+  /// manière que la politique « zéro perte » interdit de corriger par
+  /// purge. Les envois existants partent normalement ; tout ajout est refusé
+  /// tant que le budget n'est pas redevenu libre. Consultable par l'UI.
+  bool get overBudget => _overBudget;
 
   /// Nombre d'envois en attente, pour l'afficher dans les réglages.
   final ValueNotifier<int> pending = ValueNotifier<int>(0);
@@ -169,6 +181,7 @@ class WebhookQueue {
   Future<void> _ensureLoaded() async {
     if (_loaded) return;
     _loaded = true;
+    var over = false;
     try {
       final file = await _queueFile();
       await _purgeStaleParts(file);
@@ -181,42 +194,29 @@ class WebhookQueue {
       }
       for (final entry in decoded) {
         final item = PendingWebhook.fromJson(entry);
-        if (item != null) _items.add(item);
+        if (item != null) {
+          // 'bytes' absent = fichier écrit avant le comptage UTF-8 : le vrai
+          // poids est recalculé par PendingWebhook, jamais deviné.
+          _items.add(item);
+        } else {
+          // Une ligne illisible dans un fichier sinon valide n'est pas une
+          // raison d'amputer tout le reste : on la compte et on la journalise.
+          _discardExpired(1, 'entrée illisible ignorée au chargement');
+        }
       }
-      _reconcileBudgetOnLoad();
-      pending.value = _items.length;
+      // File héritée déjà hors budget (builds antérieures sans plafond) :
+      // on la charge INTÉGRALEMENT. Purger ici détruirait des événements non
+      // envoyés (audit e98bb2a8, PROBE-3) — la politique ne l'autorise pas.
+      // Elle est marquée « sursaturée » : les envois existants partent,
+      // tout ajout est refusé jusqu'au retour sous le seuil. Le fichier
+      // n'excède jamais ce qu'une build antérieure a déjà accepté d'écrire.
+      over = _totalBytes() > maxQueuedBytes || _items.length > maxItems;
     } catch (e) {
       _unreadable = true;
       debugPrint('WebhookQueue: file illisible, fichier préservé: $e');
     }
-  }
-
-  /// Une file écrite par une build antérieure (sans budget d'octets, ou avec
-  /// d'anciennes constantes) peut être héritée hors budget. La laisser telle
-  /// quelle reporterait la perte sur le premier `add` — même de 13 octets —
-  /// via l'éviction (audit 8960c5cc, sonde P3). La purge a lieu ICI, une
-  /// seule fois, en tête (les plus anciens), et elle est comptée et journalisée
-  /// : plus rien ne disparaît sans trace ni sans que l'ajout courant soit
-  /// refusé à tort.
-  void _reconcileBudgetOnLoad() {
-    var bytes = _totalBytes();
-    var purged = 0;
-    while ((bytes > maxQueuedBytes || _items.length > maxItems) &&
-        _items.isNotEmpty) {
-      final gone = _items.removeAt(0);
-      bytes -= gone.byteLength;
-      purged++;
-      _dropped++;
-      _lastRejectReason =
-          'file héritée hors budget : entrée de ${gone.byteLength} octets '
-          'purgée';
-    }
-    if (purged > 0) {
-      debugPrint(
-        'WebhookQueue: $purged entrée(s) trop ancienne(s) purgée(s) au '
-        'chargement ($bytes octets retenus / budget $maxQueuedBytes)',
-      );
-    }
+    _overBudget = over;
+    pending.value = _items.length;
   }
 
   int _totalBytes() {
@@ -247,23 +247,55 @@ class WebhookQueue {
     }
   }
 
-  Future<void> _persist() async {
+  /// Instantané sur disque, Sérialisé EN CHAÎNE (audit e98bb2a8, PROBE-4) :
+  /// sans barrière, deux écritures concurrentes (fin de flush vs `add`)
+  /// faisaient chacune son write+fsync+rename indépendant, et le rename du
+  /// snapshot LE PLUS VIEUX pouvait arriver en dernier — effaçant du fichier
+  /// un ajout que la mémoire contenait encore. Ici : les écritures s'enchaînent
+  /// (`_persistTail`), le contenu est ré-encodé AU MOMENT de l'exécution
+  /// (jamais capturé avant la file), et la séquence monotonne sert de double
+  /// garde : un ordre inversé ne peut plus passer. Le dernier état gagne.
+  Future<void> _persist() {
+    _persistSeq += 1;
+    final seq = _persistSeq;
+    _persistTail = _persistTail.then((_) => _writeSnapshot(seq));
+    return _persistTail;
+  }
+
+  Future<void> _writeSnapshot(int seq) async {
     if (_unreadable) return;
+    if (seq < _persistedSeq) {
+      // Ne peut arriver qu'avec deux file d écritures (défensif : la chaîne
+      // les sérialise déjà). Un instantané plus vieux que ce qui est déjà sur
+      // le disque n a rien à y écrire.
+      return;
+    }
+    File? tmp;
     try {
       final file = await _queueFile();
-      // suffixe unique : add() peut persister pendant qu'un flush de 2 min
-      // persiste de son côté — deux écritures sur le même .part se
-      // marchaient dessus (le second rename échouait, avalé).
-      final tmp = File(
-        '${file.path}.part.${DateTime.now().microsecondsSinceEpoch}',
+      // snapshot encodé ICI, sous la chaîne : c'est l'état du moment qui
+      // part, pas celui capturé avant l'attente
+      tmp = File(
+        '${file.path}.part.$seq.${DateTime.now().microsecondsSinceEpoch}',
       );
       await tmp.writeAsString(
         jsonEncode(_items.map((i) => i.toJson()).toList()),
         flush: true,
       );
       await tmp.rename(file.path);
+      _persistedSeq = seq;
     } catch (e) {
-      debugPrint('WebhookQueue: écriture échouée: $e');
+      // Écriture ou rename raté : rien n'est perdu — le fichier précédent
+      // reste tel quel (ou absent s'il n'existait pas), la mémoire garde
+      // tout, le prochain persist réessaiera. Le .part en cours, lui, ne
+      // traîne pas : il porte les corps en clair (audit e98bb2a8, INFO).
+      try {
+        await tmp?.delete();
+      } catch (_) {}
+      debugPrint(
+        'WebhookQueue: écriture échouée (essayée à nouveau au '
+        'prochain changement): $e',
+      );
     }
   }
 
@@ -272,8 +304,8 @@ class WebhookQueue {
   /// refuser.
   ///
   /// Retourne `true` si le corps est en file. Sinon **rejet explicite et
-  /// observable** : motif dans [lastRejectReason], corps dans [lastRejectBody],
-  /// compteur dans [droppedCount] — jamais d'éviction d'un élément existant
+  /// observable** : motif dans [lastRejectReason], taille dans
+  /// [lastRejectBytes], compteur dans [droppedCount] — jamais d'éviction d'un élément existant
   /// pour faire de la place (audit 8960c5cc : chasser des événements non
   /// envoyés est une perte de données, y compris « en vol »).
   Future<bool> add(String rawBody) async {
@@ -281,18 +313,24 @@ class WebhookQueue {
     final bodyBytes = utf8.encode(rawBody).length;
     if (bodyBytes > maxQueuedItemBytes) {
       return _reject(
-        rawBody,
+        bodyBytes,
         'corps de $bodyBytes octets > plafond par entrée ($maxQueuedItemBytes)',
       );
     }
+    // Les entrées en vol sont encore dans [_items] (elles n'en sortent
+    // qu'au succès) : le budget comme le compteur les voient une seule fois.
     if (_items.length >= maxItems) {
-      return _reject(rawBody, 'file saturée (${_items.length} entrées)');
+      return _reject(bodyBytes, 'file saturée (${_items.length} entrées)');
     }
     if (_totalBytes() + bodyBytes > maxQueuedBytes) {
       return _reject(
-        rawBody,
-        'budget d\'octets atteint (${_totalBytes()} + $bodyBytes > '
-        '$maxQueuedBytes)',
+        bodyBytes,
+        _overBudget
+            ? 'file sursaturée (héritée hors budget) : ${_totalBytes()} '
+                  'octets attendent l envoi, aucun ajouté tant que le flush '
+                  'n a pas drainé sous $maxQueuedBytes'
+            : 'budget d\'octets atteint (${_totalBytes()} + $bodyBytes > '
+                  '$maxQueuedBytes)',
       );
     }
     final now = DateTime.now().millisecondsSinceEpoch;
@@ -311,15 +349,40 @@ class WebhookQueue {
     return true;
   }
 
-  /// Refus motivé et tracé : compteur pour l'UI, raison pour l'appelant,
-  /// corps conservé pour un repli éventuel. La file, elle, ne bouge pas.
-  bool _reject(String rawBody, String reason) {
+  /// Refus motivé et tracé : compteur pour l'UI, raison et taille pour
+  /// l'appelant. Le corps lui-même n'est PAS conservé : c'étaient jusqu'à
+  /// 23 MiB de SMS/MMS sensibles en clair en RAM, sans borne de durée, et
+  /// aucun repli ne les lisait (audit e98bb2a8, finding LOW). La file ne
+  /// bouge pas.
+  bool _reject(int bodyBytes, String reason) {
     _dropped++;
     _lastRejectReason = reason;
-    _lastRejectBody = rawBody;
+    _lastRejectBytes = bodyBytes;
     WebhookService.instance.recordQueueReject(reason);
     debugPrint('WebhookQueue: $reason — événement écarté, file inchangée');
     return false;
+  }
+
+  /// Sortie définitive d'événements DÉJÀ en file (TTL, plafond de tentatives,
+  /// entrée corrompue) : politique explicite, mais perte quand même — comptée
+  /// et visible, jamais muette (audit e98bb2a8, finding LOW).
+  void _discardExpired(int count, String reason) {
+    _dropped += count;
+    _lastRejectReason = reason;
+    WebhookService.instance.recordQueueReject(
+      count == 1 ? reason : '$reason ×$count',
+    );
+    debugPrint('WebhookQueue: $reason (×$count) — file inchangée par ailleurs');
+  }
+
+  /// Le budget est redevenu libre (envoi réussi, clear) : la file n'est plus
+  /// « sursaturée », les ajouts peuvent reprendre ; le corps sensible du
+  /// dernier rebut a vécu, on ne le garde pas.
+  void _markDrained() {
+    if (_overBudget && _totalBytes() <= maxQueuedBytes) {
+      _overBudget = false;
+      pending.value = _items.length;
+    }
   }
 
   /// Vide la file (réglages : « vider maintenant »).
@@ -330,6 +393,7 @@ class WebhookQueue {
     // pas son corps : la demande explicite de l'utilisateur prime.
     _inFlight.clear();
     _clearGeneration++;
+    _overBudget = false;
     pending.value = 0;
     if (_unreadable) {
       // Demande explicite de l'utilisateur : on supprime le fichier qu'on
@@ -379,13 +443,28 @@ class WebhookQueue {
     final maxAttempts = AppSettings.webhookRetryAttempts.value;
     final base = AppSettings.webhookRetryBackoffS.value;
     var changed = false;
+    var requeuedAtHead = 0;
+    final generationAtStart = _clearGeneration;
 
+    // Le clear est une borne stricte : si l'utilisateur a vidé la file
+    // pendant l'envoi, on ne poste PAS le reste de la copie (audit e98bb2a8,
+    // finding LOW : la sémantique « vide » doit être réelle).
     for (final item in List<PendingWebhook>.of(_items)) {
+      if (_clearGeneration != generationAtStart) {
+        debugPrint('WebhookQueue: file vidée en cours d envoi, flush stoppé');
+        changed = true;
+        break;
+      }
       if (!force && item.nextAttemptAtMs > now) continue;
       if (now - item.createdAtMs > ttlMs) {
         // TTL dépassée : politique explicite (l'événement est trop vieux pour
         // intéresser Hermes), pas une eviction « pour faire de la place ».
+        // Mais perte quand même : comptée et visible (audit e98bb2a8).
         _items.remove(item);
+        _discardExpired(
+          1,
+          'événement expiré (TTL ${AppSettings.webhookRetryTtlH.value} h)',
+        );
         changed = true;
         continue;
       }
@@ -394,30 +473,46 @@ class WebhookQueue {
       // son échec ne peut la faire disparaître (audit 8960c5cc, sonde P4).
       final generationAtSend = _clearGeneration;
       _inFlight.add(item);
-      final sent = await _postRaw(item.rawBody);
-      _inFlight.remove(item);
+      final bool sent;
+      try {
+        sent = await _postRaw(item.rawBody);
+      } finally {
+        _inFlight.remove(item);
+      }
       if (sent) {
         _items.remove(item);
+        _markDrained();
         changed = true;
         continue;
       }
       item.attempts++;
       if (item.attempts >= maxAttempts) {
         _items.remove(item);
+        _discardExpired(
+          1,
+          'abandon après ${item.attempts} tentatives infructueuses',
+        );
         changed = true;
         continue;
       }
       item.nextAttemptAtMs = now + retryDelayMs(base, item.attempts);
       // Réinsertion en tête : le prochain FIFO le retentera en premier.
+      // L'index d'insertion progresse pour que plusieurs échecs d'une même
+      // passe gardent leur ordre relatif (sinon la passe inverse la file).
       // Sauf si l'utilisateur a vidé la file pendant l'envoi — un clear
       // volontaire ne doit pas être contredit par un échec tardif.
       if (generationAtSend == _clearGeneration && _items.contains(item)) {
         _items.remove(item);
-        _items.insert(0, item);
+        _items.insert(requeuedAtHead++, item);
       }
       changed = true;
     }
     pending.value = _items.length;
-    if (changed) await _persist();
+    if (changed) {
+      // Un drain par TTL/abandon peut aussi faire repasser sous le seuil :
+      // les ajouts reprendront, et le drapeau doit cesser en même temps.
+      _markDrained();
+      await _persist();
+    }
   }
 }

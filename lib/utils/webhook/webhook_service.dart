@@ -28,7 +28,8 @@ class WebhookStats {
   final int dropped;
   final String? lastError;
 
-  WebhookStats sent1() => WebhookStats(sent: sent + 1, failed: failed, dropped: dropped);
+  WebhookStats sent1() =>
+      WebhookStats(sent: sent + 1, failed: failed, dropped: dropped);
   WebhookStats failed1(String error) => WebhookStats(
     sent: sent,
     failed: failed + 1,
@@ -84,9 +85,8 @@ class WebhookService {
   Future<Set<String>> allowedSmsThreads() async =>
       _allowedSmsThreads ??= await WebhookStore.instance.loadSmsThreads();
 
-  Future<Set<String>> excludedSmsThreads() async =>
-      _excludedSmsThreads ??=
-          await WebhookStore.instance.loadExcludedSmsThreads();
+  Future<Set<String>> excludedSmsThreads() async => _excludedSmsThreads ??=
+      await WebhookStore.instance.loadExcludedSmsThreads();
 
   void invalidateFilters() {
     _allowedRooms = null;
@@ -117,9 +117,8 @@ class WebhookService {
       final queued = await WebhookQueue.instance.add(rawBody);
       if (!queued) {
         // Ni envoyé, ni en file : l'événement est perdu ICI, bruyamment —
-        // compteur `dropped` + motif sur la page de réglages, corps
-        // consultable via WebhookQueue.instance.lastRejectBody. Jamais
-        // l'illusion d'une livraison ou d'une file.
+        // compteur `dropped` + motif + taille sur la page de réglages.
+        // Jamais l'illusion d'une livraison ou d'une file.
         debugPrint(
           'WebhookService: événement non livré et NON mis en file: '
           '${WebhookQueue.instance.lastRejectReason}',
@@ -146,8 +145,8 @@ class WebhookService {
     final uri = Uri.tryParse(AppSettings.webhookUrl.value.trim());
     if (uri == null || !uri.hasScheme) return false;
 
-    final timestamp =
-        (DateTime.now().millisecondsSinceEpoch ~/ 1000).toString();
+    final timestamp = (DateTime.now().millisecondsSinceEpoch ~/ 1000)
+        .toString();
     final secret = await WebhookStore.instance.loadSecret();
 
     final headers = <String, String>{
@@ -171,8 +170,9 @@ class WebhookService {
         ..followRedirects = false
         ..headers.addAll(headers)
         ..body = rawBody;
-      final streamed =
-          await client.send(request).timeout(timeoutFor(rawBody.length));
+      final streamed = await client
+          .send(request)
+          .timeout(timeoutFor(rawBody.length));
       final response = await http.Response.fromStream(streamed);
       if (response.statusCode >= 200 && response.statusCode < 300) {
         stats.value = stats.value.sent1();
