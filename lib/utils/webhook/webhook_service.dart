@@ -151,8 +151,8 @@ class WebhookService {
         outgoing: false,
         timestamp: DateTime.now(),
         sender: '+33000000000',
-        senderName: 'VOX (test)',
-        body: 'Test du webhook VOX',
+        senderName: 'VoxOne (test)',
+        body: 'Test du webhook VoxOne',
         media: [
           WebhookMedia(
             mimeType: 'image/png',

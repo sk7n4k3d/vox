@@ -764,7 +764,7 @@
         "type": "String",
         "placeholders": {}
     },
-    "fluffychat": "VOX",
+    "fluffychat": "VoxOne",
     "@fluffychat": {
         "type": "String",
         "placeholders": {}
@@ -921,7 +921,7 @@
         "type": "String",
         "placeholders": {}
     },
-    "inviteText": "{username} vous a invité·e sur VOX.\n1. Visiter fluffychat.im et installer l'application\n2. Inscrivez-vous ou connectez-vous\n3. Ouvrez le lien d'invitation :\n{link}",
+    "inviteText": "{username} vous a invité·e sur VoxOne.\n1. Visiter fluffychat.im et installer l'application\n2. Inscrivez-vous ou connectez-vous\n3. Ouvrez le lien d'invitation :\n{link}",
     "@inviteText": {
         "type": "String",
         "placeholders": {
@@ -1083,7 +1083,7 @@
         "type": "String",
         "placeholders": {}
     },
-    "newMessageInFluffyChat": "💬 Nouveau message dans VOX",
+    "newMessageInFluffyChat": "💬 Nouveau message dans VoxOne",
     "@newMessageInFluffyChat": {
         "type": "String",
         "placeholders": {}
@@ -1641,7 +1641,7 @@
         "type": "String",
         "placeholders": {}
     },
-    "title": "VOX",
+    "title": "VoxOne",
     "@title": {
         "description": "Title for the application",
         "type": "String",
@@ -2946,17 +2946,17 @@
         "type": "String",
         "placeholders": {}
     },
-    "appIntro": "Avec VOX, discutez avec vos proches en messages chiffrés et en SMS, le tout au même endroit. Messagerie [matrix] sécurisée et décentralisée. Connectez-vous ou créez un compte pour commencer.",
+    "appIntro": "Avec VoxOne, discutez avec vos proches en messages chiffrés et en SMS, le tout au même endroit. Messagerie [matrix] sécurisée et décentralisée. Connectez-vous ou créez un compte pour commencer.",
     "@appIntro": {
         "type": "String",
         "placeholders": {}
     },
-    "welcomeText": "Bienvenue sur VOX 👋 Connectez-vous à n'importe quel serveur compatible matrix.org, puis discutez avec qui vous voulez — chats chiffrés et SMS réunis.",
+    "welcomeText": "Bienvenue sur VoxOne 👋 Connectez-vous à n'importe quel serveur compatible matrix.org, puis discutez avec qui vous voulez — chats chiffrés et SMS réunis.",
     "@welcomeText": {
         "type": "String",
         "placeholders": {}
     },
-    "signUpGreeting": "VOX est décentralisé ! Choisissez le serveur où créer votre compte et c'est parti.",
+    "signUpGreeting": "VoxOne est décentralisé ! Choisissez le serveur où créer votre compte et c'est parti.",
     "@signUpGreeting": {
         "type": "String",
         "placeholders": {}

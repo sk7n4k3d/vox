@@ -400,7 +400,7 @@ class ChatListController extends State<ChatList>
       builder: (context) => AlertDialog(
         title: const Text('Réception des SMS en arrière-plan'),
         content: const Text(
-          'Pour recevoir tes SMS/MMS même quand VOX est fermée, autorise '
+          'Pour recevoir tes SMS/MMS même quand VoxOne est fermée, autorise '
           "l'application à ignorer l'optimisation de batterie. Sans ça, Android "
           'peut retarder ou bloquer les messages pendant la veille du téléphone.',
         ),

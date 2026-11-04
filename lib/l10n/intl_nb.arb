@@ -595,7 +595,7 @@
         "type": "String",
         "placeholders": {}
     },
-    "fluffychat": "VOX",
+    "fluffychat": "VoxOne",
     "@fluffychat": {
         "type": "String",
         "placeholders": {}
@@ -752,7 +752,7 @@
         "type": "String",
         "placeholders": {}
     },
-    "inviteText": "{username} har invitert deg til VOX. \n1. Installer VOX: https://fluffychat.im \n2. Registrer deg eller logg inn \n3. Åpne invitasjonslenken: \n {link}",
+    "inviteText": "{username} har invitert deg til VoxOne. \n1. Installer VoxOne: https://fluffychat.im \n2. Registrer deg eller logg inn \n3. Åpne invitasjonslenken: \n {link}",
     "@inviteText": {
         "type": "String",
         "placeholders": {
@@ -904,7 +904,7 @@
         "type": "String",
         "placeholders": {}
     },
-    "newMessageInFluffyChat": "Ny melding i VOX",
+    "newMessageInFluffyChat": "Ny melding i VoxOne",
     "@newMessageInFluffyChat": {
         "type": "String",
         "placeholders": {}
@@ -1346,7 +1346,7 @@
         "type": "String",
         "placeholders": {}
     },
-    "title": "VOX",
+    "title": "VoxOne",
     "@title": {
         "description": "Title for the application",
         "type": "String",
@@ -2369,7 +2369,7 @@
     "prepareSendingAttachment": "Forbered sending av vedlegg...",
     "generatingVideoThumbnail": "Genererer videominiatyrbilde ...",
     "compressVideo": "Komprimerer video...",
-    "welcomeText": "Hei, hei! 👋 Dette er VOX. Du kan logge på hvilken som helst hjemmeserver som er kompatibel med https://matrix.org. Og deretter chatte med hvem som helst. Det er et stort desentralisert meldingsnettverk!",
+    "welcomeText": "Hei, hei! 👋 Dette er VoxOne. Du kan logge på hvilken som helst hjemmeserver som er kompatibel med https://matrix.org. Og deretter chatte med hvem som helst. Det er et stort desentralisert meldingsnettverk!",
     "notificationRuleIsUserMentionDescription": "Varsler brukeren når de er direkte nevnt i en melding.",
     "notificationRuleContainsDisplayName": "Inneholder visningsnavn",
     "notificationRuleContainsDisplayNameDescription": "Varsler brukeren når en melding inneholder ens visningsnavnet.",
@@ -2779,9 +2779,9 @@
     "addChatOrSubSpace": "Legg til chat eller underområde",
     "signIn": "Logg på",
     "createNewAccount": "Opprett ny konto",
-    "signUpGreeting": "VOX er desentralisert! Velg en server der du vil opprette kontoen din, så kjører vi på!",
+    "signUpGreeting": "VoxOne er desentralisert! Velg en server der du vil opprette kontoen din, så kjører vi på!",
     "signInGreeting": "Har du allerede en Matrix-konto? Velkommen tilbake! Velg hjemmeserveren din og logg inn.",
-    "appIntro": "Med VOX kan du chatte med vennene dine. Det er en sikker, desentralisert [matrix]-meldingsapp! Les mer på https://matrix.org hvis du vil, eller bare registrer deg.",
+    "appIntro": "Med VoxOne kan du chatte med vennene dine. Det er en sikker, desentralisert [matrix]-meldingsapp! Les mer på https://matrix.org hvis du vil, eller bare registrer deg.",
     "theProcessWasCanceled": "Prosessen ble avbrutt.",
     "join": "Bli med",
     "searchOrEnterHomeserverAddress": "Søk eller angi adresse til hjemmeserver",
@@ -2800,12 +2800,12 @@
     },
     "createNewChat": "Opprett ny chat",
     "reset": "Nullstill",
-    "supportFluffyChat": "Støtt VOX",
+    "supportFluffyChat": "Støtt VoxOne",
     "support": "Støtte",
-    "fluffyChatSupportBannerMessage": "VOX trenger DIN hjelp!\n❤️❤️❤️\nVOX vil alltid være gratis, men utvikling og drift koster fortsatt penger. \nProsjektets fremtid avhenger av støtte fra folk som deg.",
-    "skipSupportingFluffyChat": "Hopp over støtte til VOX",
+    "fluffyChatSupportBannerMessage": "VoxOne trenger DIN hjelp!\n❤️❤️❤️\nVOX vil alltid være gratis, men utvikling og drift koster fortsatt penger. \nProsjektets fremtid avhenger av støtte fra folk som deg.",
+    "skipSupportingFluffyChat": "Hopp over støtte til VoxOne",
     "iDoNotWantToSupport": "Jeg ønsker ikke å støtte",
-    "iAlreadySupportFluffyChat": "Jeg støtter allerede VOX",
+    "iAlreadySupportFluffyChat": "Jeg støtter allerede VoxOne",
     "setLowPriority": "Sett lav prioritet",
     "unsetLowPriority": "Fjern lav prioritet",
     "removeCallFromChat": "Fjern anrop fra chat",

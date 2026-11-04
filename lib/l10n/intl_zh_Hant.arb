@@ -617,7 +617,7 @@
         "type": "String",
         "placeholders": {}
     },
-    "fluffychat": "VOX",
+    "fluffychat": "VoxOne",
     "@fluffychat": {
         "type": "String",
         "placeholders": {}
@@ -774,7 +774,7 @@
         "type": "String",
         "placeholders": {}
     },
-    "inviteText": "{username} 邀請您使用 VOX\n1. 安裝 VOX：https://fluffychat.im\n2. 登入或註冊\n3. 打開該邀請網址：\n{link}",
+    "inviteText": "{username} 邀請您使用 VoxOne\n1. 安裝 VoxOne：https://fluffychat.im\n2. 登入或註冊\n3. 打開該邀請網址：\n{link}",
     "@inviteText": {
         "type": "String",
         "placeholders": {
@@ -926,7 +926,7 @@
         "type": "String",
         "placeholders": {}
     },
-    "newMessageInFluffyChat": "💬 來自 VOX 的新訊息",
+    "newMessageInFluffyChat": "💬 來自 VoxOne 的新訊息",
     "@newMessageInFluffyChat": {
         "type": "String",
         "placeholders": {}
@@ -1398,7 +1398,7 @@
         "type": "String",
         "placeholders": {}
     },
-    "title": "VOX",
+    "title": "VoxOne",
     "@title": {
         "description": "Title for the application",
         "type": "String",

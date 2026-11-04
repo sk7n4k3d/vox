@@ -158,7 +158,7 @@
       }
     }
   },
-  "fluffychat": "VOX",
+  "fluffychat": "VoxOne",
   "@fluffychat": {
     "type": "String",
     "placeholders": {}

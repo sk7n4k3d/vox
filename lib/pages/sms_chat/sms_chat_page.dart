@@ -811,7 +811,7 @@ class _SmsChatPageState extends State<SmsChatPage> with WidgetsBindingObserver {
       _showSnackBar('Numéro bloqué — SMS et appels rejetés');
     } else {
       _showSnackBar(
-        'Blocage impossible — VOX doit être l\'app SMS par défaut',
+        'Blocage impossible — VoxOne doit être l\'app SMS par défaut',
       );
     }
   }

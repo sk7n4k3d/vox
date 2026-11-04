@@ -116,7 +116,7 @@ class VoipBridgeService : Service() {
      */
     private fun startForegroundCompat() {
         val notification: Notification = Notification.Builder(this, VoipBridge.CHANNEL_PERSISTENT)
-            .setContentTitle("VOX")
+            .setContentTitle("VoxOne")
             .setContentText("Connecté — prêt à recevoir les appels")
             .setSmallIcon(android.R.drawable.ic_menu_call)
             .setOngoing(true)

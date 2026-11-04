@@ -498,7 +498,7 @@
         "type": "String",
         "placeholders": {}
     },
-    "fluffychat": "VOX",
+    "fluffychat": "VoxOne",
     "@fluffychat": {
         "type": "String",
         "placeholders": {}
@@ -635,7 +635,7 @@
         "type": "String",
         "placeholders": {}
     },
-    "title": "VOX",
+    "title": "VoxOne",
     "@title": {
         "description": "Title for the application",
         "type": "String",
@@ -844,7 +844,7 @@
             }
         }
     },
-    "inviteText": "{username} v-a invitat la VOX.\n1. Instalați VOX: https://fluffychat.im\n2. Înregistrați-vă sau conectați-vă\n3. Deschideți invitația: {link}",
+    "inviteText": "{username} v-a invitat la VoxOne.\n1. Instalați VoxOne: https://fluffychat.im\n2. Înregistrați-vă sau conectați-vă\n3. Deschideți invitația: {link}",
     "@inviteText": {
         "type": "String",
         "placeholders": {
@@ -1162,7 +1162,7 @@
     "@user": {},
     "custom": "Personalizat",
     "@custom": {},
-    "screenSharingDetail": "Partajați ecranul în VOX",
+    "screenSharingDetail": "Partajați ecranul în VoxOne",
     "@screenSharingDetail": {},
     "storeSecurlyOnThisDevice": "Stoca sigur pe acest dispozitiv",
     "@storeSecurlyOnThisDevice": {},
@@ -1272,7 +1272,7 @@
         "type": "String",
         "placeholders": {}
     },
-    "noGoogleServicesWarning": "Se pare că nu aveți serviciile google pe dispozitivul vostru. Această decizie este bună pentru confidențialitatea voastră! Să primiți notificari push în VOX vă recomandăm https://microg.org/ sau https://unifiedpush.org/.",
+    "noGoogleServicesWarning": "Se pare că nu aveți serviciile google pe dispozitivul vostru. Această decizie este bună pentru confidențialitatea voastră! Să primiți notificari push în VoxOne vă recomandăm https://microg.org/ sau https://unifiedpush.org/.",
     "@noGoogleServicesWarning": {
         "type": "String",
         "placeholders": {}
@@ -1485,7 +1485,7 @@
         "type": "String",
         "placeholders": {}
     },
-    "newMessageInFluffyChat": "💬 Mesaj nou în VOX",
+    "newMessageInFluffyChat": "💬 Mesaj nou în VoxOne",
     "@newMessageInFluffyChat": {
         "type": "String",
         "placeholders": {}

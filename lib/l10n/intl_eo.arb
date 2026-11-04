@@ -741,7 +741,7 @@
         "type": "String",
         "placeholders": {}
     },
-    "fluffychat": "VOX",
+    "fluffychat": "VoxOne",
     "@fluffychat": {
         "type": "String",
         "placeholders": {}
@@ -898,7 +898,7 @@
         "type": "String",
         "placeholders": {}
     },
-    "inviteText": "{username} invitis vin al VOX. \n1. Instalu la aplikaĵon VOX: https://fluffychat.im \n2. Registriĝu aŭ salutu \n3. Malfermu la invitan ligilon: {link}",
+    "inviteText": "{username} invitis vin al VoxOne. \n1. Instalu la aplikaĵon VoxOne: https://fluffychat.im \n2. Registriĝu aŭ salutu \n3. Malfermu la invitan ligilon: {link}",
     "@inviteText": {
         "type": "String",
         "placeholders": {
@@ -1050,7 +1050,7 @@
         "type": "String",
         "placeholders": {}
     },
-    "newMessageInFluffyChat": "Nova mesaĝo en VOX",
+    "newMessageInFluffyChat": "Nova mesaĝo en VoxOne",
     "@newMessageInFluffyChat": {
         "type": "String",
         "placeholders": {}
@@ -1085,7 +1085,7 @@
         "type": "String",
         "placeholders": {}
     },
-    "noGoogleServicesWarning": "Ŝajnas, ke via telefono ne havas servojn de Google. Tio estas bona decido por via privateco! Por ricevadi pasivajn sciigojn en VOX, ni rekomendas, ke vi uzu la https://microg.org/ aŭ https://unifiedpush.org/.",
+    "noGoogleServicesWarning": "Ŝajnas, ke via telefono ne havas servojn de Google. Tio estas bona decido por via privateco! Por ricevadi pasivajn sciigojn en VoxOne, ni rekomendas, ke vi uzu la https://microg.org/ aŭ https://unifiedpush.org/.",
     "@noGoogleServicesWarning": {
         "type": "String",
         "placeholders": {}
@@ -1587,7 +1587,7 @@
         "type": "String",
         "placeholders": {}
     },
-    "title": "VOX",
+    "title": "VoxOne",
     "@title": {
         "description": "Title for the application",
         "type": "String",

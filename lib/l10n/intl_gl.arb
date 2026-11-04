@@ -751,7 +751,7 @@
         "type": "String",
         "placeholders": {}
     },
-    "fluffychat": "VOX",
+    "fluffychat": "VoxOne",
     "@fluffychat": {
         "type": "String",
         "placeholders": {}
@@ -908,7 +908,7 @@
         "type": "String",
         "placeholders": {}
     },
-    "inviteText": "{username} convidoute a VOX.\n1. Visita fluffychat.im e instala a app\n2. Crea unha conta ou Accede\n3. Abre a ligazón do convite: \n {link}",
+    "inviteText": "{username} convidoute a VoxOne.\n1. Visita fluffychat.im e instala a app\n2. Crea unha conta ou Accede\n3. Abre a ligazón do convite: \n {link}",
     "@inviteText": {
         "type": "String",
         "placeholders": {
@@ -1070,7 +1070,7 @@
         "type": "String",
         "placeholders": {}
     },
-    "newMessageInFluffyChat": "💬 Nova mensaxe en VOX",
+    "newMessageInFluffyChat": "💬 Nova mensaxe en VoxOne",
     "@newMessageInFluffyChat": {
         "type": "String",
         "placeholders": {}
@@ -1628,7 +1628,7 @@
         "type": "String",
         "placeholders": {}
     },
-    "title": "VOX",
+    "title": "VoxOne",
     "@title": {
         "description": "Title for the application",
         "type": "String",
@@ -2058,7 +2058,7 @@
     "foregroundServiceRunning": "Esta notificación aparece cando se está a executar o servizo en segundo plano.",
     "screenSharingTitle": "compartición da pantalla",
     "allSpaces": "Todos os espazos",
-    "screenSharingDetail": "Estás a compartir a túa pantalla en VOX",
+    "screenSharingDetail": "Estás a compartir a túa pantalla en VoxOne",
     "doNotShowAgain": "Non mostrar outra vez",
     "commandHint_googly": "Envía uns ollos desos grandes",
     "googlyEyesContent": "{senderName} enviouche uns ollos grandes",
@@ -2506,7 +2506,7 @@
             }
         }
     },
-    "welcomeText": "Ola! 👋 Isto é VOX. Podes iniciar sesión en calquera servidor compatible con https://matrix.org. Poderás conversar con calquera. Unha enorme rede de mensaxería descentralizada!",
+    "welcomeText": "Ola! 👋 Isto é VoxOne. Podes iniciar sesión en calquera servidor compatible con https://matrix.org. Poderás conversar con calquera. Unha enorme rede de mensaxería descentralizada!",
     "setWallpaper": "Establecer fondo",
     "manageAccount": "Xestionar conta",
     "noContactInformationProvided": "O servidor non proporciona información de contacto válida",
@@ -2772,9 +2772,9 @@
     "advancedConfigurations": "Configuracións avanzadas",
     "signIn": "Acceder",
     "createNewAccount": "Crear nova conta",
-    "signUpGreeting": "VOX é descentralizada! Elixe un servidor para crear a conta e xa podes utilizar a app!",
+    "signUpGreeting": "VoxOne é descentralizada! Elixe un servidor para crear a conta e xa podes utilizar a app!",
     "signInGreeting": "Xa tes unha conta en Matrix? Benvida! Selecciona o teu servidor de orixe e accede.",
-    "appIntro": "Con VOX podes conversar coas amizades. É mensaxería segura e descentralizada en [matrix]! Coñece máis en https://matrix.org ou crea unha conta.",
+    "appIntro": "Con VoxOne podes conversar coas amizades. É mensaxería segura e descentralizada en [matrix]! Coñece máis en https://matrix.org ou crea unha conta.",
     "theProcessWasCanceled": "Desbotouse o proceso.",
     "join": "Unirse",
     "searchOrEnterHomeserverAddress": "Busca ou escribe o enderezo do servidor de inicio",
@@ -2793,12 +2793,12 @@
     },
     "createNewChat": "Crear nova conversa",
     "reset": "Restablecer",
-    "supportFluffyChat": "Apoia a VOX",
+    "supportFluffyChat": "Apoia a VoxOne",
     "support": "Axuda",
-    "fluffyChatSupportBannerMessage": "VOX precisa a TÚA axuda!\n❤️❤️❤️\nVOX vai ser sempre gratuíta, pero o desenvolvemento e a hospedaxe costan cartos.\nO futuro do proxecto depende da axuda de persoas coma ti.",
-    "skipSupportingFluffyChat": "Omitir apoiar a VOX",
+    "fluffyChatSupportBannerMessage": "VoxOne precisa a TÚA axuda!\n❤️❤️❤️\nVOX vai ser sempre gratuíta, pero o desenvolvemento e a hospedaxe costan cartos.\nO futuro do proxecto depende da axuda de persoas coma ti.",
+    "skipSupportingFluffyChat": "Omitir apoiar a VoxOne",
     "iDoNotWantToSupport": "Non quero axudar",
-    "iAlreadySupportFluffyChat": "Xa apoiei a VOX",
+    "iAlreadySupportFluffyChat": "Xa apoiei a VoxOne",
     "setLowPriority": "Establecer prioridade baixa",
     "unsetLowPriority": "Non establecer prioridade baixa",
     "removeCallFromChat": "Eliminar a chamada da conversa",

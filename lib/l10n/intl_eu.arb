@@ -471,7 +471,7 @@
         "type": "String",
         "placeholders": {}
     },
-    "fluffychat": "VOX",
+    "fluffychat": "VoxOne",
     "@fluffychat": {
         "type": "String",
         "placeholders": {}
@@ -1048,7 +1048,7 @@
         "type": "String",
         "placeholders": {}
     },
-    "title": "VOX",
+    "title": "VoxOne",
     "@title": {
         "description": "Title for the application",
         "type": "String",
@@ -2499,7 +2499,7 @@
     "setWallpaper": "Ezarri horma-irudia",
     "blur": "Lausotu:",
     "continueText": "Jarraitu",
-    "welcomeText": "Ieup 👋 Ongi etorri VOX-era. https://matrix.org-rekin bateragarria den edozein zerbitzaritan hasi dezakezu saioa eta edonorekin txateatu. Mezularitza-sare deszentralizatu eraraldoia da!",
+    "welcomeText": "Ieup 👋 Ongi etorri VoxOne-era. https://matrix.org-rekin bateragarria den edozein zerbitzaritan hasi dezakezu saioa eta edonorekin txateatu. Mezularitza-sare deszentralizatu eraraldoia da!",
     "contactServerAdmin": "Jarri harremanetan zerbitzariaren administratzailearekin",
     "aboutHomeserver": "{homeserver}(e)ri buruz",
     "@aboutHomeserver": {
@@ -2772,9 +2772,9 @@
     "identityServer": "Identitate-zerbitzaria:",
     "signIn": "Hasi saioa",
     "createNewAccount": "Sortu kontu berria",
-    "signUpGreeting": "VOX deszentralizatua da! Hautatu zure kontua zein zerbitzaritan sortu nahi duzun, eta hasi erabiltzen!",
+    "signUpGreeting": "VoxOne deszentralizatua da! Hautatu zure kontua zein zerbitzaritan sortu nahi duzun, eta hasi erabiltzen!",
     "signInGreeting": "Baduzu dagoeneko Matrix kontu bat? Ongi etorri berriro ere! Hautatu zure zerbitzaria eta hasi saioa.",
-    "appIntro": "VOX-i esker lagunekin txateatu dezakezu. [matrix]-erako mezularitza programa seguru eta deszentralizatua da! Nahi baduzu, irakurri gehiago https://matrix.org gunean, edo hasi saioa.",
+    "appIntro": "VoxOne-i esker lagunekin txateatu dezakezu. [matrix]-erako mezularitza programa seguru eta deszentralizatua da! Nahi baduzu, irakurri gehiago https://matrix.org gunean, edo hasi saioa.",
     "theProcessWasCanceled": "Eragiketa bertan behera utzi da.",
     "join": "Batu",
     "searchOrEnterHomeserverAddress": "Bilatu edo sartu zerbitzariaren helbidea",

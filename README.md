@@ -23,6 +23,7 @@ VoxOne est un client de messagerie **Matrix** décentralisé, bâti sur le trava
 Ce qu'il apporte par rapport à l'amont :
 
 - **App SMS / MMS par défaut** — l'app peut détenir le rôle SMS d'Android. Les MMS sont durcis (plafonds anti-OOM, validation des en-têtes PDU), avec gestion des codes OTP et identification de l'appelant (caller-ID).
+- **Mode SMS/MMS sans compte Matrix** — VoxOne se lance et s'utilise comme messagerie SMS pure, sans jamais créer de compte ; un compte Matrix peut être ajouté plus tard sans rien perdre.
 - **Fonctions d'appelant SMS** — blocage de numéros (blacklist système), export de conversation, messages programmés, filtre anti-spam 100 % local et aperçus enrichis de liens (lecteurs vidéo intégrés YouTube / TikTok / Instagram).
 - **Appels Matrix 1:1** — audio et vidéo, deux protocoles pris en charge (signaling `m.call.*` historique et MatrixRTC/LiveKit), avec pont Wear OS.
 - **Thème cyberpunk `CYBERCORE`** — 6 presets, dont `STARLINK` avec fond en particules animées, effets plein écran à l'envoi et jumbomoji.

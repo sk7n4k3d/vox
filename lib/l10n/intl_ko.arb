@@ -133,7 +133,7 @@
         "type": "String",
         "placeholders": {}
     },
-    "fluffychat": "VOX",
+    "fluffychat": "VoxOne",
     "@fluffychat": {
         "type": "String",
         "placeholders": {}
@@ -1316,7 +1316,7 @@
         "type": "String",
         "placeholders": {}
     },
-    "title": "VOX",
+    "title": "VoxOne",
     "@title": {
         "description": "Title for the application",
         "type": "String",
@@ -1693,7 +1693,7 @@
         "type": "String",
         "placeholders": {}
     },
-    "inviteText": "{username}님이 당신을 VOX에 초대했습니다.\n1. VOX 설치: https://fluffychat.im \n2. 가입하거나 로그인 \n3. 초대 링크 열기: \n {link}",
+    "inviteText": "{username}님이 당신을 VOX에 초대했습니다.\n1. VoxOne 설치: https://fluffychat.im \n2. 가입하거나 로그인 \n3. 초대 링크 열기: \n {link}",
     "@inviteText": {
         "type": "String",
         "placeholders": {

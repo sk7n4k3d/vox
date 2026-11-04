@@ -102,7 +102,7 @@ class VideoNotification(private val context: Context) {
     fun failed() {
         show(
             title = "Échec de la compression vidéo",
-            text = "Appuyez pour ouvrir VOX",
+            text = "Appuyez pour ouvrir VoxOne",
             percent = 0,
             indeterminate = false,
             ongoing = false,

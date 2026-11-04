@@ -148,7 +148,7 @@
             }
         }
     },
-    "title": "VOX",
+    "title": "VoxOne",
     "@title": {
         "description": "Title for the application",
         "type": "String",
@@ -581,7 +581,7 @@
         "type": "String",
         "placeholders": {}
     },
-    "inviteText": "{username} uzaicināja pievienoties VOX.\n1. Jāapmeklē fluffychat.im un jāuzstāda lietotne \n2. Jāizveido konts vai jāpiesakās \n3. Jāatver uzaicinājuma saite: \n {link}",
+    "inviteText": "{username} uzaicināja pievienoties VoxOne.\n1. Jāapmeklē fluffychat.im un jāuzstāda lietotne \n2. Jāizveido konts vai jāpiesakās \n3. Jāatver uzaicinājuma saite: \n {link}",
     "@inviteText": {
         "type": "String",
         "placeholders": {
@@ -955,7 +955,7 @@
         "type": "String",
         "placeholders": {}
     },
-    "newMessageInFluffyChat": "💬 Jauna ziņa VOX",
+    "newMessageInFluffyChat": "💬 Jauna ziņa VoxOne",
     "@newMessageInFluffyChat": {
         "type": "String",
         "placeholders": {}
@@ -1474,7 +1474,7 @@
         "placeholders": {}
     },
     "unverified": "Neapliecināta",
-    "fluffychat": "VOX",
+    "fluffychat": "VoxOne",
     "@fluffychat": {
         "type": "String",
         "placeholders": {}
@@ -2156,7 +2156,7 @@
         "placeholders": {}
     },
     "pinMessage": "Piespraust istabai",
-    "screenSharingDetail": "Tu kopīgo savu ekrānu VOX",
+    "screenSharingDetail": "Tu kopīgo savu ekrānu VoxOne",
     "muteChat": "Apklusināt tērzēšanu",
     "@muteChat": {
         "type": "String",
@@ -2478,7 +2478,7 @@
     "oneOfYourDevicesIsNotVerified": "Viena no ierīcēm nav apliecināta",
     "noticeChatBackupDeviceVerification": "Piezīme: kad visas ierīces tiek savienotas ar tērzēšanu rezerves kopiju, tās tiek automātiski apliecinātas.",
     "continueText": "Turpināt",
-    "welcomeText": "Sveicieni! 👋 Šis ir VOX. Tu vari pieteikties jebkurā mājasserverī, kas ir saderīgs ar https://matrix.org. Tad vari tērzēt ar ikvienu. Tas ir milzīgs decentralizētās saziņas tīkls.",
+    "welcomeText": "Sveicieni! 👋 Šis ir VoxOne. Tu vari pieteikties jebkurā mājasserverī, kas ir saderīgs ar https://matrix.org. Tad vari tērzēt ar ikvienu. Tas ir milzīgs decentralizētās saziņas tīkls.",
     "blur": "Aizmiglojums:",
     "setWallpaper": "Iestatīt ekrāntapeti",
     "opacity": "Necaurredzamība:",
@@ -2756,7 +2756,7 @@
     "theProcessWasCanceled": "Darbība tika atcelta.",
     "signIn": "Pieteikties",
     "createNewAccount": "Izveidot jaunu kontu",
-    "signUpGreeting": "VOX ir decentralizēta. Jāatlasa serveris, kurā ir vēlēšanās izveidot savu kontu, un aiziet!",
+    "signUpGreeting": "VoxOne ir decentralizēta. Jāatlasa serveris, kurā ir vēlēšanās izveidot savu kontu, un aiziet!",
     "signInGreeting": "Jau ir Matrix konts? Laipni lūdzam atpakaļ! Jāatlasa savs mājasserveris un jāpiesakās.",
-    "appIntro": "Ar VOX vari tērzēt ar saviem draugiem. Tā ir droša un decentralizēta [matrix] ziņapmaiņas lietotne. Vairāk var uzzināt https://matrix.org, ja ir vēlēšanās, vai vienkārši jāpiesakās."
+    "appIntro": "Ar VoxOne vari tērzēt ar saviem draugiem. Tā ir droša un decentralizēta [matrix] ziņapmaiņas lietotne. Vairāk var uzzināt https://matrix.org, ja ir vēlēšanās, vai vienkārši jāpiesakās."
 }

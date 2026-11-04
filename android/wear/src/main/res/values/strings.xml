@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="app_name">VOX</string>
+    <string name="app_name">VoxOne</string>
     <string name="rooms_title">Conversations</string>
     <string name="favorites_section">Favoris</string>
     <string name="recents_section">Récents</string>

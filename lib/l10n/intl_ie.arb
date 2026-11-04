@@ -938,7 +938,7 @@
   },
   "homeserver": "Hem-servitor",
   "@homeserver": {},
-  "fluffychat": "VOX",
+  "fluffychat": "VoxOne",
   "@fluffychat": {
     "type": "String",
     "placeholders": {}
@@ -969,7 +969,7 @@
     "type": "String",
     "placeholders": {}
   },
-  "title": "VOX",
+  "title": "VoxOne",
   "@title": {
     "description": "Title for the application",
     "type": "String",

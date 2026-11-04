@@ -79,10 +79,10 @@ class _BackfillSheet extends StatelessWidget {
                 ),
                 const SizedBox(height: 12),
                 Text(
-                  "VOX parcourt l'historique de chaque conversation Matrix et "
+                  "VoxOne parcourt l'historique de chaque conversation Matrix et "
                   'chaque fil SMS/MMS, télécharge les images et vidéos reçues, '
                   'puis les copie dans la galerie Android (Pictures/VOX, '
-                  'Movies/VOX). Immich les récupère ensuite. Garde VOX au '
+                  'Movies/VOX). Immich les récupère ensuite. Garde VoxOne au '
                   'premier plan le temps du premier passage.',
                   style: theme.textTheme.bodyMedium,
                 ),
@@ -101,8 +101,9 @@ class _BackfillSheet extends StatelessWidget {
                   const SizedBox(height: 8),
                   Text(
                     progress.error!,
-                    style: theme.textTheme.bodySmall
-                        ?.copyWith(color: theme.colorScheme.error),
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      color: theme.colorScheme.error,
+                    ),
                   ),
                 ],
                 const SizedBox(height: 20),

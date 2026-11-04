@@ -668,7 +668,7 @@
         "type": "String",
         "placeholders": {}
     },
-    "fluffychat": "VOX",
+    "fluffychat": "VoxOne",
     "@fluffychat": {
         "type": "String",
         "placeholders": {}
@@ -800,7 +800,7 @@
         "type": "String",
         "placeholders": {}
     },
-    "inviteText": "{username} zaprosił/-a Cię do VOX.\n1. Odwiedź fluffychat.im i zainstaluj aplikację\n2. Zarejestuj się lub zaloguj\n3. Otwórz link zaproszenia:\n{link}",
+    "inviteText": "{username} zaprosił/-a Cię do VoxOne.\n1. Odwiedź fluffychat.im i zainstaluj aplikację\n2. Zarejestuj się lub zaloguj\n3. Otwórz link zaproszenia:\n{link}",
     "@inviteText": {
         "type": "String",
         "placeholders": {
@@ -947,7 +947,7 @@
         "type": "String",
         "placeholders": {}
     },
-    "newMessageInFluffyChat": "💬 Nowa wiadomość we VOX",
+    "newMessageInFluffyChat": "💬 Nowa wiadomość we VoxOne",
     "@newMessageInFluffyChat": {
         "type": "String",
         "placeholders": {}
@@ -1252,7 +1252,7 @@
         "type": "String",
         "placeholders": {}
     },
-    "title": "VOX",
+    "title": "VoxOne",
     "@title": {
         "description": "Title for the application",
         "type": "String",
@@ -2100,7 +2100,7 @@
     "storeInAppleKeyChain": "Przechowaj w pęku kluczy Apple",
     "storeSecurlyOnThisDevice": "Przechowaj bezpiecznie na tym urządzeniu",
     "foregroundServiceRunning": "To powiadomienie pojawia się, gdy usługa w tle jest uruchomiona.",
-    "screenSharingDetail": "Udostępniasz swój ekran w VOX",
+    "screenSharingDetail": "Udostępniasz swój ekran w VoxOne",
     "@screenSharingDetail": {},
     "whyIsThisMessageEncrypted": "Dlaczego nie można odczytać tej wiadomości?",
     "@whyIsThisMessageEncrypted": {},
@@ -2383,7 +2383,7 @@
             }
         }
     },
-    "welcomeText": "No cześć! 👋 Tutaj VOX. Możesz zapisać się do dowolnego serwera domowego, kompatybilnego z https://matrix.org i rozmawiać ze wszystkimi. To duża zdecentralizowana sieć czatów!",
+    "welcomeText": "No cześć! 👋 Tutaj VoxOne. Możesz zapisać się do dowolnego serwera domowego, kompatybilnego z https://matrix.org i rozmawiać ze wszystkimi. To duża zdecentralizowana sieć czatów!",
     "blur": "Rozmazanie:",
     "opacity": "Przezroczystość:",
     "setWallpaper": "Ustaw tapetę",

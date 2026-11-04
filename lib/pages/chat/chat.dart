@@ -1526,7 +1526,7 @@ class ChatController extends State<ChatPageWithRoom>
         await showOkAlertDialog(
           context: context,
           title: L10n.of(context).warning,
-          message: "Le micro est refuse. VOX ne peut pas passer d appel sans "
+          message: "Le micro est refuse. VoxOne ne peut pas passer d appel sans "
               "micro — accorde la permission dans les reglages du systeme.",
           okLabel: L10n.of(context).close,
         );
