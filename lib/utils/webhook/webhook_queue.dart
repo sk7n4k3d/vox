@@ -167,14 +167,19 @@ class WebhookQueue {
         msg.contains('would block');
   }
 
-  Future<void> _acquireLock(File queueFile) async {
-    if (!_wantsLock || _lockHandle != null || _lockUnsupported) return;
+  /// Retourne `true` seulement si CET appel vient de faire la bascule
+  /// « sans verrou -> verrou tenu » : c est le seul événement qui autorise
+  /// un rechargement (revue 7edef530, MEDIUM — sans ce signal, deux
+  /// appelants d une même reprise faisaient deux _loadOnce parallèles).
+  Future<bool> _acquireLock(File queueFile) async {
+    if (!_wantsLock || _lockHandle != null || _lockUnsupported) return false;
     try {
       final raf = File('${queueFile.path}.lock').openSync(mode: FileMode.write);
       try {
         raf.lockSync(FileLock.exclusive);
         _lockHandle = raf;
         _lockedByPeer = false;
+        return true;
       } on FileSystemException catch (e) {
         await raf.close();
         if (_isLockConflict(e)) {
@@ -185,6 +190,7 @@ class WebhookQueue {
             'cette instance est en retrait (réessai à chaque passe, elle '
             'reprendra la main quand le pair partira)',
           );
+          return false;
         } else {
           // verrou impossible mais pas de pair connu : continuer sans
           // verrou, hypothèse mono-processus + avertir l'UI — la garantie
@@ -199,11 +205,13 @@ class WebhookQueue {
             'WebhookQueue: verrou inter-processus indisponible ($reason) — '
             'poursuite sans verrou (mono-processus supposé)',
           );
+          return false;
         }
       } catch (_) {
         _lockUnsupported = true;
         _lockedByPeer = false;
         _tick();
+        return false;
       }
     } catch (_) {
       // ouverture du fichier de verrou impossible (répertoire plein ou en
@@ -212,6 +220,7 @@ class WebhookQueue {
       _lockUnsupported = true;
       _lockedByPeer = false;
       _tick();
+      return false;
     }
   }
 
@@ -219,15 +228,35 @@ class WebhookQueue {
   /// chaque ajout. Sans elle, une instance mise en retrait par un pair le
   /// restait jusqu au redémarrage de l app, perdant chaque message pendant
   /// ce temps (finding 3, sonde H4b : pair tué, add toujours false).
-  Future<void> _refreshLock() async {
-    if (!_wantsLock || _lockUnsupported || _lockHandle != null) return;
-    if (!_lockedByPeer) return;
+  /// Transition de verrou UNIQUE : si une reprise est déjà en vol, tout
+  /// autre appelant attend cette même transition au lieu d en démarrer une
+  /// seconde (revue 7edef530, MEDIUM — deux transitionneurs parallèles
+  /// annulaient la mémo de charge de l autre en vol : deux _loadOnce,
+  /// mémoire doublée, doublons persistés, double livraison au boot).
+  Future<void>? _lockTransition;
+
+  Future<void> _refreshLock() {
+    if (!_wantsLock || _lockUnsupported || _lockHandle != null) {
+      return Future.value();
+    }
+    if (!_lockedByPeer) return Future.value();
+    final running = _lockTransition;
+    if (running != null) return running;
+    late final Future<void> transition;
+    transition = _refreshLockInner().whenComplete(() {
+      if (identical(_lockTransition, transition)) _lockTransition = null;
+    });
+    _lockTransition = transition;
+    return transition;
+  }
+
+  Future<void> _refreshLockInner() async {
     try {
       final file = await _queueFile();
-      await _acquireLock(file);
-      if (!_lockedByPeer) {
-        // le pair est parti : cette instance devient détentrice et doit
-        // charger l état (le retrait précédent n a rien lu)
+      final acquired = await _acquireLock(file);
+      if (acquired) {
+        // le pair est parti et C EST CET appel qui a pris le verrou : lui
+        // seul devient chargeur (le retrait précédent n a rien lu)
         _loadFuture = null;
         await _ensureLoaded();
         _tick();
@@ -390,12 +419,33 @@ class WebhookQueue {
     late final Future<void> started;
     started = _loadOnce().catchError((Object _) {
       // erreur inattendue : relâche la mémo pour que le prochain appel
-      // retente, sinon une seule panne empoisonnerait la file à jamais
+      // retente, sinon une seule panne empoisonnerait la file à jamais.
+      // Et l état est explicitement inconnu — pas de reprise « comme si
+      // c était chargé » : ni écriture (persist/add, déjà gardés), ni envoi
+      // (flush, gate _unreadable) tant qu une relecture n a pas réussi
+      // (revue 7edef530, LOW-1)
       if (identical(_loadFuture, started)) _loadFuture = null;
+      _unreadable = true;
+      try {
+        _tick();
+      } catch (_) {}
     });
     _loadFuture = started;
     return started;
   }
+
+  /// FAUTE D'INJECTION (test uniquement) : la prochaine charge lèvera à son
+  /// point de fin, après la notification — l'état d'une charge qui échoue
+  /// est par construction inconnu, ce ne sont pas les Octets qui manquent
+  /// mais la garantie qu'aucune étape n'a été sautée. Sert à tester le
+  /// wrapper de [_ensureLoaded] (revue 7edef530, LOW-1) : sans ce seam, la
+  /// voie d'échappement n'est pas armable depuis un test — notifyListeners
+  /// avale les exceptions de listeners, et tout l'I/O est déjà sous catch.
+  Object? _debugLoadFault;
+
+  @visibleForTesting
+  void debugFailNextLoad([Object? error]) =>
+      _debugLoadFault = error ?? StateError('faute de charge injectée');
 
   Future<void> _loadOnce() async {
     // chargement sur table rasée : le seul rechargement possible vient de la
@@ -463,6 +513,10 @@ class WebhookQueue {
         mainMissing: !await file.exists(),
         watermark: watermark,
       );
+      // lecture complète réussie = le fichier est désormais connu : efface
+      // l état « charge inconnue » qu un échappement antérieur aurait posé
+      // (sans cette ligne, un accident passé condamnerait la session à vie)
+      _unreadable = false;
     } catch (e) {
       _unreadable = true;
       _tick();
@@ -482,6 +536,11 @@ class WebhookQueue {
     // invalides découverts, un sursaturage, une récupération : la page déjà
     // ouverte doit les voir sans qu'un autre événement ne force un tick.
     _tick();
+    final fault = _debugLoadFault;
+    if (fault != null) {
+      _debugLoadFault = null;
+      throw fault;
+    }
   }
 
   /// Union par corps : les événements d'un `.part` décodable absents de la
@@ -1391,6 +1450,12 @@ class WebhookQueue {
     await _ensureLoaded();
     await _refreshLock();
     if (_lockedByPeer || _items.isEmpty) return;
+    if (_unreadable) {
+      // envoyer depuis une charge inconnue, puis retirer de la mémoire sur
+      // succès sans pouvoir réécrire le fichier, est exactement la voie de
+      // perte que le mandat ferme (revue 7edef530, LOW-1)
+      return;
+    }
     if (AppSettings.webhookWifiOnly.value &&
         !await SmsBridge.instance.isOnWifi()) {
       return;

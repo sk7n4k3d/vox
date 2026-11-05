@@ -267,4 +267,150 @@ void main() {
       reason: 'le refus est visible (« rebuté(s) »), pas avalé',
     );
   }, timeout: const Timeout(Duration(seconds: 120)));
+
+  test('X5 (contrat, revue 7edef530 MEDIUM) : reprise du verrou sous deux '
+      'add() simultanés = UN SEUL transitionneur — pas de double chargement '
+      'parallèle, donc jamais de doublons persistés ni de double livraison '
+      '(mesure de l audit avec pair fcntl externe : loads=3, fichier '
+      '[g1,g1,g2,g2,x1,x2])', () async {
+    final lock = File('${appDir.path}/webhook_queue.json.lock')..createSync();
+    const script =
+        'import fcntl, sys, time\n'
+        'fd = open(sys.argv[1], "a+")\n'
+        'fcntl.lockf(fd, fcntl.LOCK_EX)\n'
+        'print("LOCKED", flush = True)\n'
+        'time.sleep(120)\n';
+    final holder = await Process.start('python3', ['-c', script, lock.path]);
+    final first = await holder.stdout.transform(const Utf8Decoder()).first;
+    expect(first, contains('LOCKED'));
+    addTearDown(() {
+      try {
+        holder.kill(ProcessSignal.sigkill);
+      } catch (_) {}
+    });
+    queueFile().writeAsStringSync(jsonEncode(<Object?>[item('graine|sms')]));
+    final q = WebhookQueue.forTest(
+      postRaw: (_) async => false,
+      desktopLock: true,
+    );
+    addTearDown(q.stop);
+    await q.flush(force: true); // pair vivant -> retrait
+    expect(q.saveDisabled, isTrue);
+
+    holder.kill(ProcessSignal.sigkill);
+    await holder.exitCode.timeout(const Duration(seconds: 5));
+    await Future<void>.delayed(const Duration(milliseconds: 50));
+
+    // les deux adds passent le garde de _refreshLock DANS LE MÊME TICK :
+    // la reprise ne doit être tentée qu une fois, par un seul
+    // transitionneur
+    final results = await Future.wait([q.add('x1|sms'), q.add('x2|sms')]);
+    expect(results, [true, true]);
+    expect(
+      q.length,
+      3,
+      reason:
+          'deux _loadOnce parallèles se foulaient la table rasée et '
+          'réinjetaient la graine deux fois : memory=6 mesuré',
+    );
+    final bodies = bodiesOnDisk();
+    expect(
+      bodies.toSet().length,
+      bodies.length,
+      reason: 'aucun doublon sur le disque : $bodies',
+    );
+    expect(bodies, containsAll(<String>['graine|sms', 'x1|sms', 'x2|sms']));
+
+    // et le boot suivant livre exactement une fois chacun
+    final posted = <String>[];
+    final reboot = WebhookQueue.forTest(
+      postRaw: (b) async {
+        posted.add(b);
+        return true;
+      },
+    );
+    addTearDown(reboot.stop);
+    await reboot.flush(force: true);
+    expect(
+      posted.toSet().length,
+      posted.length,
+      reason: 'double livraison au boot : $posted',
+    );
+  }, timeout: const Timeout(Duration(seconds: 120)));
+  test(
+    'X4d (contrat, revue 7edef530 LOW-1) : faute échappée de la charge '
+    '(injectée au seam debugFailNextLoad, levée là où une exception réelle '
+    'échapperait) — la charge devient officiellement inconnue : ni envoi ni '
+    'écriture dessus ; le prochain appel recharge le contenu réel du disque',
+    () async {
+      final posted = <String>[];
+      queueFile().writeAsStringSync(jsonEncode(<Object?>[item('g1|sms')]));
+      final q = WebhookQueue.forTest(
+        postRaw: (b) async {
+          posted.add(b);
+          return true;
+        },
+      );
+      addTearDown(q.stop);
+      // témoin : lit saveDisabled AU MOMENT de la notification, donc pendant
+      // que le wrapper vient de poser l état inconnu
+      var vuBlocage = false;
+      q.uiTick.addListener(() {
+        if (q.saveDisabled) vuBlocage = true;
+      });
+      q.debugFailNextLoad();
+      await q.flush(force: true); // load -> faute échappée
+
+      expect(
+        vuBlocage,
+        isTrue,
+        reason:
+            'la charge inconnue doit être POSÉE et NOTIFIÉE, pas avalée : '
+            'avant le correctif les appelants repartaient « comme si c '
+            'était chargé » (mesure revue : add=true saveDisabled=false, '
+            'écrasement sans copie)',
+      );
+      expect(
+        posted,
+        isEmpty,
+        reason:
+            'g1 dormait dans une mémoire issue d une charge inconnue : la '
+            'poster puis la retirer sans pouvoir réécrire le fichier est '
+            'une voie de perte',
+      );
+
+      // le disque change de mains pendant le blackout : seule une vraie
+      // relecture peut le voir — et écrire sans écraser
+      queueFile().deleteSync();
+      queueFile().writeAsStringSync(jsonEncode(<Object?>[item('g2|sms')]));
+      expect(await q.add('nouveau|sms'), isTrue);
+      expect(
+        q.saveDisabled,
+        isFalse,
+        reason:
+            'une relecture + écriture saines effacent l état inconnu — sinon '
+            'un accident unique condamnerait la session à vie',
+      );
+      expect(
+        queueFile().readAsStringSync(),
+        contains('g2|sms'),
+        reason:
+            'la retente a RECHARGÉ avant d écrire : la mémo était bien '
+            'relâchée',
+      );
+      await q.flush(force: true);
+      expect(
+        posted,
+        containsAll(<String>['g2|sms', 'nouveau|sms']),
+        reason: 'la reprise livre le contenu réel du disque',
+      );
+      expect(
+        posted,
+        isNot(contains('g1|sms')),
+        reason:
+            'rien de fantôme : g1 n était plus sur le disque au rechargement',
+      );
+    },
+    timeout: const Timeout(Duration(seconds: 120)),
+  );
 }
