@@ -167,6 +167,16 @@ class WebhookQueue {
         msg.contains('would block');
   }
 
+  /// Fenêtre de recharge : de la bascule « sans verrou -> verrou tenu »
+  /// jusqu'à ce que le fichier principal ait été relu, CETTE instance ne
+  /// sait rien de ce qui est sur le disque. Un appelant qui tenait déjà la
+  /// permission d'écrire (mémo de la charge « en retrait », déjà résolue)
+  /// pourrait renommer sa table partielle par-dessus des octets jamais lus
+  /// (revue ab0a82b4, HIGH / sondes BTP6-BTP10 : graine du disque perdue,
+  /// `add` pourtant honnête). Le garde sur le renommage est ce qui ferme :
+  /// la bascule atomique seule et l attente seule laissaient 10/10 pertes.
+  bool _reloadInFlight = false;
+
   /// Retourne `true` seulement si CET appel vient de faire la bascule
   /// « sans verrou -> verrou tenu » : c est le seul événement qui autorise
   /// un rechargement (revue 7edef530, MEDIUM — sans ce signal, deux
@@ -177,8 +187,18 @@ class WebhookQueue {
       final raf = File('${queueFile.path}.lock').openSync(mode: FileMode.write);
       try {
         raf.lockSync(FileLock.exclusive);
+        final etaitEnRetrait = _lockedByPeer;
         _lockHandle = raf;
         _lockedByPeer = false;
+        if (etaitEnRetrait) {
+          // bascule + drapeau + invalidation de la mémo + recharge démarrée
+          // dans le MÊME bloc synchrone : dès que le verrou est à nous,
+          // plus personne ne peut observer « verrou tenu, table fiable »
+          // ni écrire sur la mémo périmée de la charge en retrait
+          _reloadInFlight = true;
+          _loadFuture = null;
+          _ensureLoaded();
+        }
         return true;
       } on FileSystemException catch (e) {
         await raf.close();
@@ -255,9 +275,10 @@ class WebhookQueue {
       final file = await _queueFile();
       final acquired = await _acquireLock(file);
       if (acquired) {
-        // le pair est parti et C EST CET appel qui a pris le verrou : lui
-        // seul devient chargeur (le retrait précédent n a rien lu)
-        _loadFuture = null;
+        // le pair est parti et C EST CET appel qui a pris le verrou : la
+        // recharge a été mémoïsée à la bascule même (dans _acquireLock) —
+        // l invalider ici rouvrirait la fenêtre d un cheveu entre le
+        // null et le nouveau null : on attend juste la Future posée
         await _ensureLoaded();
         _tick();
       }
@@ -464,6 +485,7 @@ class WebhookQueue {
       if (_lockedByPeer) {
         // état laissée tel quel par l'instance détentrice : ni lecture
         // (obsolète sitôt), ni écriture (écrasement), ni envoi (double)
+        _reloadInFlight = false;
         _tick();
         return;
       }
@@ -489,6 +511,10 @@ class WebhookQueue {
           }
         }
       }
+      // LA LECTURE DU FICHIER PRINCIPAL EST FAITE : la table mémoire vaut
+      // désormais ce que vaut le disque — la fenêtre est fermée (l adoption
+      // des .part qui suit ne peut qu ADDITIONNER, jamais masquer)
+      _reloadInFlight = false;
       // File héritée déjà hors budget (builds antérieures sans plafond) :
       // on la charge INTÉGRALEMENT. Purger ici détruirait des événements non
       // envoyés (audit e98bb2a8, PROBE-3). Elle est marquée « sursaturée » :
@@ -519,6 +545,9 @@ class WebhookQueue {
       _unreadable = false;
     } catch (e) {
       _unreadable = true;
+      _reloadInFlight = false; // lecture finie (ratée) : plus de fenêtre,
+      // l état inconnu est désormais porté par _unreadable, qui garde tout
+      // (persist, add, flush) aussi sûrement
       _tick();
       debugPrint('WebhookQueue: fichier de file illisible, préservé: $e');
       // Un fichier principal illisible ne condamne pas la session si un
@@ -881,6 +910,15 @@ class WebhookQueue {
   /// (audit 3ca417b0, F1).
   Future<bool> _writeSnapshot(int seq) async {
     if (_unreadable || _lockedByPeer) return false;
+    if (_reloadInFlight) {
+      // la relecture de bascule n a pas encore vu le fichier : renommer
+      // écraserait des octets jamais lus. Report, pas une perte : la
+      // mémoire garde tout et l appelant (add) réécrit dès la lecture
+      // finie — le garde sur le RENAME est la pièce qui ferme réellement
+      // la fenêtre (mesure revue ab0a82b4 : sans lui, 10/10 pertes)
+      debugPrint('WebhookQueue: écriture reportée — relecture en cours');
+      return false;
+    }
     if (seq < _persistedSeq) {
       // Ne peut arriver qu'avec deux file d écritures (défensif : la chaîne
       // les sérialise déjà). Un instantané plus vieux que ce qui est déjà sur
@@ -995,6 +1033,12 @@ class WebhookQueue {
       // que les versions précédentes re-qualifiaient de corrompu (F7).
       return _reject(0, 'corps vide refusé');
     }
+    if (_reloadInFlight) {
+      // même promise par la mémo partagée du boot : la permission d'écrire
+      // n'existe qu'une fois la relecture de bascule terminée (revue
+      // ab0a82b4 — l attente ici + le garde du rename ferment la fenêtre)
+      await _ensureLoaded();
+    }
     if (_unreadable) {
       // F3 (audit 557ca0bb) : tant que le fichier principal est une épave,
       // AUCUNE écriture n'est possible — promettre `true` enverrait
@@ -1056,7 +1100,21 @@ class WebhookQueue {
       ),
     );
     pending.value = _activeCount();
-    await _persist();
+    var wrote = await _persist();
+    if (!wrote && _reloadInFlight) {
+      // le renommage a été REPORTÉ par la fenêtre de recharge : l octet
+      // est en mémoire mais pas encore sur le disque — attendre la lecture
+      // et réécrire, sinon add aurait promis « vrai » sur rien
+      await _ensureLoaded();
+      wrote = await _persist();
+    }
+    if (!wrote && _reloadInFlight) {
+      // toujours en fenêtre (recharge toujours en vol côté transitionneur) :
+      // dernier repli honnête — sauvegarde officiellement coupée, le
+      // prochain persist réussi effacera l indicateur
+      _lastPersistFailed = true;
+      _tick();
+    }
     if (_autoStart) start();
     return true;
   }
@@ -1177,6 +1235,9 @@ class WebhookQueue {
   /// les rotations sont un patrimoine commun entre instances.
   Future<int> purgeCopies() => _serialized(() async {
     await _ensureLoaded();
+    if (_reloadInFlight) {
+      await _ensureLoaded();
+    }
     if (_lockedByPeer) {
       WebhookService.instance.recordQueueReject(
         'autre instance détient la file : purge des copies reportée',
@@ -1285,6 +1346,9 @@ class WebhookQueue {
 
   Future<int> _archiveSuspendedInner() async {
     await _ensureLoaded();
+    if (_reloadInFlight) {
+      await _ensureLoaded();
+    }
     if (_lockedByPeer) {
       // même raison que clear() : ne pas manœuvrer les archives du pair
       WebhookService.instance.recordQueueReject(
@@ -1375,6 +1439,11 @@ class WebhookQueue {
   /// (audit 557ca0bb, F5 : un tap ne doit pas être irréversible sans trace).
   Future<void> clear() async {
     await _ensureLoaded();
+    if (_reloadInFlight) {
+      // vider pendant que la table se recharge effacerait une mémoire qui
+      // ne connaît pas encore le disque : attendre la lecture
+      await _ensureLoaded();
+    }
     if (_lockedByPeer) {
       // l'instance en retrait ne doit pas pousser les rotations « avant-
       // vidage » du fichier que le pair détient ni toucher à son état
@@ -1449,6 +1518,11 @@ class WebhookQueue {
   Future<void> _flushInner({required bool force}) async {
     await _ensureLoaded();
     await _refreshLock();
+    if (_reloadInFlight) {
+      // ne poster aucun corps pendant que la table se recharge : ce qu il
+      // reste de mémoire périmée pourrait partir en double, ou rien du tout
+      await _ensureLoaded();
+    }
     if (_lockedByPeer || _items.isEmpty) return;
     if (_unreadable) {
       // envoyer depuis une charge inconnue, puis retirer de la mémoire sur
