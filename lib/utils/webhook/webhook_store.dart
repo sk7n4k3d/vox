@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -14,20 +15,31 @@ class WebhookStore {
   static const String _smsThreadsKey = 'chat.fluffy.webhook_sms_threads';
   static const String _smsExcludedKey = 'chat.fluffy.webhook_sms_excluded';
 
-  Future<String> loadSecret() async {
+  /// null = stockage sécurisé en panne (Keystore illisible) ; `''` = aucun
+  /// secret réellement choisi. Cette distinction est essentielle (audit
+  /// 557ca0bb, F10) : l'ancien repli silencieux sur `''` faisait partir les
+  /// événements NON SIGNÉS sans compteur ni ligne UI.
+  Future<String?> loadSecretOrFailure() async {
     try {
       return await const FlutterSecureStorage().read(key: _secretKey) ?? '';
-    } catch (_) {
-      return '';
+    } catch (e) {
+      debugPrint('WebhookStore: secret illisible (panne secure storage): $e');
+      return null;
     }
   }
+
+  /// Vue « affichage » : une panne vaut secret vide pour remplir le champ.
+  Future<String> loadSecret() async => await loadSecretOrFailure() ?? '';
 
   Future<void> saveSecret(String secret) async {
     try {
       if (secret.isEmpty) {
         await const FlutterSecureStorage().delete(key: _secretKey);
       } else {
-        await const FlutterSecureStorage().write(key: _secretKey, value: secret);
+        await const FlutterSecureStorage().write(
+          key: _secretKey,
+          value: secret,
+        );
       }
     } catch (_) {}
   }

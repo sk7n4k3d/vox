@@ -111,3 +111,18 @@ To enhance user safety and help protect against the sexual abuse and exploitatio
 In addition to reporting messages, users can also report other users following a similar process.
 
 We encourage server administrators to adhere to strict safety standards and provide mechanisms for addressing and moderating inappropriate content. For more information on the Matrix protocol and its safety standards, please refer to the following link: https://matrix.org/docs/older/moderation/
+
+## Webhook mirror queue (Vox)
+
+When the webhook mirror is enabled, each message, call log entry or media
+pushed to the configured HTTPS endpoint is also kept on the device until the
+target server acknowledges it: `webhook_queue.json` in the app support
+directory, plus bounded rotating safety copies (`.corrompu.N`,
+`.avant-vidage.N`) and an explicit archive (`webhook_queue.archive.json`).
+These files contain message payloads in clear text, protected on Android by
+the app sandbox and file-based encryption; on desktop builds the queue file is
+created with owner-only (0600) permissions. Sending over plain `http://` is
+refused by default — it requires an explicit user toggle meant for LAN test
+servers only. The queue is drained by successful delivery or cleared by the
+user; expired or repeatedly-failed events are suspended (kept, never resent)
+rather than deleted.

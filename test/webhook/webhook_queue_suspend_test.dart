@@ -289,7 +289,7 @@ void main() {
             'ne supprime ni n invente ce qu elle ne lit pas',
       );
       expect(
-        after.where((e) => e is Map).map((e) => (e as Map)['attempts']),
+        after.whereType<Map>().map((e) => e['attempts']),
         contains(1),
         reason: 'le JSON valide mais incomplet est lui aussi préservé',
       );

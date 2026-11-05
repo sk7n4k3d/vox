@@ -193,11 +193,42 @@ class WebhookService {
   /// @return true si le serveur a répondu 2xx.
   Future<bool> postRaw(String rawBody) async {
     final uri = Uri.tryParse(AppSettings.webhookUrl.value.trim());
-    if (uri == null || !uri.hasScheme) return false;
+    if (uri == null || !uri.hasScheme || !uri.hasAuthority) {
+      const reason = 'URL webhook vide ou mal formée : envoi refusé';
+      stats.value = stats.value.failed1(reason);
+      debugPrint('WebhookService: $reason');
+      return false;
+    }
+    // F9 (audit 557ca0bb) : sans TLS, corps des messages, journal d'appels,
+    // médias base64 ET en-tête signé partent en clair. HTTPS par défaut ;
+    // un réglage explicite autorise http:// (usage LAN de test), avec son
+    // avertissement dans l'UI. Tout autre schéma (file://, ftp://…) est
+    // refusé pareil : il levait dans send et coûtait une suspension.
+    final allowHttp = AppSettings.webhookAllowInsecureHttp.value;
+    if (uri.scheme != 'https' && !(allowHttp && uri.scheme == 'http')) {
+      final reason =
+          'schéma « ${uri.scheme}:// » refusé : HTTPS requis pour pousser '
+          'messages et signature (active « autoriser HTTP » dans les '
+          'réglages si le serveur de test est en LAN)';
+      stats.value = stats.value.failed1(reason);
+      debugPrint('WebhookService: $reason');
+      return false;
+    }
 
     final timestamp = (DateTime.now().millisecondsSinceEpoch ~/ 1000)
         .toString();
-    final secret = await WebhookStore.instance.loadSecret();
+    final secret = await WebhookStore.instance.loadSecretOrFailure();
+    if (secret == null) {
+      // F10 : panne Keystore ≠ secret vide. Plutôt que partir non signés
+      // (et falsifiables par n'importe qui si Hermes les accepte), les
+      // événements sont refusés, comptés, et retomberont en file.
+      const reason =
+          'secret de signature illisible (panne secure storage) : envoi '
+          'refusé plutôt que non signé';
+      stats.value = stats.value.failed1(reason);
+      debugPrint('WebhookService: $reason');
+      return false;
+    }
 
     final headers = <String, String>{
       'Content-Type': 'application/json',

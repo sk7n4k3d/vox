@@ -54,6 +54,14 @@ enum AppSettings<T> {
   // tentatives, délai de base (doublé à chaque échec), durée de vie, et
   // « n'envoyer qu'en Wi-Fi ».
   webhookRetryEnabled<bool>('chat.fluffy.webhook_retry_enabled', true),
+  // HTTP en clair explicitement autorisé (serveur de test en LAN). Par
+  // défaut false : sans TLS, corps, médias et en-tête signé partent à nu
+  // (audit 557ca0bb, F9). Les configurations existantes en https:// ne
+  // changent de comportement en rien.
+  webhookAllowInsecureHttp<bool>(
+    'chat.fluffy.webhook_allow_insecure_http',
+    false,
+  ),
   webhookRetryAttempts<int>('chat.fluffy.webhook_retry_attempts', 5),
   webhookRetryBackoffS<int>('chat.fluffy.webhook_retry_backoff_s', 60),
   webhookRetryTtlH<int>('chat.fluffy.webhook_retry_ttl_h', 24),
@@ -128,14 +136,8 @@ enum AppSettings<T> {
   // Use biometric (fingerprint/face) to unlock the app lock when available.
   appLockBiometric<bool>('chat.fluffy.app_lock_biometric', true),
   // SMS notifications (read natively by SmsNotifier via FlutterSharedPreferences).
-  smsNotificationsEnabled<bool>(
-    'chat.fluffy.sms_notifications_enabled',
-    true,
-  ),
-  smsNotificationsPreview<bool>(
-    'chat.fluffy.sms_notifications_preview',
-    true,
-  ),
+  smsNotificationsEnabled<bool>('chat.fluffy.sms_notifications_enabled', true),
+  smsNotificationsPreview<bool>('chat.fluffy.sms_notifications_preview', true),
   smsNotificationsSound<bool>('chat.fluffy.sms_notifications_sound', true),
   // Assistance IA — client LLM OpenAI-compatible (endpoint, clé, modèle).
   llmEnabled<bool>('chat.fluffy.llm_enabled', false),

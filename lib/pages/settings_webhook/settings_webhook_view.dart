@@ -71,6 +71,47 @@ class SettingsWebhookView extends StatelessWidget {
                       onChanged: controller.onUrlChanged,
                     ),
                   ),
+                  // F9 (audit 557ca0bb) : http:// = corps, médias et
+                  // signature en clair sur le réseau. Refusé à l'envoi par
+                  // défaut ; la case ci-dessous est la seule voie explicite
+                  // (serveur de test en LAN).
+                  if (controller.urlIsInsecure)
+                    Padding(
+                      padding: const EdgeInsets.only(top: FluffySpacing.sm),
+                      child: Row(
+                        children: [
+                          Icon(
+                            Icons.gpp_maybe_outlined,
+                            size: 16,
+                            color: theme.colorScheme.error,
+                          ),
+                          const SizedBox(width: 4),
+                          Expanded(
+                            child: Text(
+                              'URL en http:// : les messages, médias et la '
+                              'signature partiraient non chiffrés — les '
+                              'envois sont refusés tant que cette URL est '
+                              'active.',
+                              style: theme.textTheme.bodySmall?.copyWith(
+                                color: theme.colorScheme.error,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  CheckboxListTile.adaptive(
+                    dense: true,
+                    contentPadding: EdgeInsets.zero,
+                    value: controller.allowInsecureHttp,
+                    title: const Text('Autoriser HTTP (non chiffré)'),
+                    subtitle: const Text(
+                      'Réservé au serveur de test sur le réseau local : sans '
+                      'TLS, tout le contenu webhook circule à nu.',
+                    ),
+                    onChanged: (v) =>
+                        controller.onAllowInsecureHttpChanged(v ?? false),
+                  ),
                   const SizedBox(height: FluffySpacing.lg),
                   const _FieldLabel('Secret HMAC'),
                   CyberField(
@@ -226,9 +267,17 @@ class SettingsWebhookView extends StatelessWidget {
                                   : '$count envoi(s) en attente'
                                         '${suspended > 0 ? ' · $suspended en suspens (conservé(s), non renvoyé(s))' : ''}'
                                         '${invalid > 0 ? ' · $invalid élément(s) corrompu(s) préservé(s)' : ''}'
-                                        '${queue.overBudget ? ' · file au-dessus du budget : réessais normaux, nouveaux envois suspendus' : ''}',
+                                        '${queue.overBudget ? ' · file au-dessus du budget : réessais normaux, nouveaux envois suspendus' : ''}'
+                                        '${queue.recoveredCount > 0 ? ' · ${queue.recoveredCount} événement(s) récupéré(s) '
+                                                  'après un arrêt brutal' : ''}'
+                                        '${queue.persistErrorCount > 0 ? ' · ${queue.persistErrorCount} écriture(s) en échec '
+                                                  '(nouvel essai automatique)' : ''}'
+                                        '${queue.saveDisabled ? ' · SAUVEGARDE DÉSACTIVÉE : fichier de file illisible ou '
+                                                  'déjà détenu par une autre instance' : ''}',
                               style: theme.textTheme.bodySmall?.copyWith(
-                                color: theme.colorScheme.onSurfaceVariant,
+                                color: queue.saveDisabled
+                                    ? theme.colorScheme.error
+                                    : theme.colorScheme.onSurfaceVariant,
                               ),
                             ),
                           ),
@@ -241,14 +290,26 @@ class SettingsWebhookView extends StatelessWidget {
                             onPressed: controller.flushQueue,
                             child: const Text('Réessayer'),
                           ),
+                          if (suspended + invalid > 0)
+                            TextButton(
+                              // F2 (audit 557ca0bb) : sortie praticable sans
+                              // destruction — les poids morts quittent la
+                              // file vivante (libère le budget) mais restent
+                              // sur le disque dans le fichier archive.
+                              onPressed: controller.archiveQueue,
+                              child: const Text('Archiver'),
+                            ),
                           TextButton(
-                            // « Vider » reste disponible tant que le fichier
-                            // porte quoi que ce soit — suspendus et
-                            // corrompus inclus : clear() est la seule voie
-                            // explicite qui les supprime.
+                            // « Vider » est la seule voie de destruction :
+                            // confirmation nommant ce qui part, et copie
+                            // tournante préalable dans la file elle-même.
                             onPressed: count + suspended + invalid == 0
                                 ? null
-                                : controller.clearQueue,
+                                : () => controller.confirmClearQueue(
+                                    active: count,
+                                    suspended: suspended,
+                                    corrupt: invalid,
+                                  ),
                             child: const Text('Vider'),
                           ),
                         ],

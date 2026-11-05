@@ -84,22 +84,44 @@ class PendingWebhook {
         if (suspended) 'suspended': true,
       };
 
+  /// Décodage tolérant : JAMAIS d'exception remontrante. Un champ numérique
+  /// mal typé ne doit pas rendre tout le fichier « illisible » (audit
+  /// 557ca0bb, F4 : `as num?` jetait sur `'bytes': '12'`, le catch global
+  /// déclarait le fichier entier `_unreadable`, la persistance se coupait et
+  /// les éléments déjà envoyés repartaient en double). Ce qui n'est pas
+  /// lisible devient un élément invalide PRÉSERVÉ BRUT ; ce qui est lisible
+  /// avec des champs tordus est lu au plus près.
   static PendingWebhook decode(Object? value) {
-    if (value is Map) {
-      final raw = value['raw_body'];
-      if (raw is String && raw.isNotEmpty) {
-        return PendingWebhook(
-          rawBody: raw,
-          createdAtMs: (value['created_at_ms'] as num?)?.toInt() ?? 0,
-          attempts: (value['attempts'] as num?)?.toInt() ?? 0,
-          nextAttemptAtMs: (value['next_attempt_at_ms'] as num?)?.toInt() ?? 0,
-          // Absent des fichiers écrits avant ces champs : faux, jamais déviné.
-          byteLength: (value['bytes'] as num?)?.toInt(),
-          suspended: value['suspended'] == true,
-        );
+    try {
+      if (value is Map && value.containsKey('raw_body')) {
+        final raw = value['raw_body'];
+        // 'raw_body' String, même vide : un corps vide écrit par la file
+        // elle-même n'est pas une corruption (audit 557ca0bb, F7 —
+        // l'ancien garde isEmpty le re-classait « invalide » au rechargement
+        // et il ne repartait plus jamais).
+        if (raw is String) {
+          return PendingWebhook(
+            rawBody: raw,
+            createdAtMs: _asInt(value['created_at_ms']) ?? 0,
+            attempts: _asInt(value['attempts']) ?? 0,
+            nextAttemptAtMs: _asInt(value['next_attempt_at_ms']) ?? 0,
+            // Absent des fichiers écrits avant ces champs : faux/recalculé,
+            // jamais déviné.
+            byteLength: _asInt(value['bytes']),
+            suspended: value['suspended'] == true,
+          );
+        }
       }
+    } catch (_) {
+      // tout ce qui résiste au parseur ci-dessus tombe en invalide préservé
     }
     return PendingWebhook.invalid(value);
+  }
+
+  static int? _asInt(Object? value) {
+    if (value is num) return value.toInt();
+    if (value is String) return int.tryParse(value);
+    return null;
   }
 }
 
@@ -109,11 +131,57 @@ class PendingWebhook {
 /// Les réessais ne tournent que tant que l'app vit (un réveil toutes les
 /// [tick]) ; au lancement suivant, la file reprend où elle en était.
 class WebhookQueue {
-  WebhookQueue._(this._postRaw, {bool autoStart = true})
-    : _autoStart = autoStart;
+  WebhookQueue._(
+    this._postRaw, {
+    bool autoStart = true,
+    bool desktopLock = false,
+  }) : _autoStart = autoStart,
+       _wantsLock = desktopLock;
+
+  /// Verrou inter-processus (audit 557ca0bb, F13 — desktop uniquement) :
+  /// deux instances qui s'ignorent s'écrasent mutuellement leur instantané,
+  /// et le fichier de l'une disparaît au premier persist de l'autre. Sur
+  /// Android la cible est mono-processus ; sur les builds bureau ce verrou
+  /// rend la seconde instance silencieuse (refus d'ajouter, pas d'écrire)
+  /// au lieu de destructive. Si la plateforme ne sait pas verrouiller, on
+  /// reste sur l'hypothèse mono-instance — un échec de verrou ne bloque
+  /// jamais l'envoi.
+  final bool _wantsLock;
+  RandomAccessFile? _lockHandle;
+  bool _lockedByPeer = false;
+
+  Future<void> _acquireLock(File queueFile) async {
+    if (!_wantsLock || _lockHandle != null) return;
+    try {
+      final raf = File('${queueFile.path}.lock').openSync(mode: FileMode.write);
+      try {
+        raf.lockSync(FileLock.exclusive);
+        _lockHandle = raf;
+      } catch (_) {
+        await raf.close();
+        _lockedByPeer = true;
+        debugPrint(
+          'WebhookQueue: une autre instance détient le fichier de file — '
+          'cette instance ne lit ni n écrit rien (pas d écrasement croisé)',
+        );
+      }
+    } catch (_) {
+      // verrouillage non supporté : hypothèse mono-processus (Android)
+    }
+  }
+
+  void _releaseLock() {
+    try {
+      _lockHandle?.closeSync();
+    } catch (_) {}
+    _lockHandle = null;
+  }
 
   static final WebhookQueue instance = WebhookQueue._(
     WebhookService.instance.postRaw,
+    // builds bureau : deux instances peuvent coexister, le verrou les rend
+    // coopératives. Mobile : mono-processus, rien à verrouiller.
+    desktopLock: Platform.isLinux || Platform.isMacOS || Platform.isWindows,
   );
 
   /// Envoi d'un corps brut, injectable pour les tests de la file.
@@ -127,12 +195,14 @@ class WebhookQueue {
   @visibleForTesting
   factory WebhookQueue.forTest({
     required Future<bool> Function(String rawBody) postRaw,
-  }) => WebhookQueue._(postRaw, autoStart: false);
+    bool desktopLock = false,
+  }) => WebhookQueue._(postRaw, autoStart: false, desktopLock: desktopLock);
 
   @visibleForTesting
   void stop() {
     _timer?.cancel();
     _timer = null;
+    _releaseLock();
   }
 
   /// Plafond de la file. Atteint, le NOUVEL entrant est refusé — jamais les
@@ -152,6 +222,15 @@ class WebhookQueue {
   /// avec motif, la file existante reste intacte.
   static const int maxQueuedItemBytes = 23 * 1024 * 1024;
 
+  /// Capacité dure du FICHIER (part active + suspendus + corrompus) :
+  /// garde-fou disque, jamais porte d'entrée nominale — la porte d'entrée
+  /// d'`add` se juge sur [maxQueuedBytes] côté actif (audit 557ca0bb, F2 :
+  /// sinon les poids morts bloquent la file à jamais). Atteint, le refus
+  /// motive la sortie praticable : reprendre ou archiver les suspendus —
+  /// deux gestes explicites, aucun ne supprime de données.
+  static const int maxFileBytes = 96 * 1024 * 1024;
+  static const int maxFileItems = 4000;
+
   /// Cadence du réveil.
   static const Duration tick = Duration(seconds: 60);
 
@@ -168,6 +247,7 @@ class WebhookQueue {
   int _clearGeneration = 0;
 
   int _dropped = 0;
+  int _recovered = 0;
   int _persistErrors = 0;
   int _corrupt = 0;
   bool _corruptOnLoad = false;
@@ -227,46 +307,159 @@ class WebhookQueue {
     if (_loaded) return;
     _loaded = true;
     var over = false;
+    File? file;
     try {
-      final file = await _queueFile();
-      await _purgeStaleParts(file);
-      if (!await file.exists()) return;
-      final decoded = jsonDecode(await file.readAsString());
-      if (decoded is! List) {
-        _unreadable = true;
-        debugPrint('WebhookQueue: fichier non reconnu, fichier préservé');
+      file = await _queueFile();
+      await _acquireLock(file);
+      if (_lockedByPeer) {
+        // état laissée tel quel par l'instance détentrice : ni lecture
+        // (obsolète sitôt), ni écriture (écrasement), ni envoi (double)
         return;
       }
-      for (final entry in decoded) {
-        final item = PendingWebhook.decode(entry);
-        // Un élément qu'on ne sait pas lire N'EST PAS supprimé : il reste
-        // dans _items en brut et ressort du prochain réencodé (audit
-        // 6c8a1439, finding LOW : « ignorée » en mémoire = effacée du
-        // disque au premier persist).
-        _items.add(item);
-        if (item.isInvalid) {
-          _corruptOnLoad = true;
-          _corrupt++;
-          WebhookService.instance.recordQueueCorrupt(
-            'élément de la file non reconnu (${item.byteLength} octets) '
-            'préservé tel quel',
-          );
+      if (await file.exists()) {
+        final decoded = jsonDecode(await file.readAsString());
+        if (decoded is! List) {
+          throw const FormatException('racine non-List');
+        }
+        for (final entry in decoded) {
+          final item = PendingWebhook.decode(entry);
+          // Un élément qu'on ne sait pas lire N'EST PAS supprimé : il reste
+          // dans _items en brut et ressort du prochain réencodé (audit
+          // 6c8a1439 : « ignorée » en mémoire = effacée du disque au
+          // premier persist).
+          _items.add(item);
+          if (item.isInvalid) {
+            _corruptOnLoad = true;
+            _corrupt++;
+            WebhookService.instance.recordQueueCorrupt(
+              'élément de la file non reconnu (${item.byteLength} octets) '
+              'préservé tel quel',
+            );
+          }
         }
       }
       // File héritée déjà hors budget (builds antérieures sans plafond) :
       // on la charge INTÉGRALEMENT. Purger ici détruirait des événements non
-      // envoyés (audit e98bb2a8, PROBE-3) — la politique ne l'autorise pas.
-      // Elle est marquée « sursaturée » : les envois existants partent,
-      // tout ajout est refusé jusqu'au retour sous le seuil. Le fichier
-      // n'excède jamais ce qu'une build antérieure a déjà accepté d'écrire.
-      over = _totalBytes() > maxQueuedBytes || _items.length > maxItems;
+      // envoyés (audit e98bb2a8, PROBE-3). Elle est marquée « sursaturée » :
+      // les envois existants partent, tout ajout est refusé jusqu'au retour
+      // sous le seuil.
+      over = _activeBytes() > maxQueuedBytes || _activeCount() > maxItems;
+      // Récupération des .part survivants APRÈS lecture du fichier
+      // principal : le fsync du répertoire parent étant injoignable en Dart,
+      // un crash peut laisser un instantané PLUS RÉCENT que le fichier
+      // principal. Le supprimer sans l'ouvrir serait une perte (audit
+      // 557ca0bb, F1). Tourne aussi quand le fichier principal est absent
+      // (crash pendant la première écriture).
+      await _adoptStaleParts(file, mainMissing: !await file.exists());
     } catch (e) {
       _unreadable = true;
-      debugPrint('WebhookQueue: file illisible, fichier préservé: $e');
+      debugPrint('WebhookQueue: fichier de file illisible, préservé: $e');
+      // Un fichier principal illisible ne condamne pas la session si un
+      // .part décodable survit : la récupération en tient lieu, après
+      // copie de secours de l'épave.
+      if (file != null) {
+        try {
+          await _adoptStaleParts(file, mainUnreadable: true);
+        } catch (_) {}
+      }
     }
     _overBudget = over;
     pending.value = _activeCount();
   }
+
+  /// Union par corps : les événements d'un `.part` décodable absents de la
+  /// mémoire (fichier principal) y sont ajoutés, puis le `.part` est
+  /// consolidé par persist et supprimé. Ce qui ne se décode pas était un
+  /// résidu d'écriture, pas des données : supprimé. Si le fichier principal
+  /// était illisible, il est d'abord copié en sauvegarde tournante — même la
+  /// destruction « de la corruption » passe par une copie.
+  Future<void> _adoptStaleParts(
+    File queueFile, {
+    bool mainUnreadable = false,
+    bool mainMissing = false,
+  }) async {
+    final dir = queueFile.parent;
+    final prefix = '${queueFile.path}.part.';
+    final parts = <({int seq, File file})>[];
+    try {
+      await for (final entity in dir.list()) {
+        if (entity is! File || !entity.path.startsWith(prefix)) continue;
+        final seq =
+            int.tryParse(
+              entity.path.substring(prefix.length).split('.').first,
+            ) ??
+            0;
+        parts.add((seq: seq, file: entity));
+      }
+    } catch (_) {
+      return;
+    }
+    if (parts.isEmpty) return;
+    parts.sort((a, b) => a.seq.compareTo(b.seq));
+    if (mainUnreadable && !mainMissing && _items.isEmpty) {
+      // l'épave principale est sauvegardée avant d'être éventuellement
+      // remplacée par la récupération
+      try {
+        if (await queueFile.exists()) {
+          await _rotateBackup(queueFile, 'corrompu');
+        }
+      } catch (_) {}
+    }
+    final known = _items.map(_identityKey).toSet();
+    final absorbed = <File>[];
+    var merged = 0;
+    for (final p in parts) {
+      List<Object?>? list;
+      try {
+        final decoded = jsonDecode(await p.file.readAsString());
+        if (decoded is List) list = decoded.cast<Object?>();
+      } catch (_) {}
+      if (list == null) {
+        try {
+          await p.file.delete();
+        } catch (_) {}
+        continue;
+      }
+      for (final entry in list) {
+        final key = _identityKey(PendingWebhook.decode(entry));
+        if (known.add(key)) {
+          final item = PendingWebhook.decode(entry);
+          _items.add(item);
+          if (item.isInvalid) {
+            _corruptOnLoad = true;
+            _corrupt++;
+          }
+          merged++;
+        }
+      }
+      absorbed.add(p.file);
+    }
+    if (merged > 0) {
+      // l'état récupéré porte désormais la mémoire : on consolide AVANT de
+      // supprimer les .part absorbés (jamais l'inverse : supprimer avant
+      // l'écriture réussie reproduirait exactement la perte qu'on ferme)
+      if (_unreadable) {
+        // le fichier principal est une épave déjà copiée : la récupération
+        // devient l'état de référence
+        _unreadable = false;
+      }
+      await _persist();
+      for (final f in absorbed) {
+        try {
+          await f.delete();
+        } catch (_) {}
+      }
+      _recovered += merged;
+      debugPrint(
+        'WebhookQueue: $merged événement(s) récupéré(s) depuis un instantané '
+        '« .part » plus récent que le fichier principal',
+      );
+    }
+  }
+
+  static String _identityKey(PendingWebhook item) => item.isInvalid
+      ? 'j:${jsonEncode(item.invalidJson)}'
+      : 'b:${item.rawBody}';
 
   int _totalBytes() {
     var n = 0;
@@ -277,23 +470,31 @@ class WebhookQueue {
   }
 
   /// Les écritures atomiques passent par un fichier temporaire renommé
-  /// ensuite. Un crash entre write et rename laisse des orphelins
-  /// `<file>.part.<µs>` que plus personne ne vise : on les purge au
-  /// chargement.
-  Future<void> _purgeStaleParts(File queueFile) async {
-    try {
-      final dir = queueFile.parent;
-      final prefix = '${queueFile.path}.part';
-      await for (final entity in dir.list()) {
-        if (entity is! File) continue;
-        if (!entity.path.startsWith(prefix)) continue;
-        try {
-          await entity.delete();
-        } catch (_) {}
-      }
-    } catch (_) {
-      // repertoire illisible : rien à purger de toute façon
+  /// ensuite ; les orphelins `.part` sont RÉCUPÉRÉS (voir _adoptStaleParts),
+  /// plus purgés à l'aveugle. Les copies de secours, elles, tournent :
+  /// `.tag.1` (la plus récente) → `.tag.N`, sans dépasser [maxBackups] — une
+  /// copie horodatée à chaque lancement ferait grossir le disque de 26 MiB
+  /// par redémarrage avec les corps en clair (audit 557ca0bb, F6).
+  static const int maxBackups = 3;
+
+  Future<void> _rotateBackup(File source, String tag) async {
+    // .3 saute, .2 -> .3, .1 -> .2, la nouvelle copie devient .1
+    for (var n = maxBackups; n >= 1; n--) {
+      final f = File('${source.path}.$tag.$n');
+      try {
+        if (!await f.exists()) continue;
+        if (n == maxBackups) {
+          debugPrint(
+            'WebhookQueue: sauvegarde ${tag}_$n remplacée (rotation bornée '
+            'à $maxBackups)',
+          );
+          await f.delete();
+        } else {
+          await f.rename('${source.path}.$tag.${n + 1}');
+        }
+      } catch (_) {}
     }
+    await source.copy('${source.path}.$tag.1');
   }
 
   /// Instantané sur disque, Sérialisé EN CHAÎNE (audit e98bb2a8, PROBE-4) :
@@ -312,7 +513,7 @@ class WebhookQueue {
   }
 
   Future<void> _writeSnapshot(int seq) async {
-    if (_unreadable) return;
+    if (_unreadable || _lockedByPeer) return;
     if (seq < _persistedSeq) {
       // Ne peut arriver qu'avec deux file d écritures (défensif : la chaîne
       // les sérialise déjà). Un instantané plus vieux que ce qui est déjà sur
@@ -331,12 +532,10 @@ class WebhookQueue {
         _corruptBackupDone = true;
         try {
           if (await file.exists()) {
-            await file.copy(
-              '${file.path}.corrompu.${DateTime.now().microsecondsSinceEpoch}',
-            );
+            await _rotateBackup(file, 'corrompu');
             debugPrint(
-              'WebhookQueue: copie de secours du fichier corrompu '
-              'créée avant réencodage',
+              'WebhookQueue: copie de secours du fichier corrompu créée '
+              '(rotation bornée) avant réencodage',
             );
           }
         } catch (e) {
@@ -355,6 +554,15 @@ class WebhookQueue {
         jsonEncode(_items.map((i) => i.toJsonElement()).toList()),
         flush: true,
       );
+      // Le fichier porte les corps de SMS/MMS en clair : sur les builds
+      // hors sandbox (desktop), on le limite au propriétaire avant le
+      // renommage. Sur Android la copie est déjà dans le bac applicatif
+      // chiffré (FBE) ; l'échec de chmod n'est jamais bloquant.
+      if (!Platform.isWindows) {
+        try {
+          await Process.run('chmod', ['600', tmp.path]);
+        } catch (_) {}
+      }
       await tmp.rename(file.path);
       _persistedSeq = seq;
     } catch (e) {
@@ -386,6 +594,30 @@ class WebhookQueue {
   /// envoyés est une perte de données, y compris « en vol »).
   Future<bool> add(String rawBody) async {
     await _ensureLoaded();
+    if (_lockedByPeer) {
+      return _reject(
+        utf8.encode(rawBody).length,
+        'autre instance détient la file : ajout refusé (pas d écrasement '
+        'croisé entre processus)',
+      );
+    }
+    if (rawBody.isEmpty) {
+      // un corps vide n'est pas un événement ; il deviendrait un poids mort
+      // que les versions précédentes re-qualifiaient de corrompu (F7).
+      return _reject(0, 'corps vide refusé');
+    }
+    if (_unreadable) {
+      // F3 (audit 557ca0bb) : tant que le fichier principal est une épave,
+      // AUCUNE écriture n'est possible — promettre `true` enverrait
+      // l'événement en RAM sans sauvegarde, perdu au prochain redémarrage
+      // sans que personne ne le sache. Un `false` compté vaut mieux qu'un
+      // `true` mensonger. Seule issue : « Vider » (avec copie).
+      return _reject(
+        utf8.encode(rawBody).length,
+        'persistance impossible : fichier de file illisible — événement '
+        'refusé (les sauvegardes sont préservées ; « Vider » relance la file)',
+      );
+    }
     final bodyBytes = utf8.encode(rawBody).length;
     if (bodyBytes > maxQueuedItemBytes) {
       return _reject(
@@ -393,20 +625,35 @@ class WebhookQueue {
         'corps de $bodyBytes octets > plafond par entrée ($maxQueuedItemBytes)',
       );
     }
-    // Les entrées en vol sont encore dans [_items] (elles n'en sortent
-    // qu'au succès) : le budget comme le compteur les voient une seule fois.
-    if (_items.length >= maxItems) {
-      return _reject(bodyBytes, 'file saturée (${_items.length} entrées)');
+    // F2 (audit 557ca0bb) : la porte d'entrée se juge sur la part ACTIVE.
+    // Les suspendus et les corrompus sont des poids morts que plus aucun
+    // flush ne peut drainer : les compter dans le budget rendait le rejet
+    // ÉTERNEL dans le cas d'usage nominal (cible injoignable 24 h → MMS
+    // suspendus → tous les événements suivants refusés, seule sortie « Vider
+    // » qui détruit). Ils restent comptés, mais contre un plafond de FICHIER
+    // distinct, plus élevé — et « Archiver les suspendus » (bouton) les déplace sans rien supprimer.
+    if (_activeCount() >= maxItems) {
+      return _reject(bodyBytes, 'file active saturée (${_activeCount()})');
     }
-    if (_totalBytes() + bodyBytes > maxQueuedBytes) {
+    if (_activeBytes() + bodyBytes > maxQueuedBytes) {
       return _reject(
         bodyBytes,
         _overBudget
-            ? 'file sursaturée (héritée hors budget) : ${_totalBytes()} '
-                  'octets attendent l envoi, aucun ajouté tant que le flush '
-                  'n a pas drainé sous $maxQueuedBytes'
-            : 'budget d\'octets atteint (${_totalBytes()} + $bodyBytes > '
+            ? 'part active au budget (${_activeBytes()} octets attendent '
+                  'l envoi > $maxQueuedBytes) : réessai en cours, '
+                  '« Archiver les suspendus » libère le fichier'
+            : 'budget d\'octets atteint (${_activeBytes()} + $bodyBytes > '
                   '$maxQueuedBytes)',
+      );
+    }
+    if (_totalBytes() + bodyBytes > maxFileBytes ||
+        _items.length >= maxFileItems) {
+      return _reject(
+        bodyBytes,
+        'capacité totale du fichier atteinte (${_totalBytes()}/'
+        '$maxFileBytes octets, ${_items.length}/$maxFileItems entrées, '
+        'suspendus et corrompus inclus) : reprendre ou archiver les '
+        'suspendus',
       );
     }
     final now = DateTime.now().millisecondsSinceEpoch;
@@ -453,20 +700,31 @@ class WebhookQueue {
     );
   }
 
-  /// Le budget est redevenu libre (envoi réussi, clear) : la file n'est plus
-  /// « sursaturée », les ajouts peuvent reprendre ; le corps sensible du
-  /// dernier rebut a vécu, on ne le garde pas.
-  void _markDrained() {
-    if (_overBudget && _totalBytes() <= maxQueuedBytes) {
-      _overBudget = false;
-      pending.value = _activeCount();
-    }
-  }
+  /// Le budget est redevenu libre (envoi réussi, clear, archivage) : la file
+  /// n'est plus « sursaturée », les ajouts peuvent reprendre.
+  void _markDrained() => _recomputeBudget();
 
   /// Entrées qui attendent réellement un envoi : ni invalides (jamais
   /// postables), ni suspendues (plus postables sans reprise explicite).
   int _activeCount() =>
       _items.where((i) => !i.isInvalid && !i.suspended).length;
+
+  /// Octets de la part active — la seule que le flush peut drainer, donc la
+  /// seule que la porte d'entrée doit respecter (audit 557ca0bb, F2).
+  int _activeBytes() => _items.fold<int>(
+    0,
+    (n, i) => i.isInvalid || i.suspended ? n : n + i.byteLength,
+  );
+
+  /// Événements récupérés depuis des `.part` orphelins depuis ce lancement
+  /// (aucun pour l'instant, aucun envoyé en double : l'union est par corps).
+  int get recoveredCount => _recovered;
+
+  /// `true` quand la persistance est coupée (fichier principal une épave que
+  /// seule une reprise saine ou un « Vider » peut débloquer, ou autre
+  /// instance détentrice du verrou sur desktop). L'UI doit le dire : sans
+  /// écriture possible, la session n'est pas sauvegardée.
+  bool get saveDisabled => _unreadable || _lockedByPeer;
 
   /// Entrées suspendues (expirées ou abandonnées) : conservées sur le disque,
   /// plus jamais POSTées, comptées dans WebhookStats.suspended.
@@ -512,9 +770,86 @@ class WebhookQueue {
     return resumed;
   }
 
-  /// Vide la file (réglages : « vider maintenant »).
+  /// File des suspendus/corrompus archivés, à côté de la file active.
+  Future<File> _archiveFile() async {
+    final dir = await getApplicationSupportDirectory();
+    return File('${dir.path}/webhook_queue.archive.json');
+  }
+
+  /// Déplace suspendus et éléments corrompus dans
+  /// `webhook_queue.archive.json` : ils quittent la file vivante (libère le
+  /// budget qui bloquait tout ajout — audit 557ca0bb, F2) sans être
+  /// supprimés : conservés sur le disque, jamais renvoyés. Retourne le
+  /// nombre déplacé.
+  Future<int> archiveSuspended() async {
+    await _ensureLoaded();
+    if (_unreadable) return 0; // persistance coupée : archiver créerait des
+    // doubles à la reprise du fichier épave
+    final moved = _items.where((i) => i.suspended || i.isInvalid).toList();
+    if (moved.isEmpty) return 0;
+    final file = await _archiveFile();
+    // La copie de travail d'abord : si l'archive de destination refuse
+    // l'écriture, rien n'a bougé ; si le crash tombe entre les deux, la
+    // mémoire et le fichier vivant portent encore ces entrées — la voie
+    // d'archivage ne doit jamais être une voie de perte.
+    final existing = <Object?>[];
+    if (await file.exists()) {
+      try {
+        final decoded = jsonDecode(await file.readAsString());
+        if (decoded is List) existing.addAll(decoded.cast<Object?>());
+      } catch (_) {
+        // archive illisible : elle est d'abord copiée en sauvegarde
+        // tournante, puis remplacée — une corruption externe ne doit pas
+        // non plus empêcher l'archive d'exister, ni être écrasée sans trace.
+        try {
+          await _rotateBackup(file, 'archive-abimee');
+        } catch (_) {}
+      }
+    }
+    existing.addAll(moved.map((i) => i.toJsonElement()));
+    await file.writeAsString(jsonEncode(existing), flush: true);
+    if (!Platform.isWindows) {
+      try {
+        await Process.run('chmod', ['600', file.path]);
+      } catch (_) {}
+    }
+    final movedIds = moved.toSet();
+    _items.removeWhere(movedIds.contains);
+    pending.value = _activeCount();
+    _recomputeBudget();
+    await _persist();
+    debugPrint(
+      'WebhookQueue: ${moved.length} entrée(s) suspendue(s)/corrompue(s) '
+      'archivée(s) dans ${file.path} — conservées, plus envoyées',
+    );
+    return moved.length;
+  }
+
+  /// Recalcule le drapeau « part active hors budget » (après archive, drain,
+  /// ou clear).
+  void _recomputeBudget() {
+    final over = _activeBytes() > maxQueuedBytes || _activeCount() > maxItems;
+    if (over != _overBudget) {
+      _overBudget = over;
+      pending.value = _activeCount();
+    }
+  }
+
+  /// Vide la file (réglages : « vider maintenant ») — la SEULE voie de
+  /// destruction, encadrée : l'UI demande confirmation et cette méthode
+  /// copie d'abord le fichier en sauvegarde tournante `.avant-vidage.N`
+  /// (audit 557ca0bb, F5 : un tap ne doit pas être irréversible sans trace).
   Future<void> clear() async {
     await _ensureLoaded();
+    // copie de l'état complet AVANT destruction, suspendus et invalides
+    // inclus — surtout l'épave illisible, que clear() est la seule voie
+    // d'effacer : sa copie tourne, jamais sa disparition sèche.
+    try {
+      final file = await _queueFile();
+      if (await file.exists()) {
+        await _rotateBackup(file, 'avant-vidage');
+      }
+    } catch (_) {}
     _items.clear();
     // Un envoi en vol dont l'échec tomberait APRÈS ce clear ne réinsérera
     // pas son corps : la demande explicite de l'utilisateur prime.
@@ -560,7 +895,7 @@ class WebhookQueue {
 
   Future<void> _flushInner({required bool force}) async {
     await _ensureLoaded();
-    if (_items.isEmpty) return;
+    if (_lockedByPeer || _items.isEmpty) return;
     if (AppSettings.webhookWifiOnly.value &&
         !await SmsBridge.instance.isOnWifi()) {
       return;
@@ -585,6 +920,13 @@ class WebhookQueue {
       if (item.isInvalid) continue; // préservé brut, jamais POSTé
       if (item.suspended) continue; // suspendu : seul resumeSuspended/clear
       // le concerne (mandat 2026-11-05).
+      if (_inFlight.contains(item)) {
+        // Garde réel (audit 557ca0bb, F8) : un item déjà en cours de POST
+        // ne doit jamais être reposté par une passe concurrente. Le garde
+        // _flushing le couvrait déjà ; celui-ci rend la protection explicite
+        // au lieu d'un commentaire affirmant une invariant non vérifiée.
+        continue;
+      }
       if (!force && item.nextAttemptAtMs > now) continue;
       if (now - item.createdAtMs > ttlMs) {
         // TTL dépassée : SUSPENSION, plus suppression — l'entrée reste des

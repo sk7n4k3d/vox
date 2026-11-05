@@ -25,6 +25,10 @@ void main() {
     HttpOverrides.global = null;
     SharedPreferences.setMockInitialValues({});
     await AppSettings.init();
+    // ces tests montent de vrais serveurs loopback en http : l'envoi HTTPS-
+    // only (audit 557ca0bb F9) est précisément la porte qu'ils exercent via
+    // l'interrupteur LAN, activé ici comme un utilisateur le ferait.
+    await AppSettings.webhookAllowInsecureHttp.setItem(true);
     // le secret vient du flutter_secure_storage : canal simulé
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
         .setMockMethodCallHandler(
@@ -63,19 +67,23 @@ void main() {
     await victim.close(force: true);
   });
 
-  Future<void> configureUrl(String path) => AppSettings.webhookUrl.setItem(
-    'http://127.0.0.1:${front.port}$path',
-  );
+  Future<void> configureUrl(String path) =>
+      AppSettings.webhookUrl.setItem('http://127.0.0.1:${front.port}$path');
 
   test('un 302 ne rejoue ni le corps ni la signature vers la cible', () async {
     await configureUrl('/hook');
     final ok = await WebhookService.instance.postRaw('{"secret":"contenu"}');
 
-    expect(ok, isFalse, reason: '3xx = échec: ${WebhookService.instance.stats.value.lastError}');
+    expect(
+      ok,
+      isFalse,
+      reason: '3xx = échec: ${WebhookService.instance.stats.value.lastError}',
+    );
     expect(
       frontHeaders.length,
       1,
-      reason: 'erreur envoyée: ${WebhookService.instance.stats.value.lastError}',
+      reason:
+          'erreur envoyée: ${WebhookService.instance.stats.value.lastError}',
     );
     expect(
       frontHeaders.first,

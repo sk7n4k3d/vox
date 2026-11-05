@@ -188,6 +188,60 @@ class SettingsWebhookController extends State<SettingsWebhook> {
 
   Future<void> clearQueue() => WebhookQueue.instance.clear();
 
+  /// Déplace suspendus et corrompus vers le fichier archive : ils quittent
+  /// la file vivante sans être supprimés (sortie du blocage F2 sans perte).
+  Future<void> archiveQueue() async {
+    final archived = await WebhookQueue.instance.archiveSuspended();
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          archived == 0
+              ? 'Rien à archiver.'
+              : '$archived entrée(s) archivée(s) — conservées sur l\'appareil, '
+                    'plus envoyées.',
+        ),
+      ),
+    );
+  }
+
+  /// « Vider » est la seule voie de destruction des données : confirmation
+  /// qui nomme précisément ce qui va disparaître (audit 557ca0bb, F5 —
+  /// auparavant un tap unique effaçait suspendus et corrompus sans un mot).
+  Future<void> confirmClearQueue({
+    required int active,
+    required int suspended,
+    required int corrupt,
+  }) async {
+    final parts = <String>[
+      if (active > 0) '$active envoi(s) en attente',
+      if (suspended > 0) '$suspended en suspens',
+      if (corrupt > 0) '$corrupt corrompu(s)',
+    ].join(', ');
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Vider la file webhook ?'),
+        content: Text(
+          'Ces $parts seront définitivement supprimés de l\'appareil '
+          '(une copie de secours tournante est conservée côté fichier). '
+          'Pour conserver sans renvoyer, préférer « Archiver ».',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: const Text('Annuler'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(true),
+            child: const Text('Vider'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed == true) await WebhookQueue.instance.clear();
+  }
+
   /// Bouton « Reprendre » : renvoie en file d'envoi les événements suspendus
   /// (expirés ou abandonnés). La suspension ne détruit rien — mais sans cette
   /// reprise explicite, ils restent conservés sans jamais repartir.
@@ -279,8 +333,24 @@ class SettingsWebhookController extends State<SettingsWebhook> {
     excluded: excludedSmsThreads,
   );
 
-  void onUrlChanged(String value) =>
-      unawaited(AppSettings.webhookUrl.setItem(value.trim()));
+  void onUrlChanged(String value) {
+    unawaited(AppSettings.webhookUrl.setItem(value.trim()));
+    // l'avertissement « en clair » sous le champ est live
+    setState(() {});
+  }
+
+  void onAllowInsecureHttpChanged(bool value) {
+    unawaited(AppSettings.webhookAllowInsecureHttp.setItem(value));
+    setState(() {});
+  }
+
+  /// true si l'URL enregistrée part en clair et que rien ne l'a autorisé.
+  bool get urlIsInsecure {
+    final scheme = Uri.tryParse(AppSettings.webhookUrl.value.trim())?.scheme;
+    return scheme == 'http' && !AppSettings.webhookAllowInsecureHttp.value;
+  }
+
+  bool get allowInsecureHttp => AppSettings.webhookAllowInsecureHttp.value;
 
   Future<void> onSecretChanged(String value) =>
       WebhookStore.instance.saveSecret(value.trim());

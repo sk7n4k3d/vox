@@ -114,20 +114,33 @@ void main() {
       expect(decoded.length, 2);
     });
 
-    test('un fichier corrompu est préservé, jamais écrasé', () async {
-      queueFile.writeAsStringSync('ceci n est pas du json');
-      final queue = WebhookQueue.forTest(postRaw: (_) async => false);
-      addTearDown(queue.stop);
-      await queue.add('{"event_id":"new"}');
-      await queue.flush(force: true);
+    test(
+      'un fichier corrompu est préservé, jamais écrasé — et rien n est '
+      'accepté tant que la sauvegarde est coupée (audit 557ca0bb, F3)',
+      () async {
+        queueFile.writeAsStringSync('ceci n est pas du json');
+        final queue = WebhookQueue.forTest(postRaw: (_) async => false);
+        addTearDown(queue.stop);
+        expect(
+          await queue.add('{"event_id":"new"}'),
+          isFalse,
+          reason:
+              'add() ne promet plus une mise en file impossible : un '
+              'vrai faux « en file » était la perte silencieuse',
+        );
+        await queue.flush(force: true);
 
-      expect(
-        queueFile.readAsStringSync(),
-        'ceci n est pas du json',
-        reason: 'persister une file memory amputée perdrait les envois',
-      );
-      expect(queue.length, 1);
-    });
+        expect(
+          queueFile.readAsStringSync(),
+          'ceci n est pas du json',
+          reason:
+              'persister une file mémoire amputée perdrait les envois : '
+              'l épave reste intacte jusqu au clear explicite',
+        );
+        expect(queue.saveDisabled, isTrue);
+        expect(queue.length, 0);
+      },
+    );
 
     test('« vider maintenant » purge même un fichier illisible', () async {
       queueFile.writeAsStringSync('garbage');
@@ -141,36 +154,43 @@ void main() {
       expect(queue.length, 0);
     });
 
-    test('au-dela du budget, le nouvel entrant est rebuté, pas les anciens',
-        () async {
-      final queue = WebhookQueue.forTest(postRaw: (_) async => false);
-      addTearDown(queue.stop);
-      // 3 × 9 Mo > maxQueuedBytes : le troisième ne passe plus.
-      // Politique « zéro éviction » (audit 8960c5cc) : c'est LUI qui est
-      // refusé, les deux premiers restent, rien n'est purgé pour lui faire
-      // de la place.
-      final gros = 'x' * (9 * 1024 * 1024);
-      expect(await queue.add(gros), isTrue);
-      expect(await queue.add(gros), isTrue);
-      expect(await queue.add(gros), isFalse,
-          reason: 'au-dessus du budget global : rejet explicite');
-      expect(queue.length, 2);
-      expect(queue.droppedCount, 1);
-      expect(queue.lastRejectReason, contains('budget'));
-      // Le fichier, lui, porte bien les deux survivants.
-      final decoded = jsonDecode(queueFile.readAsStringSync());
-      expect((decoded as List).length, 2);
-    });
+    test(
+      'au-dela du budget, le nouvel entrant est rebuté, pas les anciens',
+      () async {
+        final queue = WebhookQueue.forTest(postRaw: (_) async => false);
+        addTearDown(queue.stop);
+        // 3 × 9 Mo > maxQueuedBytes : le troisième ne passe plus.
+        // Politique « zéro éviction » (audit 8960c5cc) : c'est LUI qui est
+        // refusé, les deux premiers restent, rien n'est purgé pour lui faire
+        // de la place.
+        final gros = 'x' * (9 * 1024 * 1024);
+        expect(await queue.add(gros), isTrue);
+        expect(await queue.add(gros), isTrue);
+        expect(
+          await queue.add(gros),
+          isFalse,
+          reason: 'au-dessus du budget global : rejet explicite',
+        );
+        expect(queue.length, 2);
+        expect(queue.droppedCount, 1);
+        expect(queue.lastRejectReason, contains('budget'));
+        // Le fichier, lui, porte bien les deux survivants.
+        final decoded = jsonDecode(queueFile.readAsStringSync());
+        expect((decoded as List).length, 2);
+      },
+    );
 
-    test('les orphelins .part d un crash sont purgés au chargement',
-        () async {
+    test('les orphelins .part d un crash sont purgés au chargement', () async {
       final orphelin = File('${appDir.path}/webhook_queue.json.part.123456');
       orphelin.writeAsStringSync('restes d un crash');
       final queue = WebhookQueue.forTest(postRaw: (_) async => true);
       addTearDown(queue.stop);
       await queue.add('{"event_id":"a"}');
-      expect(orphelin.existsSync(), isFalse,
-          reason: 'le fichier temporaire orphelin doit être nettoyé');
+      expect(
+        orphelin.existsSync(),
+        isFalse,
+        reason: 'le fichier temporaire orphelin doit être nettoyé',
+      );
     });
 
     test('la cadence de premier réessai est décalée, pas immédiate', () async {

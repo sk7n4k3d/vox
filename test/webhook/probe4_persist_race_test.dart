@@ -9,7 +9,6 @@
 // dernier état gagne, toujours » — ce fichier l'vérifie sur le même
 // balayage, en incluant le point de 15 ms qui déclenchait le HIT.
 
-import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
