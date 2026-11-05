@@ -252,70 +252,7 @@ class SettingsWebhookView extends StatelessWidget {
                     ],
                   ),
                   const SizedBox(height: FluffySpacing.sm),
-                  ValueListenableBuilder<int>(
-                    valueListenable: WebhookQueue.instance.pending,
-                    builder: (context, count, _) {
-                      final queue = WebhookQueue.instance;
-                      final suspended = queue.suspendedCount;
-                      final invalid = queue.invalidCount;
-                      return Row(
-                        children: [
-                          Expanded(
-                            child: Text(
-                              count == 0
-                                  ? 'Rien en attente'
-                                  : '$count envoi(s) en attente'
-                                        '${suspended > 0 ? ' · $suspended en suspens (conservé(s), non renvoyé(s))' : ''}'
-                                        '${invalid > 0 ? ' · $invalid élément(s) corrompu(s) préservé(s)' : ''}'
-                                        '${queue.overBudget ? ' · file au-dessus du budget : réessais normaux, nouveaux envois suspendus' : ''}'
-                                        '${queue.recoveredCount > 0 ? ' · ${queue.recoveredCount} événement(s) récupéré(s) '
-                                                  'après un arrêt brutal' : ''}'
-                                        '${queue.persistErrorCount > 0 ? ' · ${queue.persistErrorCount} écriture(s) en échec '
-                                                  '(nouvel essai automatique)' : ''}'
-                                        '${queue.saveDisabled ? ' · SAUVEGARDE DÉSACTIVÉE : fichier de file illisible ou '
-                                                  'déjà détenu par une autre instance' : ''}',
-                              style: theme.textTheme.bodySmall?.copyWith(
-                                color: queue.saveDisabled
-                                    ? theme.colorScheme.error
-                                    : theme.colorScheme.onSurfaceVariant,
-                              ),
-                            ),
-                          ),
-                          if (suspended > 0)
-                            TextButton(
-                              onPressed: controller.resumeQueue,
-                              child: const Text('Reprendre'),
-                            ),
-                          TextButton(
-                            onPressed: controller.flushQueue,
-                            child: const Text('Réessayer'),
-                          ),
-                          if (suspended + invalid > 0)
-                            TextButton(
-                              // F2 (audit 557ca0bb) : sortie praticable sans
-                              // destruction — les poids morts quittent la
-                              // file vivante (libère le budget) mais restent
-                              // sur le disque dans le fichier archive.
-                              onPressed: controller.archiveQueue,
-                              child: const Text('Archiver'),
-                            ),
-                          TextButton(
-                            // « Vider » est la seule voie de destruction :
-                            // confirmation nommant ce qui part, et copie
-                            // tournante préalable dans la file elle-même.
-                            onPressed: count + suspended + invalid == 0
-                                ? null
-                                : () => controller.confirmClearQueue(
-                                    active: count,
-                                    suspended: suspended,
-                                    corrupt: invalid,
-                                  ),
-                            child: const Text('Vider'),
-                          ),
-                        ],
-                      );
-                    },
-                  ),
+                  _queueStatusBar(context),
                 ],
               ),
             ),
@@ -535,6 +472,83 @@ class SettingsWebhookView extends StatelessWidget {
             ),
           ],
         ),
+      ),
+    );
+  }
+
+  /// Bloc compteurs + gestes de la file. Écoute DEUX sources : `pending`
+  /// (le nombre change) et `uiTick` (chaque transition d'état : verrou repris
+  /// ou perdu, écriture en échec puis revenue, rejet, récupération). Sans le
+  /// second, la page ouverte restait muette sur un blocage tant que le nombre
+  /// d'envois en attente ne bougeait pas (audit ade1b6ba, finding LOW).
+  Widget _queueStatusBar(BuildContext context) {
+    final theme = Theme.of(context);
+    return ValueListenableBuilder<int>(
+      valueListenable: WebhookQueue.instance.uiTick,
+      builder: (context, _, _) => ValueListenableBuilder<int>(
+        valueListenable: WebhookQueue.instance.pending,
+        builder: (context, count, _) {
+          final queue = WebhookQueue.instance;
+          final suspended = queue.suspendedCount;
+          final invalid = queue.invalidCount;
+          return Row(
+            children: [
+              Expanded(
+                child: Text(
+                  count == 0
+                      ? 'Rien en attente'
+                      : '$count envoi(s) en attente'
+                            '${suspended > 0 ? ' · $suspended en suspens (conservé(s), non renvoyé(s))' : ''}'
+                            '${invalid > 0 ? ' · $invalid élément(s) corrompu(s) préservé(s)' : ''}'
+                            '${queue.overBudget ? ' · file au-dessus du budget : réessais normaux, nouveaux envois suspendus' : ''}'
+                            '${queue.recoveredCount > 0 ? ' · ${queue.recoveredCount} événement(s) récupéré(s) '
+                                      'après un arrêt brutal' : ''}'
+                            '${queue.persistErrorCount > 0 ? ' · ${queue.persistErrorCount} écriture(s) en échec '
+                                      '(nouvel essai automatique)' : ''}'
+                            '${queue.saveDisabled ? ' · SAUVEGARDE DÉSACTIVÉE : fichier de file illisible, '
+                                      'détenu par une autre instance ou '
+                                      'dernière écriture en échec' : ''}',
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    color: queue.saveDisabled
+                        ? theme.colorScheme.error
+                        : theme.colorScheme.onSurfaceVariant,
+                  ),
+                ),
+              ),
+              if (suspended > 0)
+                TextButton(
+                  onPressed: controller.resumeQueue,
+                  child: const Text('Reprendre'),
+                ),
+              TextButton(
+                onPressed: controller.flushQueue,
+                child: const Text('Réessayer'),
+              ),
+              if (suspended + invalid > 0)
+                TextButton(
+                  // F2 (audit 557ca0bb) : sortie praticable sans
+                  // destruction — les poids morts quittent la file vivante
+                  // (libère le budget) mais restent sur le disque dans le
+                  // fichier archive.
+                  onPressed: controller.archiveQueue,
+                  child: const Text('Archiver'),
+                ),
+              TextButton(
+                // « Vider » est la seule voie de destruction : confirmation
+                // nommant ce qui part, et copie tournante préalable dans la
+                // file elle-même.
+                onPressed: count + suspended + invalid == 0
+                    ? null
+                    : () => controller.confirmClearQueue(
+                        active: count,
+                        suspended: suspended,
+                        corrupt: invalid,
+                      ),
+                child: const Text('Vider'),
+              ),
+            ],
+          );
+        },
       ),
     );
   }

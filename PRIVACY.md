@@ -118,10 +118,13 @@ When the webhook mirror is enabled, each message, call log entry or media
 pushed to the configured HTTPS endpoint is also kept on the device until the
 target server acknowledges it: `webhook_queue.json` in the app support
 directory, plus bounded rotating safety copies (`.corrompu.N`,
-`.avant-vidage.N`) and an explicit archive (`webhook_queue.archive.json`).
+`.avant-vidage.N`, `.part-illisible.N` for interrupted snapshots, which are
+archived rather than deleted) and an explicit archive
+(`webhook_queue.archive.json`).
 These files contain message payloads in clear text, protected on Android by
-the app sandbox and file-based encryption; on desktop builds the queue file is
-created with owner-only (0600) permissions. Sending over plain `http://` is
+the app sandbox and file-based encryption; on desktop builds every one of
+them — queue file, temporary writes, rotating copies and archive — is
+created or hardened to owner-only (0600) permissions. Sending over plain `http://` is
 refused by default — it requires an explicit user toggle meant for LAN test
 servers only. The queue is drained by successful delivery or cleared by the
 user; expired or repeatedly-failed events are suspended (kept, never resent)

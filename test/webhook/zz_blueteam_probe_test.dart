@@ -163,8 +163,10 @@ void main() {
     expect(posts2, 0);
   }, timeout: const Timeout(Duration(seconds: 180)));
 
-  test('P2b : .part garbage (non décodable) reste un résidu supprimable, '
-      'le fichier principal intact', () async {
+  test('P2b : .part garbage (non décodable) est ARCHIVÉ en copie '
+      '« part-illisible », jamais perdu ; le fichier principal intact '
+      '(politique révisée audit ade1b6ba, finding 1 : un tronqué porte '
+      'peut-être des messages jamais envoyés)', () async {
     queueFile().writeAsStringSync(jsonEncode([item('ok|sms', createdAt: 1)]));
     final garbage = File('${appDir.path}/webhook_queue.json.part.3.999')
       ..writeAsStringSync('restes d un crash');
@@ -172,12 +174,18 @@ void main() {
     addTearDown(q.stop);
     await q.flush(force: true);
     expect(garbage.existsSync(), isFalse);
+    final archived = File('${appDir.path}/webhook_queue.json.part-illisible.1');
+    expect(
+      archived.existsSync(),
+      isTrue,
+      reason: 'déplacé, pas détruit : les octets survivent en copie durcie',
+    );
+    expect(archived.readAsStringSync(), 'restes d un crash');
+    expect(q.corruptCount, greaterThanOrEqualTo(1));
     expect(
       q.recoveredCount,
       0,
-      reason:
-          'rien récupéré : le garbage n\'était '
-          'pas des données',
+      reason: 'rien récupéré : le garbage ne se décodait pas',
     );
     expect(queueFile().readAsStringSync(), contains('ok|sms'));
   });
