@@ -228,7 +228,7 @@ class WebhookQueue {
       if (!_lockedByPeer) {
         // le pair est parti : cette instance devient détentrice et doit
         // charger l état (le retrait précédent n a rien lu)
-        _loaded = false;
+        _loadFuture = null;
         await _ensureLoaded();
         _tick();
       }
@@ -355,8 +355,6 @@ class WebhookQueue {
 
   void _tick() => uiTick.value++;
 
-  bool _loaded = false;
-
   /// Le fichier existait mais était illisible : la file mémoire est alors
   /// potentiellement **amputée** des entrées déjà parties. Écrire par-dessus
   /// les effacerait sans retour, donc _persist refuse d'écraser un fichier
@@ -377,9 +375,29 @@ class WebhookQueue {
     return File('${dir.path}/webhook_queue.json');
   }
 
-  Future<void> _ensureLoaded() async {
-    if (_loaded) return;
-    _loaded = true;
+  /// Charge PARTAGÉE : la première lecture est une `Future` mémoïsée que tout
+  /// appelant entrant attend, au lieu d'un drapeau posé en synchrone. Le
+  /// drapeau laissait un second add() croire à un état vide pendant que la
+  /// lecture était encore en vol — son persist renommait alors le fichier
+  /// principal AVANT que les événements précédents n'aient été lus
+  /// (audit 3f5a8f1d, sonde X4 : onDisk=[pendant|sms], avant1/avant2
+  /// effacés du fichier sans jamais être passés en mémoire).
+  Future<void>? _loadFuture;
+
+  Future<void> _ensureLoaded() {
+    final running = _loadFuture;
+    if (running != null) return running;
+    late final Future<void> started;
+    started = _loadOnce().catchError((Object _) {
+      // erreur inattendue : relâche la mémo pour que le prochain appel
+      // retente, sinon une seule panne empoisonnerait la file à jamais
+      if (identical(_loadFuture, started)) _loadFuture = null;
+    });
+    _loadFuture = started;
+    return started;
+  }
+
+  Future<void> _loadOnce() async {
     // chargement sur table rasée : le seul rechargement possible vient de la
     // reprise du verrou, et laisser les anciens corps dans _items les ferait
     // double en RAM puis double sur le disque puis DOUBLE LIVRAISON (audit
@@ -524,30 +542,37 @@ class WebhookQueue {
     var merged = 0;
     var adoptedState = 0;
     for (final p in parts) {
-      // watermark : le fichier principal a été écrit à ce (seq, ts) — tout
-      // instantané plus ancien a donc déjà été absorbé par une écriture
-      // réussie. Son état ne peut PAS gagner sur le plus récent (audit
-      // 3ca417b0, INFO-1 : après un renommage raté dont le nettoyage a été
-      // tué, un .part POUVAIT être plus vieux que le fichier principal et
-      // réveillait un suspendu en écrasant tentatives/suspension).
-      if (watermark != null &&
-          (p.seq < watermark.seq ||
-              (p.seq == watermark.seq && p.ts <= watermark.ts))) {
-        try {
-          await p.file.delete();
-          debugPrint(
-            'WebhookQueue: « .part » plus ancien que le dernier fichier '
-            'écrit (seq ${p.seq} <= ${watermark.seq}) : déjà consolidé, '
-            'supprimé sans rien adopter',
-          );
-        } catch (_) {}
-        continue;
-      }
       List<Object?>? list;
       try {
         final decoded = jsonDecode(await p.file.readAsString());
         if (decoded is List) list = decoded.cast<Object?>();
       } catch (_) {}
+      // watermark : le fichier principal a été écrit à ce (seq, ts) — tout
+      // instantané DÉCODABLE plus ancien a nécessairement été absorbé par une
+      // écriture réussie (son contenu est un sous-ensemble « déjà écrit ∪
+      // déjà livré »). Son état ne peut PAS gagner sur le plus récent (audit
+      // 3ca417b0, INFO-1 : après un renommage raté dont le nettoyage a été
+      // tué, un .part POUVAIT être plus vieux que le fichier principal et
+      // réveillait un suspendu en écrasant tentatives/suspension).
+      // CAS DOCUMENTÉ (revue 3f5a8f1d, LOW) : un tronqué « ancien » ne se
+      // décode pas, donc le sous-ensemble n'est pas PRUVÉ — il est archivés
+      // comme n'importe quel tronqué, jamais supprimé sec.
+      final stale =
+          watermark != null &&
+          list != null &&
+          (p.seq < watermark.seq ||
+              (p.seq == watermark.seq && p.ts <= watermark.ts));
+      if (stale) {
+        try {
+          await p.file.delete();
+          debugPrint(
+            'WebhookQueue: « .part » décodable plus ancien que le dernier '
+            'fichier écrit (seq ${p.seq} <= ${watermark.seq}) : déjà '
+            'consolidé, supprimé sans rien adopter',
+          );
+        } catch (_) {}
+        continue;
+      }
       if (list == null) {
         // instantané tronqué : copie tournante AVANT toute disparition,
         // compté comme corrompu, visible à l'UI — jamais détruit en silence
@@ -769,7 +794,10 @@ class WebhookQueue {
       await wm.rename('${queueFile.path}.wm');
     } catch (_) {
       // meilleur effort : sans repère, l'adoption redevient conservatrice
-      // (elle adopte tout, comme avant ce commit) — jamais l'inverse
+      // (elle adopte tout, comme avant ce commit). Le sens de l'échec est
+      // une LIVRAISON EN DOUBLE possible au prochain boot (un .part
+      // intermédiaire déjà livré serait ré-adopté), jamais une perte —
+      // même direction que l'at-least-once du flush (revue 3f5a8f1d, LOW)
     }
   }
 
@@ -1062,7 +1090,10 @@ class WebhookQueue {
   /// le watermark ne sont PAS des copies : jamais listés ni purgés ici.
   static final RegExp _copiesPattern = RegExp(
     r'^webhook_queue\.(?:json|archive\.json)\.(?:[a-z][a-z-]*|tmp)\.\d+$'
-    r'|^webhook_queue\.(?:json|archive\.json)\.tmp$',
+    r'|^webhook_queue\.(?:json|archive\.json)\.tmp$'
+    // résidu d'un watermark dont le renommage n'a pas abouti : pas de PII
+    // (seq + ts), mais il grossit la surface et doit rester purgeable
+    r'|^webhook_queue\.json\.wm\.tmp$',
   );
 
   Future<List<({String name, int bytes})>> listCopies() async {
@@ -1296,13 +1327,23 @@ class WebhookQueue {
     }
     // copie de l'état complet AVANT destruction, suspendus et invalides
     // inclus — surtout l'épave illisible, que clear() est la seule voie
-    // d'effacer : sa copie tourne, jamais sa disparition sèche.
+    // d'effacer : sa copie tourne, jamais sa disparition sèche. Et si la
+    // copie échoue, le geste est REFUSÉ plutôt que réalisé sans trace :
+    // « confirmation préalable » n'a de sens que si la copie l'est aussi
+    // (revue 3f5a8f1d, LOW préexistant — catch vide qui laissait détruire
+    // l'épave sans copie).
     try {
       final file = await _queueFile();
       if (await file.exists()) {
         await _rotateBackup(file, 'avant-vidage');
       }
-    } catch (_) {}
+    } catch (e) {
+      WebhookService.instance.recordQueueReject(
+        'copie avant vidage impossible : vidage refusé ($e)',
+      );
+      _tick();
+      return;
+    }
     _items.clear();
     // Un envoi en vol dont l'échec tomberait APRÈS ce clear ne réinsérera
     // pas son corps : la demande explicite de l'utilisateur prime.

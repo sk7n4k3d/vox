@@ -208,6 +208,9 @@ class SettingsWebhookController extends State<SettingsWebhook> {
 
   Future<void> refreshCopies() async {
     final list = await WebhookQueue.instance.listCopies();
+    // la page peut se fermer pendant l inventaire : ne pas écrire dans un
+    // notifier disposé (revue 3f5a8f1d, INFO)
+    if (!mounted) return;
     copies.value = (
       count: list.length,
       bytes: list.fold<int>(0, (a, e) => a + e.bytes),

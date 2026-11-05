@@ -122,7 +122,11 @@ directory, plus rotating safety copies (`.corrompu.N`, `.avant-vidage.N`,
 archives). Safety copies are retained indefinitely — deleting one is a user
 action ("Purger les copies" in settings, with the count and total size shown
 on that page), never an automatic boot — and an explicit archive
-(`webhook_queue.archive.json`).
+(`webhook_queue.archive.json`). One documented exception to "archived rather
+than deleted": a fully decodable `.part` snapshot older than the last verified
+write of the main file — its content is then provably already inside it — is
+removed without a copy; any incomplete or unverifiable snapshot is always
+archived first.
 These files contain message payloads in clear text, protected on Android by
 the app sandbox and file-based encryption; on desktop builds except Windows,
 every one of them — queue file, temporary writes, rotating copies and archive
