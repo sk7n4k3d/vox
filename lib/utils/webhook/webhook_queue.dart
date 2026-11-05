@@ -187,9 +187,13 @@ class WebhookQueue {
           );
         } else {
           // verrou impossible mais pas de pair connu : continuer sans
-          // verrou, hypothèse mono-processus + avertissement
+          // verrou, hypothèse mono-processus + avertir l'UI — la garantie
+          // « pas d écrasement croisé » ne tient plus, l utilisateur doit le
+          // savoir (audit 3ca417b0, F5 : la branche était entièrement
+          // silencieuse)
           _lockUnsupported = true;
           _lockedByPeer = false;
+          _tick();
           final reason = e.osError?.message ?? e.message;
           debugPrint(
             'WebhookQueue: verrou inter-processus indisponible ($reason) — '
@@ -199,6 +203,7 @@ class WebhookQueue {
       } catch (_) {
         _lockUnsupported = true;
         _lockedByPeer = false;
+        _tick();
       }
     } catch (_) {
       // ouverture du fichier de verrou impossible (répertoire plein ou en
@@ -206,6 +211,7 @@ class WebhookQueue {
       // échouera de toute façon et sera comptée par _lastPersistFailed
       _lockUnsupported = true;
       _lockedByPeer = false;
+      _tick();
     }
   }
 
@@ -316,7 +322,7 @@ class WebhookQueue {
   bool _overBudget = false;
   int _persistSeq = 0;
   int _persistedSeq = 0;
-  Future<void> _persistTail = Future.value();
+  Future<bool> _persistTail = Future.value(true);
 
   /// Nombre d'événements écartés de la file (taille, budget ou compteur),
   /// pour l'UI des réglages.
@@ -374,6 +380,14 @@ class WebhookQueue {
   Future<void> _ensureLoaded() async {
     if (_loaded) return;
     _loaded = true;
+    // chargement sur table rasée : le seul rechargement possible vient de la
+    // reprise du verrou, et laisser les anciens corps dans _items les ferait
+    // double en RAM puis double sur le disque puis DOUBLE LIVRAISON (audit
+    // 3ca417b0, INFO-2)
+    _items.clear();
+    _corrupt = 0;
+    _recovered = 0;
+    _corruptOnLoad = false;
     var over = false;
     File? file;
     try {
@@ -382,6 +396,7 @@ class WebhookQueue {
       if (_lockedByPeer) {
         // état laissée tel quel par l'instance détentrice : ni lecture
         // (obsolète sitôt), ni écriture (écrasement), ni envoi (double)
+        _tick();
         return;
       }
       if (await file.exists()) {
@@ -417,8 +432,19 @@ class WebhookQueue {
       // un crash peut laisser un instantané PLUS RÉCENT que le fichier
       // principal. Le supprimer sans l'ouvrir serait une perte (audit
       // 557ca0bb, F1). Tourne aussi quand le fichier principal est absent
-      // (crash pendant la première écriture).
-      await _adoptStaleParts(file, mainMissing: !await file.exists());
+      // (crash pendant la première écriture). Le watermark (seq/ts du
+      // dernier renommage réussi) borne le sens opposé : un instantané plus
+      // ancien est déjà sur le disque et ne doit rien écraser.
+      final watermark = await _readWatermark(file);
+      if (watermark != null && watermark.seq > _persistSeq) {
+        // le compteur ne repart jamais en arrière, même après redémarrage
+        _persistSeq = watermark.seq;
+      }
+      await _adoptStaleParts(
+        file,
+        mainMissing: !await file.exists(),
+        watermark: watermark,
+      );
     } catch (e) {
       _unreadable = true;
       _tick();
@@ -434,42 +460,54 @@ class WebhookQueue {
     }
     _overBudget = over;
     pending.value = _activeCount();
+    // F3 (audit 3ca417b0) : le chargement EST une transition d'état — des
+    // invalides découverts, un sursaturage, une récupération : la page déjà
+    // ouverte doit les voir sans qu'un autre événement ne force un tick.
+    _tick();
   }
 
   /// Union par corps : les événements d'un `.part` décodable absents de la
   /// mémoire y sont ajoutés, l'instantané est consolidé par persist, PUIS
   /// supprimé — quel que soit le nombre de corps fusionnés (audit ade1b6ba,
-  /// finding 2 : un `.part` déjà connu laissé sur le disque était relu à
-  /// chaque boot et REDÉLIVRÉ dès que le fichier principal s'était vidé).
-  /// Un `.part` qui ne se décode pas est un instantané INCOMPLET, pas un
-  /// résidu : la coupure d'alimentation au milieu de l'écriture laisse du
-  /// JSON tronqué portant des messages jamais envoyés — il est donc ARCHIVÉ
-  /// en copie tournante `part-illisible.N` et compté, jamais détruit
-  /// (finding 1). Le fichier principal illisible, lui, est copié avant
-  /// d'être éventuellement remplacé.
+  /// finding 2), MAIS seulement si le persist a confirmé son écriture
+  /// (audit 3ca417b0, F1) : sinon le `.part` survit et la consolidation est
+  /// retentée au démarrage suivant. Un `.part` plus ancien que le dernier
+  /// fichier écrit (watermark) est déjà sur le disque : supprimé sans rien
+  /// adopter (INFO-1). Un `.part` qui ne se décode pas est un instantané
+  /// INCOMPLET, pas un résidu : la coupure d'alimentation au milieu de
+  /// l'écriture laisse du JSON tronqué portant des messages jamais envoyés —
+  /// il est donc ARCHIVÉ en copie tournante `part-illisible.N` (conservée
+  /// sans plafond) et compté, jamais détruit (finding 1). Le fichier
+  /// principal illisible, lui, est copié avant d'être éventuellement
+  /// remplacé.
   Future<void> _adoptStaleParts(
     File queueFile, {
     bool mainUnreadable = false,
     bool mainMissing = false,
+    ({int seq, int ts})? watermark,
   }) async {
     final dir = queueFile.parent;
     final prefix = '${queueFile.path}.part.';
-    final parts = <({int seq, File file})>[];
+    final parts = <({int seq, int ts, File file})>[];
     try {
       await for (final entity in dir.list()) {
         if (entity is! File || !entity.path.startsWith(prefix)) continue;
-        final seq =
-            int.tryParse(
-              entity.path.substring(prefix.length).split('.').first,
-            ) ??
-            0;
-        parts.add((seq: seq, file: entity));
+        final seg = entity.path
+            .substring(prefix.length)
+            .split('.')
+            .take(2)
+            .toList();
+        final seq = int.tryParse(seg.first) ?? 0;
+        final ts = seg.length > 1 ? int.tryParse(seg[1]) ?? 0 : 0;
+        parts.add((seq: seq, ts: ts, file: entity));
       }
     } catch (_) {
       return;
     }
     if (parts.isEmpty) return;
-    parts.sort((a, b) => a.seq.compareTo(b.seq));
+    parts.sort(
+      (a, b) => a.seq != b.seq ? a.seq.compareTo(b.seq) : a.ts.compareTo(b.ts),
+    );
     if (mainUnreadable && !mainMissing && _items.isEmpty) {
       // l'épave principale est sauvegardée avant d'être éventuellement
       // remplacée par la récupération
@@ -486,6 +524,25 @@ class WebhookQueue {
     var merged = 0;
     var adoptedState = 0;
     for (final p in parts) {
+      // watermark : le fichier principal a été écrit à ce (seq, ts) — tout
+      // instantané plus ancien a donc déjà été absorbé par une écriture
+      // réussie. Son état ne peut PAS gagner sur le plus récent (audit
+      // 3ca417b0, INFO-1 : après un renommage raté dont le nettoyage a été
+      // tué, un .part POUVAIT être plus vieux que le fichier principal et
+      // réveillait un suspendu en écrasant tentatives/suspension).
+      if (watermark != null &&
+          (p.seq < watermark.seq ||
+              (p.seq == watermark.seq && p.ts <= watermark.ts))) {
+        try {
+          await p.file.delete();
+          debugPrint(
+            'WebhookQueue: « .part » plus ancien que le dernier fichier '
+            'écrit (seq ${p.seq} <= ${watermark.seq}) : déjà consolidé, '
+            'supprimé sans rien adopter',
+          );
+        } catch (_) {}
+        continue;
+      }
       List<Object?>? list;
       try {
         final decoded = jsonDecode(await p.file.readAsString());
@@ -545,26 +602,38 @@ class WebhookQueue {
       absorbed.add(p.file);
     }
     final dirty = merged > 0 || adoptedState > 0;
+    var writeOk = !dirty;
     if (dirty) {
       // l'état récupéré porte désormais la mémoire : on consolide AVANT de
-      // supprimer les .part absorbés (jamais l'inverse : supprimer avant
-      // l'écriture réussie reproduirait exactement la perte qu'on ferme)
+      // supprimer les .part absorbés — et on ne les supprime que si
+      // l'écriture a VRAIMENT réussi : le commentaire promettait « jamais
+      // l'inverse », seul le succès du renommage permettait de le garantir
+      // (audit 3ca417b0, F1 — persist silencieux en échec, le .portait un
+      // message jamais écrit partait quand même : traces=[] sur l'audit).
       if (_unreadable) {
         // le fichier principal est une épave déjà copiée : la récupération
         // devient l'état de référence
         _unreadable = false;
       }
-      await _persist();
+      writeOk = await _persist();
+      if (!writeOk) {
+        debugPrint(
+          'WebhookQueue: consolidation non arrivée sur le disque — les '
+          '« .part » absorbés sont CONSERVÉS pour une nouvelle tentative au '
+          'prochain démarrage (aucune perte, retente silencieuse)',
+        );
+      }
     }
-    // La consolidation faite (ou inutile — chaque corps était déjà porté et
-    // écrit dans le fichier principal), l'instantané n'a plus de raison
-    // d'exister : sinon il est relu au prochain boot et redélivre
-    // (finding 2). merged == 0 et aucun état adopté ⇒ rien n'est perdu à le
-    // supprimer, la mémoire == le fichier l'a déjà.
-    for (final f in absorbed) {
-      try {
-        await f.delete();
-      } catch (_) {}
+    // writeOk : soit la consolidation vient d'être écrite et vérifiée, soit
+    // elle était déjà faite (merged == 0, chaque corps porté par le fichier
+    // principal). L'instantané n'a plus de raison d'exister : sinon il est
+    // relu au prochain boot et redélivre (finding 2).
+    if (writeOk) {
+      for (final f in absorbed) {
+        try {
+          await f.delete();
+        } catch (_) {}
+      }
     }
     _recovered += merged;
     if (merged > 0) {
@@ -595,12 +664,19 @@ class WebhookQueue {
 
   /// Les écritures atomiques passent par un fichier temporaire renommé
   /// ensuite ; les orphelins `.part` sont RÉCUPÉRÉS (voir _adoptStaleParts),
-  /// plus purgés à l'aveugle. Les copies de secours, elles, tournent :
-  /// `.tag.1` (la plus récente) → `.tag.N`, sans dépasser [maxBackups] — une
-  /// copie horodatée à chaque lancement ferait grossir le disque de 26 MiB
-  /// par redémarrage avec les corps en clair (audit 557ca0bb, F6).
-  static const int maxBackups = 3;
-
+  /// plus purgés à l'aveugle. Les copies de secours tournent sans plafond :
+  /// `.tag.1` (la plus récente) → `.tag.N`, conservées jusqu'à purge
+  /// explicite (audit 3ca417b0, F2 — le plafond de 3 détruisait des épaves
+  /// uniques au boot). La croissance est rendue visible dans la page
+  /// Réglages (nombre + poids) plutôt que bornée en silencieux.
+  /// Supprimer une copie au fil de l'eau serait détruire la seule trace d'un
+  /// état antérieur — ces fichiers portent des corps de messages jamais
+  /// envoyés (épaves de crash, états vidés) : eux aussi tombent sous le
+  /// mandat « aucune suppression sans demande explicite » (audit 3ca417b0,
+  /// F2 — la rotation bornée à 3 effaçait au boot des épaves que le même
+  /// fichier promettait de ne jamais purger sans geste utilisateur).
+  /// La surface disque est visible dans la page Réglages (« Copies de
+  /// secours ») et la purge est un geste explicite avec confirmation.
   Future<void> _rotateBackup(
     File source,
     String tag, {
@@ -611,29 +687,38 @@ class WebhookQueue {
     // sinon la copie serait rescannée comme un .part au boot suivant (et
     // resauvegardée, à l'infini).
     final base = targetBase ?? '${source.path}.$tag';
-    // .3 saute, .2 -> .3, .1 -> .2, la nouvelle copie devient .1
-    for (var n = maxBackups; n >= 1; n--) {
-      final f = File('$base.$n');
+    // index courant le plus haut, puis décalage en cascade .N -> .N+1
+    var top = 0;
+    while (await File('$base.${top + 1}').exists()) {
+      top++;
+    }
+    for (var n = top; n >= 1; n--) {
       try {
-        if (!await f.exists()) continue;
-        if (n == maxBackups) {
-          debugPrint(
-            'WebhookQueue: sauvegarde ${tag}_$n remplacée (rotation bornée '
-            'à $maxBackups)',
-          );
-          await f.delete();
-        } else {
-          await f.rename('$base.${n + 1}');
-        }
+        await File('$base.$n').rename('$base.${n + 1}');
       } catch (_) {}
     }
-    await source.copy('$base.1');
-    // La copie hérite du mode de la source — et la source est rarement
-    // 600 (fichier écrit par une build antérieure à ce commit, ou .part
-    // crashé créé en 644). Sans ce chmod, les sauvegardes tournantes
-    // répandraient les corps de SMS/MMS en clair sous un mode monde-
-    // lisible, en contradiction avec PRIVACY.md (audit ade1b6ba, finding 4).
-    await _hardenPermissions(File('$base.1'));
+    // Jamais File.copy quand la source est monde-lisible : la copie hérite
+    // du mode de la source À LA CRÉATION, et le chmod ultérieur laisse
+    // l'intégralité du contenu en clair accessible pendant toute la durée
+    // de la copie (audit 3ca417b0, F4 / sonde RB5 : ~120 Mo en 644 pendant
+    // ~0,5 s). Ici la destination est créée VIDE, durcie en 600, puis
+    // remplie en flux : la fenêtre ne porte que du vide, et chaque octet
+    // écrit l'est dans un fichier déjà 600.
+    final dst = File('$base.1');
+    try {
+      await dst.create();
+      await _hardenPermissions(dst);
+      // pipe ferme le flux à la fin (succès comme erreur), contrairement à
+      // addStream qui laisse l'IOSink ouvert donc le contenu en tampon
+      await source.openRead().pipe(dst.openWrite());
+    } catch (e) {
+      try {
+        if (await dst.exists()) await dst.delete();
+      } catch (_) {}
+      throw e is FileSystemException
+          ? e
+          : FileSystemException('copie de secours impossible', base);
+    }
   }
 
   /// Mode 600 sur un chemin donné : les fichiers de la file portent des
@@ -662,20 +747,60 @@ class WebhookQueue {
   /// (`_persistTail`), le contenu est ré-encodé AU MOMENT de l'exécution
   /// (jamais capturé avant la file), et la séquence monotonne sert de double
   /// garde : un ordre inversé ne peut plus passer. Le dernier état gagne.
-  Future<void> _persist() {
+  Future<bool> _persist() {
     _persistSeq += 1;
     final seq = _persistSeq;
     _persistTail = _persistTail.then((_) => _writeSnapshot(seq));
     return _persistTail;
   }
 
-  Future<void> _writeSnapshot(int seq) async {
-    if (_unreadable || _lockedByPeer) return;
+  /// Écrit le fichier « watermark » : le (seq, ts) du dernier instantané dont
+  /// le renommage a réussi. Au démarrage suivant, un `.part` survivant plus
+  /// ancien que ce repère est nécessairement déjà sur le disque (le fichier
+  /// principal l'a absorbé) : son état ne peut plus écraser le plus récent
+  /// (audit 3ca417b0, INFO-1 : la seule façon de comparer un `.part` au
+  /// fichier principal était d'enregistrer la trace de ce dernier).
+  Future<void> _writeWatermark(File queueFile, int seq, int ts) async {
+    try {
+      final wm = File('${queueFile.path}.wm.tmp');
+      await wm.create();
+      await _hardenPermissions(wm);
+      await wm.writeAsString('$seq $ts', flush: true);
+      await wm.rename('${queueFile.path}.wm');
+    } catch (_) {
+      // meilleur effort : sans repère, l'adoption redevient conservatrice
+      // (elle adopte tout, comme avant ce commit) — jamais l'inverse
+    }
+  }
+
+  Future<({int seq, int ts})?> _readWatermark(File queueFile) async {
+    try {
+      final raw = await File('${queueFile.path}.wm').readAsString();
+      final parts = raw.trim().split(RegExp(r'\s+'));
+      if (parts.length != 2) return null;
+      final seq = int.tryParse(parts[0]);
+      final ts = int.tryParse(parts[1]);
+      if (seq == null || ts == null) return null;
+      return (seq: seq, ts: ts);
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /// Retourne `true` seulement si l'instantané a été écrit ET renommé avec
+  /// succès. Les chemins de retour anticipé renvoient `false` : ils laissent
+  /// le disque dans un état qu'on n'a PAS vérifié, et un appelant sur le
+  /// point de supprimer une source de données se doit de l'apprendre
+  /// (audit 3ca417b0, F1).
+  Future<bool> _writeSnapshot(int seq) async {
+    if (_unreadable || _lockedByPeer) return false;
     if (seq < _persistedSeq) {
       // Ne peut arriver qu'avec deux file d écritures (défensif : la chaîne
       // les sérialise déjà). Un instantané plus vieux que ce qui est déjà sur
-      // le disque n a rien à y écrire.
-      return;
+      // le disque n a rien à y écrire. `false` : ce succès éventuel n'est pas
+      // vérifié ici, et seul un renommage de CET appel autorise à supprimer
+      // une source.
+      return false;
     }
     File? tmp;
     try {
@@ -704,9 +829,8 @@ class WebhookQueue {
       }
       // snapshot encodé ICI, sous la chaîne : c'est l'état du moment qui
       // part, pas celui capturé avant l'attente
-      tmp = File(
-        '${file.path}.part.$seq.${DateTime.now().microsecondsSinceEpoch}',
-      );
+      final ts = DateTime.now().microsecondsSinceEpoch;
+      tmp = File('${file.path}.part.$seq.$ts');
       // le fichier est créé et passé en 600 AVANT l'écriture : sinon le
       // contenu est écrit dans un fichier 644 (umask), ne fût-ce que le
       // temps du write — la fenêtre suffisait à exposer les corps en clair
@@ -719,12 +843,14 @@ class WebhookQueue {
       );
       await tmp.rename(file.path);
       _persistedSeq = seq;
+      await _writeWatermark(file, seq, ts);
       if (_lastPersistFailed) {
         // retour à une écriture saine : l'indicateur « sauvegarde coupée »
         // doit s'effacer, sinon le bandeau reste faux après récupération
         _lastPersistFailed = false;
         _tick();
       }
+      return true;
     } catch (e) {
       // Écriture ou rename raté : rien n'est perdu — le fichier précédent
       // reste tel quel (ou absent s'il n'existait pas), la mémoire garde
@@ -747,6 +873,7 @@ class WebhookQueue {
         'WebhookQueue: écriture échouée (essayée à nouveau au '
         'prochain changement): $e',
       );
+      return false;
     }
   }
 
@@ -754,11 +881,14 @@ class WebhookQueue {
   /// délai de base : inutile de retaper tout de suite un serveur qui vient de
   /// refuser.
   ///
-  /// Retourne `true` si le corps est en file. Sinon **rejet explicite et
-  /// observable** : motif dans [lastRejectReason], taille dans
-  /// [lastRejectBytes], compteur dans [droppedCount] — jamais d'éviction d'un élément existant
-  /// pour faire de la place (audit 8960c5cc : chasser des événements non
-  /// envoyés est une perte de données, y compris « en vol »).
+  /// Retourne `true` si le corps est en file — en FILE, donc en mémoire :
+  /// la mise sur disque peut avoir échoué dans le même appel, c'est
+  /// [saveDisabled] qui le dit (compromis assumé depuis l'audit ade1b6ba,
+  /// ligne clarifiée pour l'audit 3ca417b0, INFO-3). Sinon **rejet explicite
+  /// et observable** : motif dans [lastRejectReason], taille dans
+  /// [lastRejectBytes], compteur dans [droppedCount] — jamais d'éviction d'un
+  /// élément existant pour faire de la place (audit 8960c5cc : chasser des
+  /// événements non envoyés est une perte de données, y compris « en vol »).
   Future<bool> add(String rawBody) async {
     await _ensureLoaded();
     if (_lockedByPeer) {
@@ -903,6 +1033,83 @@ class WebhookQueue {
   /// écriture possible est une sauvegarde fantôme).
   bool get saveDisabled => _unreadable || _lockedByPeer || _lastPersistFailed;
 
+  /// `true` quand le verrou inter-processus est indisponible sur ce stockage
+  /// (NFS sans POSIX lock, quota de verrous, ouverture du `.lock` refusée) :
+  /// la file fonctionne, mais la garantie « pas d'écrasement croisé entre
+  /// processus » ne tient plus — l'utilisateur doit l'apprendre (audit
+  /// 3ca417b0, F5). Volontairement DISTINCT de `saveDisabled` : ici
+  /// l'écriture marche, c'est la protection multi-instance qui manque.
+  bool get lockUnavailable => _lockUnsupported;
+
+  /// Une ligne de l'inventaire des copies de secours.
+  ({String name, int bytes}) _describeCopy(File f) =>
+      (name: f.path.split(RegExp(r'[/\\]')).last, bytes: _lenSync(f));
+
+  static int _lenSync(File f) {
+    try {
+      return f.lengthSync();
+    } catch (_) {
+      return 0;
+    }
+  }
+
+  /// Les copies de secours sont conservées SANS plafond depuis l'audit
+  /// 3ca417b0 (F2) : elles portent des données uniques (épaves, états
+  /// vidés, passés archivés). Leur surface disque est donc mesurée et
+  /// rendue visible, et leur purge est un geste explicite. Motifs : tags de
+  /// rotation `.tag.N` sur le fichier vivant et l'archive, et résidus
+  /// `.tmp` d'écritures interrompues. Les `.part` en attente d'adoption et
+  /// le watermark ne sont PAS des copies : jamais listés ni purgés ici.
+  static final RegExp _copiesPattern = RegExp(
+    r'^webhook_queue\.(?:json|archive\.json)\.(?:[a-z][a-z-]*|tmp)\.\d+$'
+    r'|^webhook_queue\.(?:json|archive\.json)\.tmp$',
+  );
+
+  Future<List<({String name, int bytes})>> listCopies() async {
+    final out = <({String name, int bytes})>[];
+    try {
+      final file = await _queueFile();
+      await for (final entity in file.parent.list()) {
+        if (entity is! File) continue;
+        final name = entity.path.split(RegExp(r'[/\\]')).last;
+        if (!_copiesPattern.hasMatch(name)) continue;
+        out.add(_describeCopy(entity));
+      }
+    } catch (_) {}
+    out.sort((a, b) => a.name.compareTo(b.name));
+    return out;
+  }
+
+  /// Purge EXPLICITE des copies de secours (geste utilisateur confirmé) :
+  /// supprime les rotations et résidus, laisse intacts le fichier vivant,
+  /// l'archive vivante, les `.part` en attente et le watermark. Retourne le
+  /// nombre de fichiers supprimés. Refusée si un pair détient le verrou :
+  /// les rotations sont un patrimoine commun entre instances.
+  Future<int> purgeCopies() => _serialized(() async {
+    await _ensureLoaded();
+    if (_lockedByPeer) {
+      WebhookService.instance.recordQueueReject(
+        'autre instance détient la file : purge des copies reportée',
+      );
+      return 0;
+    }
+    var deleted = 0;
+    final entries = await listCopies();
+    final file = await _queueFile();
+    for (final e in entries) {
+      try {
+        await File('${file.parent.path}/${e.name}').delete();
+        deleted++;
+      } catch (_) {}
+    }
+    _tick();
+    debugPrint(
+      'WebhookQueue: purge demandée — $deleted copie(s) de secours '
+      'supprimée(s) sur ${entries.length} inventoriées',
+    );
+    return deleted;
+  });
+
   /// Entrées suspendues (expirées ou abandonnées) : conservées sur le disque,
   /// plus jamais POSTées, comptées dans WebhookStats.suspended.
   int get suspendedCount =>
@@ -958,7 +1165,21 @@ class WebhookQueue {
   /// budget qui bloquait tout ajout — audit 557ca0bb, F2) sans être
   /// supprimés : conservés sur le disque, jamais renvoyés. Retourne le
   /// nombre déplacé.
-  Future<int> archiveSuspended() async {
+  /// Chaîne de sérialisation des gestes qui manœuvrent le patrimoine de
+  /// copies (archive, purge) : deux appels concurrents sans elle calculaient
+  /// tous deux la même liste « moved » avant que le premier ne la retire de
+  /// mémoire, et le second archivait DEUX FOIS puis faisait sauter la
+  /// rotation contenant le passé (sonde RB6 en suite complète : vert isolé,
+  /// rouge sous charge — la sérialisation doit être réelle, pas chronologique).
+  Future<void> _assetOpGate = Future.value();
+
+  Future<int> _serialized(Future<int> Function() body) {
+    final result = _assetOpGate.then((_) => body());
+    _assetOpGate = result.then((_) {}, onError: (_) {});
+    return result;
+  }
+
+  Future<int> archiveSuspended() => _serialized(() async {
     try {
       return await _archiveSuspendedInner();
     } catch (e) {
@@ -970,10 +1191,17 @@ class WebhookQueue {
       debugPrint('WebhookQueue: archivage impossible (rien de déplacé): $e');
       return 0;
     }
-  }
+  });
 
   Future<int> _archiveSuspendedInner() async {
     await _ensureLoaded();
+    if (_lockedByPeer) {
+      // même raison que clear() : ne pas manœuvrer les archives du pair
+      WebhookService.instance.recordQueueReject(
+        'autre instance détient la file : archivage reporté',
+      );
+      return 0;
+    }
     if (_unreadable) return 0; // persistance coupée : archiver créerait des
     // doubles à la reprise du fichier épave
     final moved = _items.where((i) => i.suspended || i.isInvalid).toList();
@@ -1057,6 +1285,15 @@ class WebhookQueue {
   /// (audit 557ca0bb, F5 : un tap ne doit pas être irréversible sans trace).
   Future<void> clear() async {
     await _ensureLoaded();
+    if (_lockedByPeer) {
+      // l'instance en retrait ne doit pas pousser les rotations « avant-
+      // vidage » du fichier que le pair détient ni toucher à son état
+      // (audit 3ca417b0, corollaire F5)
+      debugPrint(
+        'WebhookQueue: vidage ignoré — une autre instance détient la file',
+      );
+      return;
+    }
     // copie de l'état complet AVANT destruction, suspendus et invalides
     // inclus — surtout l'épave illisible, que clear() est la seule voie
     // d'effacer : sa copie tourne, jamais sa disparition sèche.

@@ -253,6 +253,7 @@ class SettingsWebhookView extends StatelessWidget {
                   ),
                   const SizedBox(height: FluffySpacing.sm),
                   _queueStatusBar(context),
+                  _copiesStatusBar(context),
                 ],
               ),
             ),
@@ -507,7 +508,11 @@ class SettingsWebhookView extends StatelessWidget {
                                       '(nouvel essai automatique)' : ''}'
                             '${queue.saveDisabled ? ' · SAUVEGARDE DÉSACTIVÉE : fichier de file illisible, '
                                       'détenu par une autre instance ou '
-                                      'dernière écriture en échec' : ''}',
+                                      'dernière écriture en échec' : ''}'
+                            '${queue.lockUnavailable ? ' · ATTENTION : verrou '
+                                      'inter-processus indisponible sur ce '
+                                      'stockage — une seconde instance de '
+                                      'l\'app écraserait ce fichier' : ''}',
                   style: theme.textTheme.bodySmall?.copyWith(
                     color: queue.saveDisabled
                         ? theme.colorScheme.error
@@ -550,6 +555,39 @@ class SettingsWebhookView extends StatelessWidget {
           );
         },
       ),
+    );
+  }
+
+  /// Inventaire des copies de secours : depuis l'audit 3ca417b0 (F2) elles
+  /// ne sont plus jamais évincées par la rotation — la surface disque est
+  /// donc affichée (nombre + poids) et la purge est un geste explicite.
+  Widget _copiesStatusBar(BuildContext context) {
+    final theme = Theme.of(context);
+    return ValueListenableBuilder<QueueCopies?>(
+      valueListenable: controller.copies,
+      builder: (context, info, _) {
+        if (info == null || info.count == 0) {
+          return const SizedBox.shrink();
+        }
+        return Row(
+          children: [
+            Expanded(
+              child: Text(
+                'Copies de secours : ${info.count} fichier(s), '
+                '${describeBytes(info.bytes)} — conservées sans limite, '
+                'une purge est un geste explicite',
+                style: theme.textTheme.bodySmall?.copyWith(
+                  color: theme.colorScheme.onSurfaceVariant,
+                ),
+              ),
+            ),
+            TextButton(
+              onPressed: controller.confirmPurgeCopies,
+              child: const Text('Purger les copies'),
+            ),
+          ],
+        );
+      },
     );
   }
 

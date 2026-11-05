@@ -13,6 +13,14 @@ import 'package:matrix/matrix.dart';
 
 import 'settings_webhook_view.dart';
 
+/// Inventaire des copies de secours affiché sous le bandeau de file.
+typedef QueueCopies = ({int count, int bytes});
+
+/// Poids lisible, en français : Ko < 1 Mo, Mo ensuite.
+String describeBytes(int bytes) => bytes < 1024 * 1024
+    ? '${(bytes / 1024).ceil()} Ko'
+    : '${(bytes / (1024 * 1024)).toStringAsFixed(1)} Mo';
+
 class SettingsWebhook extends StatefulWidget {
   const SettingsWebhook({super.key});
 
@@ -68,6 +76,10 @@ class SettingsWebhookController extends State<SettingsWebhook> {
   void initState() {
     super.initState();
     _load();
+    // les copies tournent à chaque archive, clear ou épave découverte :
+    // l'inventaire suit les transitions de la file
+    WebhookQueue.instance.uiTick.addListener(refreshCopies);
+    unawaited(refreshCopies());
   }
 
   Future<void> _load() async {
@@ -188,10 +200,67 @@ class SettingsWebhookController extends State<SettingsWebhook> {
 
   Future<void> clearQueue() => WebhookQueue.instance.clear();
 
+  /// Inventaire des copies de secours (rotations + résidus) : les copies ne
+  /// sont plus jamais effacées d'office depuis l'audit 3ca417b0 (F2), la
+  /// surface disque est donc affichée et la purge devient un geste explicite
+  /// avec confirmation nommant le compte et le poids exacts.
+  final ValueNotifier<QueueCopies?> copies = ValueNotifier(null);
+
+  Future<void> refreshCopies() async {
+    final list = await WebhookQueue.instance.listCopies();
+    copies.value = (
+      count: list.length,
+      bytes: list.fold<int>(0, (a, e) => a + e.bytes),
+    );
+  }
+
+  Future<void> confirmPurgeCopies() async {
+    final info = copies.value;
+    if (info == null || info.count == 0) return;
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Purger les copies de sauvegarde ?'),
+        content: Text(
+          '${info.count} fichier(s), ${describeBytes(info.bytes)} de copies '
+          'tournantes (épaves de crash, états vidés, archives précédentes) '
+          'seront définitivement supprimés de l\'appareil. Ce geste ne touche '
+          'ni la file vivante, ni le fichier archive, ni les instantanés en '
+          'attente de consolidation.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: const Text('Annuler'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(true),
+            child: const Text('Purger'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+    final n = await WebhookQueue.instance.purgeCopies();
+    await refreshCopies();
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          n == 0
+              ? 'Aucune copie supprimée (file détenue par une autre '
+                    'instance ou déjà purgee).'
+              : '$n copie(s) de secours supprimée(s).',
+        ),
+      ),
+    );
+  }
+
   /// Déplace suspendus et corrompus vers le fichier archive : ils quittent
   /// la file vivante sans être supprimés (sortie du blocage F2 sans perte).
   Future<void> archiveQueue() async {
     final archived = await WebhookQueue.instance.archiveSuspended();
+    await refreshCopies();
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
@@ -239,7 +308,10 @@ class SettingsWebhookController extends State<SettingsWebhook> {
         ],
       ),
     );
-    if (confirmed == true) await WebhookQueue.instance.clear();
+    if (confirmed == true) {
+      await WebhookQueue.instance.clear();
+      await refreshCopies();
+    }
   }
 
   /// Bouton « Reprendre » : renvoie en file d'envoi les événements suspendus
@@ -400,6 +472,8 @@ class SettingsWebhookController extends State<SettingsWebhook> {
 
   @override
   void dispose() {
+    WebhookQueue.instance.uiTick.removeListener(refreshCopies);
+    copies.dispose();
     urlController.dispose();
     secretController.dispose();
     attemptsController.dispose();

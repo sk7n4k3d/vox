@@ -327,33 +327,41 @@ void main() {
     expect(q2.invalidCount, 0);
   });
 
-  test('P6 (contrat) : copies de secours à rotation BORNÉE — pas une '
-      'copie pleine en clair de plus par démarrage', () async {
+  test('P6 (contrat, rév. audit 3ca417b0 F2) : copies de secours conservées '
+      'SANS plafond — aucune éviction au boot ; la purge est un geste '
+      'explicite qui ne touche que les copies', () async {
     queueFile().writeAsStringSync(jsonEncode(<Object?>[42]));
     for (var boot = 1; boot <= 6; boot++) {
       final q = WebhookQueue.forTest(postRaw: (_) async => false);
       await q.add('u$boot|sms');
       q.stop();
     }
-    final backups = appDir
-        .listSync()
-        .whereType<File>()
-        .where((f) => f.path.contains('.corrompu.'))
-        .toList();
+    // un inventaire passe par une instance vivante
+    final q = WebhookQueue.forTest(postRaw: (_) async => false);
+    addTearDown(q.stop);
+    // ancien contrat : rotation bornée à 3, « preuve » de la fin de
+    // l\'accumulation. Faux compromis : la 3e épave effacée était peut-être
+    // la seule copie d\'un message jamais envoyé. La rétention est désormais
+    // totale et la surface disque rendue visible + purgeable à la demande.
+    final copies = await q.listCopies();
+    final backups = copies.where((c) => c.name.contains('.corrompu.'));
     expect(
       backups.length,
-      lessThanOrEqualTo(WebhookQueue.maxBackups),
+      6,
       reason:
-          'l\'audit démontrait backups=2 par 2 boots, sans borne : '
-          '26 MiB de corps en clair par démarrage. La rotation borne à '
-          '${WebhookQueue.maxBackups} et la corruption, elle, ne '
-          's\'accumule pas dans le fichier vivant',
+          'un boot = une copie, aucune détruite (l\'originale en gardait 3 sur '
+          '6 en affirmant « jamais d\'un boot » dans son propre journal)',
     );
-    // la plus récente porte toujours l'état pré-réencodage
+    // la purge explicite supprime les copies et RIEN D\'AUTRE
+    final deleted = await q.purgeCopies();
+    expect(deleted, greaterThanOrEqualTo(6));
+    expect(await q.listCopies(), isEmpty);
     expect(
-      File('${appDir.path}/webhook_queue.json.corrompu.1').existsSync(),
+      queueFile().existsSync(),
       isTrue,
+      reason: 'la file vivante survit à la purge des copies',
     );
+    expect(queueFile().readAsStringSync(), contains('u6|sms'));
   }, timeout: const Timeout(Duration(seconds: 180)));
 }
 
