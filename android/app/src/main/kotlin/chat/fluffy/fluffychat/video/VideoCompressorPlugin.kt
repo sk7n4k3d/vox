@@ -27,8 +27,8 @@ import io.flutter.plugin.common.MethodChannel
  */
 class VideoCompressorPlugin private constructor(
     context: Context,
-    channel: MethodChannel,
-    eventChannel: EventChannel,
+    private val channel: MethodChannel,
+    private val eventChannel: EventChannel,
 ) : MethodChannel.MethodCallHandler, EventChannel.StreamHandler {
 
     private val bridge = VideoCompressorBridge(context)
@@ -43,11 +43,15 @@ class VideoCompressorPlugin private constructor(
         when (call.method) {
             "start" -> {
                 val path = call.argument<String>("path")
+                val compress = call.argument<Boolean>("compress")
+                Log.i(TAG, "START CALLED: path=$path compress=$compress")
                 if (path.isNullOrBlank()) {
                     result.error("unreadable", "chemin vide", null)
                     return
                 }
-                result.success(mapOf("jobId" to bridge.start(path)))
+                val jobId = bridge.start(path)
+                Log.i(TAG, "START QUEUED: jobId=$jobId compress=$compress")
+                result.success(mapOf("jobId" to jobId))
             }
             "cancel" -> {
                 val jobId = call.argument<String>("jobId")
@@ -95,20 +99,20 @@ class VideoCompressorPlugin private constructor(
         private var instance: VideoCompressorPlugin? = null
 
         fun register(context: Context, flutterEngine: FlutterEngine) {
-            if (instance != null) return
+            val newChannel = MethodChannel(
+                flutterEngine.dartExecutor.binaryMessenger, CHANNEL_METHOD)
+            val newEventChannel = EventChannel(
+                flutterEngine.dartExecutor.binaryMessenger, CHANNEL_EVENTS)
+
             synchronized(this) {
-                if (instance != null) return
-                instance = VideoCompressorPlugin(
-                    context,
-                    MethodChannel(
-                        flutterEngine.dartExecutor.binaryMessenger,
-                        CHANNEL_METHOD,
-                    ),
-                    EventChannel(
-                        flutterEngine.dartExecutor.binaryMessenger,
-                        CHANNEL_EVENTS,
-                    ),
-                )
+                // Détacher l'ancien (si existant) pour libérer le channel et ses handlers
+                instance?.let { old ->
+                    old.channel.setMethodCallHandler(null)
+                    old.eventChannel.setStreamHandler(null)
+                }
+
+                // Recréer avec le NOUVEL engine, re-brancher les handlers via l'init {}
+                instance = VideoCompressorPlugin(context, newChannel, newEventChannel)
             }
         }
 
