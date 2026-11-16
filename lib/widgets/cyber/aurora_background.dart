@@ -64,6 +64,12 @@ class _AuroraBackgroundState extends State<AuroraBackground> {
   Timer? _drift;
   int _step = 0;
 
+  // Anti-rebond du re-rastérisation : pendant une animation de resize
+  // (clavier, rotation, drag desktop) les contraintes changent à chaque
+  // image ; on ne rappelle _render() qu'une fois la taille stabilisée.
+  Timer? _resizeDebounce;
+  bool _resizeSettled = false;
+
   // Signature de la dernière image pré-rasterisée (taille + thème).
   Size _imageSize = Size.zero;
   Color? _c1, _c2, _c3;
@@ -90,6 +96,7 @@ class _AuroraBackgroundState extends State<AuroraBackground> {
   @override
   void dispose() {
     _drift?.cancel();
+    _resizeDebounce?.cancel();
     _image?.dispose();
     super.dispose();
   }
@@ -133,16 +140,37 @@ class _AuroraBackgroundState extends State<AuroraBackground> {
         final size = Size(constraints.maxWidth, constraints.maxHeight);
         if (size.isEmpty) return const SizedBox.shrink();
         if (_image == null ||
-            _imageSize != size ||
             _c1 != cyber.cyan ||
             _c2 != cyber.violet ||
             _c3 != cyber.magenta) {
+          _resizeDebounce?.cancel();
+          _resizeSettled = false;
           _image?.dispose();
           _image = _render(size, dpr, cyber);
           _imageSize = size;
           _c1 = cyber.cyan;
           _c2 = cyber.violet;
           _c3 = cyber.magenta;
+        } else if (_imageSize != size) {
+          if (_resizeSettled) {
+            // Taille stabilisée (le debounce a tiré) : re-rastérisation unique.
+            _resizeSettled = false;
+            _image?.dispose();
+            _image = _render(size, dpr, cyber);
+            _imageSize = size;
+          } else {
+            // Resize en cours (clavier qui glisse, rotation, drag desktop) :
+            // les contraintes changent à CHAQUE image de l'animation.
+            // Re-peindre le calque plein écran par image (~7 ms + ~18 Mo
+            // realloqués) sature le thread raster pendant la transition
+            // (audit ultracode #19). On affiche l'ancienne texture étirée
+            // (blit pur via BoxFit.fill) et on ne re-rastérise qu'une fois
+            // la taille stabilisée.
+            _resizeDebounce?.cancel();
+            _resizeDebounce = Timer(const Duration(milliseconds: 150), () {
+              if (mounted) setState(() => _resizeSettled = true);
+            });
+          }
         }
         return Transform.translate(
           offset: _offsetFor(_step),
