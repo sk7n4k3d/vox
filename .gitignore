@@ -83,3 +83,7 @@ web/native_executor.js*
 
 # Docs de design touchant l infra (Hermes/homelab) : locales, pas publiees.
 /docs/superpowers/specs/2026-10-06-vox-hermes-inbox-design.md
+
+# artefacts de travail locaux (audit VoxOne)
+installed.apk
+ios/Flutter/ephemeral/
