@@ -173,9 +173,10 @@ class _MxcImageState extends State<MxcImage> {
       realHeight,
     ].whereType<num>().fold<num>(0, (a, b) => a > b ? a : b);
     if (displayPx <= 0) return;
-    // Une vidéo ou un fichier : on garde la miniature (télécharger le film
-    // pour une vignette serait absurde).
-    if (!event.attachmentMimetype.startsWith('image/')) return;
+    final isImage = event.attachmentMimetype.startsWith('image/');
+    final isVideo = event.attachmentMimetype.startsWith('video/');
+    // Un fichier non-image/non-vidéo : on garde la miniature de l'event.
+    if (!isImage && !isVideo) return;
     // La miniature est déjà assez grande pour l'affichage : rien à faire.
     final thumbPx = _eventThumbnailSize(event);
     if (thumbPx > 0 && thumbPx >= displayPx * 0.5) return;
@@ -183,6 +184,10 @@ class _MxcImageState extends State<MxcImage> {
     try {
       final Uint8List? better;
       if (!event.isAttachmentEncrypted) {
+        // Média non chiffré : le serveur peut re-dimensionner (image nette
+        // générée ; pour une vidéo, une miniature réelle si le serveur sait
+        // extraire une frame — sinon il rend une erreur et on garde ce qu'on
+        // a déjà).
         final attachmentUri = event.attachmentMxcUrl;
         if (attachmentUri == null) return;
         better = await client
@@ -195,13 +200,21 @@ class _MxcImageState extends State<MxcImage> {
               animated: widget.animated,
             )
             .timeout(const Duration(seconds: 20));
-      } else {
+        // Garde-fou vidéo : certains serveurs rendent l'original quand ils ne
+        // savent pas thumbscanner. Une vignette de > 2 Mo est un gaspillage
+        // réseau, on la jette.
+        if (isVideo && better.length > 2 * 1024 * 1024) return;
+      } else if (isImage) {
+        // Vidéo chiffrée : le serveur ne voit que du chiffre et télécharger
+        // le film pour une vignette serait absurde → on garde la miniature.
         final size = event.infoMap['size'];
         if (size is int && size > 8 * 1024 * 1024) return; // trop lourd
         final full = await event
             .downloadAndDecryptAttachment(getThumbnail: false)
             .timeout(const Duration(seconds: 30));
         better = full.bytes;
+      } else {
+        return;
       }
       if (better.isEmpty || !mounted) return;
       setState(() {

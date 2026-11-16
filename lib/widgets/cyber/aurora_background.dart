@@ -94,7 +94,17 @@ class _AuroraBackgroundState extends State<AuroraBackground>
         // the Transform below, never rebuilt by the ticker.
         child: painted,
         builder: (context, child) {
-          final t = ctrl.value * 2 * math.pi;
+          // Cadence ambiante plafonnée à 24 images/s : la dérive lente n'a que
+          // faire des 120 Hz de l'écran et chaque image composée en plus prend
+          // son budget sur le fil de la conversation (mesuré : thread raster
+          // saturé au repos derrière une timeline).offset quantifié =>
+          // Transform inchangé => aucune recomposition les autres images.
+          final stepsPerCycle = (widget.period.inMicroseconds * 24 / 1000000)
+              .round();
+          final q = stepsPerCycle <= 0
+              ? ctrl.value
+              : (ctrl.value * stepsPerCycle).floor() / stepsPerCycle;
+          final t = q * 2 * math.pi;
           // Déplacement seul : une rotation ferait grossir les bornes du calque
           // (donc échec du cache) et forcerait un repaint complet par frame.
           final dx = math.sin(t) * 22;

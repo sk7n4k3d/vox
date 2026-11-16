@@ -2,6 +2,7 @@ import 'dart:ui' as ui;
 
 import 'package:fluffychat/config/cyberpunk_theme_extension.dart';
 import 'package:fluffychat/config/design_tokens.dart';
+import 'package:fluffychat/utils/vox_perf_probe.dart';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 
@@ -23,6 +24,28 @@ class ChatDateSeparator extends StatelessWidget {
     final locale = Localizations.localeOf(context).languageCode;
     final label = _formatRelative(date, locale);
 
+    final pill = Container(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+      decoration: BoxDecoration(
+        color: theme.colorScheme.surfaceContainerHigh.withValues(alpha: 0.82),
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(
+          color: theme.colorScheme.outlineVariant.withValues(alpha: 0.4),
+          width: 0.5,
+        ),
+      ),
+      child: Text(
+        label,
+        style: TextStyle(
+          fontSize: 13,
+          fontWeight: FontWeight.w600,
+          letterSpacing: 0.4,
+          color: theme.colorScheme.onSurfaceVariant,
+          height: 1.2,
+        ),
+      ),
+    );
+
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 12.0),
       child: Center(
@@ -39,38 +62,17 @@ class ChatDateSeparator extends StatelessWidget {
           },
           child: ClipRRect(
             borderRadius: BorderRadius.circular(20),
-            child: BackdropFilter(
-              filter: ui.ImageFilter.blur(
-                sigmaX: (cyber?.blurSigmaSheet ?? 24) * 0.5,
-                sigmaY: (cyber?.blurSigmaSheet ?? 24) * 0.5,
-              ),
-              child: Container(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 16,
-                  vertical: 6,
-                ),
-                decoration: BoxDecoration(
-                  color: theme.colorScheme.surfaceContainerHigh
-                      .withValues(alpha: 0.82),
-                  borderRadius: BorderRadius.circular(20),
-                  border: Border.all(
-                    color: theme.colorScheme.outlineVariant
-                        .withValues(alpha: 0.4),
-                    width: 0.5,
+            // Sonde de profiling : le blur du séparateur est couvert par
+            // ext.vox.perf.glassBlur (éliminé en release).
+            child: (VoxPerfProbe.enabled && !VoxPerfProbe.glassBlur)
+                ? pill
+                : BackdropFilter(
+                    filter: ui.ImageFilter.blur(
+                      sigmaX: (cyber?.blurSigmaSheet ?? 24) * 0.5,
+                      sigmaY: (cyber?.blurSigmaSheet ?? 24) * 0.5,
+                    ),
+                    child: pill,
                   ),
-                ),
-                child: Text(
-                  label,
-                  style: TextStyle(
-                    fontSize: 13,
-                    fontWeight: FontWeight.w600,
-                    letterSpacing: 0.4,
-                    color: theme.colorScheme.onSurfaceVariant,
-                    height: 1.2,
-                  ),
-                ),
-              ),
-            ),
           ),
         ),
       ),

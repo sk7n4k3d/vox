@@ -1,4 +1,5 @@
 import 'package:animated_emoji/animated_emoji.dart';
+import 'package:fluffychat/utils/vox_perf_probe.dart';
 import 'package:flutter/material.dart';
 import 'package:visibility_detector/visibility_detector.dart';
 
@@ -18,7 +19,7 @@ int _kEmojiDetectorSeq = 0;
 ///
 /// ⚠️ Charge les animations depuis fonts.gstatic.com (réseau, choix assumé).
 ///
-/// ## Coût raster — l'animation est pilotée par la VISIBILITÉ
+/// ## Coût raster — l'animation est bornée à UN burst, piloté par la VISIBILITÉ
 ///
 /// `animated_emoji` boucle l'animation Lottie par défaut. Dans une liste qui
 /// scrolle, chaque pastille de réaction / message jumbo visible maintenait donc
@@ -27,9 +28,11 @@ int _kEmojiDetectorSeq = 0;
 /// (contre ~0 pour une conversation sans emoji animé). C'est le motif que le
 /// contrat CYBERCORE interdit (« `.repeat()` interdit en liste »).
 ///
-/// Ici chaque emoji est donc **au repos tant qu'il n'est pas vu**, animé tant
-/// qu'il est visible (via [VisibilityDetector]), et remis au repos dès qu'il
-/// sort du viewport. Hors écran : aucune frame Lottie produite.
+/// Ici chaque emoji est au repos tant qu'il n'est pas vu ; à sa première
+/// apparition visible il joue SON animation UNE fois (le burst qui célèbre la
+/// réaction), puis le contrôleur Lottie s'arrête — aucune image n'est produite
+/// tant qu'il reste à l'écran. Hors écran : rien ne tourne. Sous réducteur de
+/// mouvement OS : glyphe animé remplacé par le rendu statique.
 class AnimatedEmojiText extends StatelessWidget {
   /// Le corps brut du message/réaction (supposé ne contenir que des emojis).
   final String text;
@@ -122,6 +125,9 @@ class _EmojiTextItemState extends State<_EmojiTextItem> {
       // Repli : glyphe Unicode statique à la même taille optique.
       return fallback;
     }
+    // L'OS peut demander la sobriété animée (réducteur de mouvement) : la sonde
+    // `animated_emoji` l'ignore (paquet tiers), on l'applique donc ici.
+    final reduceMotion = MediaQuery.maybeOf(context)?.disableAnimations ?? false;
     return VisibilityDetector(
       key: _detectorKey,
       onVisibilityChanged: (info) {
@@ -129,6 +135,8 @@ class _EmojiTextItemState extends State<_EmojiTextItem> {
         // regroupés hors frame) → sans ce garde, setState sur un State démonté.
         if (!mounted) return;
         final shouldAnimate = widget.animateWhenVisible &&
+            VoxPerfProbe.enabled &&
+            VoxPerfProbe.emojiAnim &&
             info.visibleFraction >= widget.visibilityThreshold;
         if (shouldAnimate != _animating) {
           setState(() => _animating = shouldAnimate);
@@ -137,10 +145,18 @@ class _EmojiTextItemState extends State<_EmojiTextItem> {
       child: AnimatedEmoji(
         data,
         size: widget.size,
-        // Boucle seulement tant que l'emoji est visible ; au repos (hors écran
-        // ou animation désactivée) Lottie est figé et ne produit aucune frame.
-        repeat: _animating,
-        animate: _animating,
+        // Le contrat CYBERCORE (« pas de .repeat() en liste ») est ici strict :
+        // `repeat: false` = l'animation joue UNE fois quand l'emoji devient
+        // visible (le burst de la réaction / du jumbo), puis le contrôleur
+        // Lottie s'arrête sur la dernière frame et ne produit plus aucune
+        // image. `repeat: true` bouclait à jamais tant que l'emoji restait
+        // à l'écran — mesuré sur Pixel 10 Pro XL : ~1 cœur de raster saturé
+        // EN REPOS dans une conversation avec réactions (~0 sans elles),
+        // et le budget manquait au scroll (= le « très gros lag » ressenti).
+        repeat: false,
+        // Réduit à false hors écran OU sous réducteur de mouvement : Lottie
+        // est figé sur sa frame initiale, aucun ticker ne tourne.
+        animate: _animating && !reduceMotion,
         // Si le réseau échoue (gstatic injoignable), on retombe sur le texte.
         errorWidget: fallback,
       ),

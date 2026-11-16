@@ -50,6 +50,21 @@ class _StarlinkBackgroundState extends State<StarlinkBackground>
     super.dispose();
   }
 
+  /// Cadence ambiante plafonnée à 24 images/s. Mesuré sur Pixel 10 Pro XL :
+  /// `repeat()` libre = ~34 % de CPU sur le thread raster EN REPOS derrière une
+  /// conversation (0 % sans fond) — la dérive lente n'a que faire des 120 Hz de
+  /// l'écran et ce budget doit rester disponible pour la timeline. La valeur
+  /// quantifiée ne change que 24 fois/s, donc [StarlinkPainter.shouldRepaint]
+  /// renvoie false les autres images : rien n'est repeint, rien n'est composé.
+  static const int _fps = 24;
+
+  double _quantize(double t) {
+    final stepsPerCycle = (widget.period.inMicroseconds * _fps / 1000000)
+        .round();
+    if (stepsPerCycle <= 0) return t;
+    return (t * stepsPerCycle).floor() / stepsPerCycle;
+  }
+
   @override
   Widget build(BuildContext context) {
     final cyber = CyberColors.of(context);
@@ -70,7 +85,7 @@ class _StarlinkBackgroundState extends State<StarlinkBackground>
                 animation: ctrl,
                 builder: (context, _) => CustomPaint(
                   painter: StarlinkPainter(
-                    t: ctrl.value,
+                    t: _quantize(ctrl.value),
                     cyan: cyber.cyan,
                     violet: cyber.violet,
                     magenta: cyber.magenta,
@@ -155,8 +170,11 @@ class StarlinkPainter extends CustomPainter {
       final r = bright ? 2.8 : 1.5;
       final glowColor = cyan.withValues(alpha: bright ? 0.12 : 0.06);
       canvas.drawCircle(pts[i], r * 3.4, Paint()..color = glowColor);
-      canvas.drawCircle(pts[i], r * 2.1, Paint()
-        ..color = cyan.withValues(alpha: bright ? 0.18 : 0.09));
+      canvas.drawCircle(
+        pts[i],
+        r * 2.1,
+        Paint()..color = cyan.withValues(alpha: bright ? 0.18 : 0.09),
+      );
       final core = Paint()
         ..color = (bright ? violet : cyan).withValues(
           alpha: bright ? 1.0 : 0.75,

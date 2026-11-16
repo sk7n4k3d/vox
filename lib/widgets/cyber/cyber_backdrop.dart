@@ -1,5 +1,6 @@
 import 'package:fluffychat/config/cyber_themes.dart';
 import 'package:fluffychat/config/setting_keys.dart';
+import 'package:fluffychat/utils/vox_perf_probe.dart';
 import 'package:fluffychat/widgets/cyber/aurora_background.dart';
 import 'package:fluffychat/widgets/cyber/starlink_background.dart';
 import 'package:flutter/material.dart';
@@ -14,6 +15,10 @@ class CyberScreenBackdrop extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    if (!VoxPerfProbe.enabled || !VoxPerfProbe.screenBackdrop) {
+      // Sonde de profiling : fond coupé (éliminé en release).
+      return const SizedBox.shrink();
+    }
     final isStarlink =
         AppSettings.cyberThemeId.value == CyberThemeId.starlink.name;
     if (isStarlink) {

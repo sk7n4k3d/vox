@@ -6,6 +6,7 @@ import 'package:fluffychat/config/app_config.dart';
 import 'package:fluffychat/utils/client_manager.dart';
 import 'package:fluffychat/utils/notification_background_handler.dart';
 import 'package:fluffychat/utils/platform_infos.dart';
+import 'package:fluffychat/utils/vox_perf_probe.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
@@ -45,6 +46,10 @@ void main() async {
   // To make sure that the parts of flutter needed are started up already, we need to ensure that the
   // widget bindings are initialized already.
   WidgetsFlutterBinding.ensureInitialized();
+
+  // Sondes de profiling VoxOne (extensions ext.vox.perf.*, éliminées en
+  // release par kReleaseMode).
+  VoxPerfProbe.ensureRegistered();
 
   // Attribution obligatoire des emojis animés Noto (CC BY 4.0) — affichée dans
   // l'écran Licences de l'app. Les animations sont chargées depuis gstatic.

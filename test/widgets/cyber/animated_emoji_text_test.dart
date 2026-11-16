@@ -1,3 +1,4 @@
+import 'package:animated_emoji/animated_emoji.dart';
 import 'package:fluffychat/config/cyberpunk_theme_extension.dart';
 import 'package:fluffychat/widgets/cyber/animated_emoji_text.dart';
 import 'package:flutter/material.dart';
@@ -76,6 +77,41 @@ void main() {
       );
       await tester.pump(const Duration(milliseconds: 100));
       expect(tester.takeException(), isNull);
+    });
+
+    testWidgets('visible emoji plays a ONE-SHOT burst, never a loop',
+        (tester) async {
+      await tester.pumpWidget(_wrap(const AnimatedEmojiText(text: '👍', size: 18)));
+      // Callback de visibilité (intervalle nul) → l'emoji est vu → animate=true.
+      await tester.pump(const Duration(milliseconds: 100));
+      final emoji = tester.widget<AnimatedEmoji>(find.byType(AnimatedEmoji));
+      // Cœur du correctif perf : `repeat` doit rester false. Un repeat ici =
+      // Lottie qui produit des frames à jamais tant que la pastille est à
+      // l'écran → thread raster saturé au repos (lag mesuré en room dense).
+      expect(emoji.repeat, isFalse,
+          reason: 'une réaction ne doit JAMAIS boucler en liste');
+      expect(emoji.animate, isTrue);
+    });
+
+    testWidgets('OS reduce-motion renders the emoji fully static',
+        (tester) async {
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: ThemeData.dark().copyWith(
+            extensions: [CyberpunkTheme.dark()],
+          ),
+          home: MediaQuery(
+            data: const MediaQueryData(disableAnimations: true),
+            child: const Scaffold(
+              body: Center(child: AnimatedEmojiText(text: '👍', size: 18)),
+            ),
+          ),
+        ),
+      );
+      await tester.pump(const Duration(milliseconds: 100));
+      final emoji = tester.widget<AnimatedEmoji>(find.byType(AnimatedEmoji));
+      expect(emoji.animate, isFalse,
+          reason: 'réducteur de mouvement OS = aucune animation Lottie');
     });
   });
 }
