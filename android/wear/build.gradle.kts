@@ -50,11 +50,17 @@ android {
     }
 
     signingConfigs {
+        // LOCAL TEST ONLY — build debug signing for lab/testing builds. Not for distribution.
         create("release") {
-            keyAlias = "dummyAlias"
-            keyPassword = "dummyPassword"
-            storeFile = file("dummy.keystore")
-            storePassword = "dummyStorePassword"
+            val debugKeystore = file("${System.getProperty("user.home")}/.android/debug.keystore")
+            if (debugKeystore.exists()) {
+                keyAlias = "androiddebugkey"
+                keyPassword = "android"
+                storeFile = debugKeystore
+                storePassword = "android"
+            } else {
+                throw GradleException("Keystore de debug introuvable : $debugKeystore. Genere-le avec un build debug ou restaure dummy.keystore.")
+            }
             enableV1Signing = true
             enableV2Signing = true
             enableV3Signing = true

@@ -25,6 +25,10 @@ dependencies {
 
     // Compression vidéo native (remplace video_compress Flutter)
     implementation("androidx.media3:media3-transformer:1.9.1")
+
+    // Tests JVM unit (règles d'écriture SmsSentReceiver, sans framework Android
+    // à l'exécution : constantes Telephony inlinées à la compilation)
+    testImplementation("junit:junit:4.13.2")
 }
 
 
@@ -59,11 +63,17 @@ android {
     }
 
     signingConfigs {
-       create("release") {
-            keyAlias = "dummyAlias"
-            keyPassword = "dummyPassword"
-            storeFile = file("dummy.keystore")
-            storePassword = "dummyStorePassword"
+        // LOCAL TEST ONLY — build debug signing for lab/testing builds. Not for distribution.
+        create("release") {
+            val debugKeystore = file("${System.getProperty("user.home")}/.android/debug.keystore")
+            if (debugKeystore.exists()) {
+                keyAlias = "androiddebugkey"
+                keyPassword = "android"
+                storeFile = debugKeystore
+                storePassword = "android"
+            } else {
+                throw GradleException("Keystore de debug introuvable : $debugKeystore. Genere-le avec un build debug ou restaure dummy.keystore.")
+            }
             enableV1Signing = true
             enableV2Signing = true
             enableV3Signing = true
@@ -90,11 +100,23 @@ android {
         versionCode = flutter.versionCode
         versionName = flutter.versionName
         ndk { // Workaround for https://github.com/flutter/flutter/issues/162153#issuecomment-2612443642
-            abiFilters += listOf("armeabi-v7a", "arm64-v8a", "x86_64", "x86")
+            // x86_64 retiré : vodozemac_bindings_dart ne compile pas en x86_64 (build.rs)
+            // — et armeabi-v7a/x86 sont inutiles sur les appareils cibles 64 bits.
+            abiFilters += listOf("arm64-v8a")
         }
     }
 
     buildTypes {
+        // Parité avec release pour le profiling sur appareil : même signature
+        // (install in-place -r au-dessus de l'app release, données gardées),
+        // même minification — les mesures profile-vs-release restent
+        // comparables.
+        getByName("profile") {
+            signingConfig = signingConfigs.getByName("release")
+            isMinifyEnabled = true
+            isShrinkResources = true
+            proguardFiles(getDefaultProguardFile("proguard-android.txt"), "proguard-rules.pro")
+        }
         release {
             signingConfig = signingConfigs.getByName("release")
             isMinifyEnabled = true
