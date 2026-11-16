@@ -1,7 +1,10 @@
+import 'dart:async';
+
 import 'package:fluffychat/config/design_tokens.dart';
 import 'package:fluffychat/config/setting_keys.dart';
 import 'package:fluffychat/l10n/l10n.dart';
 import 'package:fluffychat/pages/intro/flows/restore_backup_flow.dart';
+import 'package:fluffychat/utils/launch_permissions.dart';
 import 'package:fluffychat/utils/platform_infos.dart';
 import 'package:fluffychat/widgets/cyber/cyber_widgets.dart';
 import 'package:fluffychat/widgets/layouts/login_scaffold.dart';
@@ -214,6 +217,18 @@ class IntroPage extends StatelessWidget {
                                       );
                                       if (!context.mounted) return;
                                       context.go('/rooms');
+                                      // Bon moment pour la demande : l'utilisateur
+                                      // vient d'entrer en mode SMS/MMS. Fire-and-
+                                      // forget pour ne jamais bloquer la navigation
+                                      // derrière le dialogue système. userInitiated :
+                                      // un appui explicite réévalue même si un cycle
+                                      // précédent a laissé le drapeau « demandé »
+                                      // (process tué pendant le dialogue, audit F2).
+                                      unawaited(
+                                        ensureSmsPermissions(
+                                          userInitiated: true,
+                                        ),
+                                      );
                                     },
                                   ),
                                 ],
