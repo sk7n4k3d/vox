@@ -31,7 +31,7 @@ class VideoCompressorPlugin private constructor(
     private val eventChannel: EventChannel,
 ) : MethodChannel.MethodCallHandler, EventChannel.StreamHandler {
 
-    private val bridge = VideoCompressorBridge(context)
+    private val bridge = sharedBridge(context)
 
     init {
         channel.setMethodCallHandler(this)
@@ -77,8 +77,8 @@ class VideoCompressorPlugin private constructor(
     }
 
     override fun onListen(arguments: Any?, events: EventChannel.EventSink?) {
-        VideoBridge.emit = events?.let { sink ->
-            { event ->
+        events?.let { sink ->
+            VideoBridge.events.subscribe(this) { event ->
                 try {
                     sink.success(event)
                 } catch (e: Exception) {
@@ -89,14 +89,19 @@ class VideoCompressorPlugin private constructor(
     }
 
     override fun onCancel(arguments: Any?) {
-        VideoBridge.emit = null
+        VideoBridge.events.unsubscribe(this)
     }
 
     companion object {
         private const val TAG = "VideoPlugin"
 
         @Volatile
-        private var instance: VideoCompressorPlugin? = null
+        private var bridge: VideoCompressorBridge? = null
+
+        private fun sharedBridge(context: Context): VideoCompressorBridge =
+            synchronized(this) {
+                bridge ?: VideoCompressorBridge(context.applicationContext).also { bridge = it }
+            }
 
         fun register(context: Context, flutterEngine: FlutterEngine) {
             val newChannel = MethodChannel(
@@ -104,16 +109,16 @@ class VideoCompressorPlugin private constructor(
             val newEventChannel = EventChannel(
                 flutterEngine.dartExecutor.binaryMessenger, CHANNEL_EVENTS)
 
-            synchronized(this) {
-                // Détacher l'ancien (si existant) pour libérer le channel et ses handlers
-                instance?.let { old ->
-                    old.channel.setMethodCallHandler(null)
-                    old.eventChannel.setStreamHandler(null)
+            val plugin = VideoCompressorPlugin(context, newChannel, newEventChannel)
+            flutterEngine.addEngineLifecycleListener(object : FlutterEngine.EngineLifecycleListener {
+                override fun onPreEngineRestart() {
+                    VideoBridge.events.unsubscribe(plugin)
                 }
 
-                // Recréer avec le NOUVEL engine, re-brancher les handlers via l'init {}
-                instance = VideoCompressorPlugin(context, newChannel, newEventChannel)
-            }
+                override fun onEngineWillDestroy() {
+                    VideoBridge.events.unsubscribe(plugin)
+                }
+            })
         }
 
         private const val CHANNEL_METHOD = "eu.devlabz.vox/video"

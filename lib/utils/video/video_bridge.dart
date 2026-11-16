@@ -75,6 +75,11 @@ class VideoCompressionException implements Exception {
   String toString() => 'VideoCompressionException($code, $message)';
 }
 
+/// A timeout or cancellation must not silently send the original attachment.
+bool shouldSendOriginalAfterCompressionFailure(Object error) =>
+    error is! VideoCompressionException ||
+    (error.code != 'timeout' && error.code != 'cancelled');
+
 int? _asInt(Object? v) => v is num ? v.toInt() : null;
 
 class VideoBridge {
@@ -216,6 +221,9 @@ class VideoBridge {
     final event = raw.cast<String, Object?>();
     final jobId = event['jobId'] as String?;
     if (jobId == null) return;
+    // A late encoder callback must not reverse a timeout, cancellation or
+    // another terminal result, nor restart the timer for an already-ended job.
+    if (_finished.containsKey(jobId) || _failures.containsKey(jobId)) return;
     switch (event['kind']) {
       case 'progress':
         _armTimeout(jobId);

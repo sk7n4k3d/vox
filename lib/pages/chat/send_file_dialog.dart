@@ -59,6 +59,8 @@ class SendFileDialogState extends State<SendFileDialog> {
   Future<void> _send() async {
     final scaffoldMessenger = ScaffoldMessenger.of(widget.outerContext);
     final l10n = L10n.of(context);
+    final theme = Theme.of(context);
+    final label = _labelTextController.text.trim();
 
     try {
       if (!widget.room.otherPartyCanReceiveMessages) {
@@ -93,6 +95,7 @@ class SendFileDialogState extends State<SendFileDialog> {
           // live percent from the native encoder (the in-app surface for the
           // same progress is the ongoing notification, see VideoNotification)
           StreamSubscription<VideoProgress>? progressSub;
+          MatrixFile? compressedFile;
           if (compressThis) {
             progressSub = VideoBridge.instance.progress.listen((p) {
               if (p.percent > 0) {
@@ -103,10 +106,26 @@ class SendFileDialogState extends State<SendFileDialog> {
             });
           }
           try {
-            file = await xfile.getVideoInfo(compress: compressThis);
+            compressedFile = await xfile.getVideoInfo(compress: compressThis);
+          } catch (e) {
+            // Compression failed → fall back to sending the raw video
+            // instead of blocking the send. Timeouts and cancellations must
+            // not silently send the uncompressed original.
+            if (!shouldSendOriginalAfterCompressionFailure(e)) {
+              rethrow;
+            }
+            Logs().w('Video compression failed, sending uncompressed', e);
+            await progressSub?.cancel();
+            progressSub = null;
+            compressedFile = MatrixFile(
+              bytes: await xfile.readAsBytes(),
+              name: xfile.name,
+              mimeType: mimeType,
+            ).detectFileType;
           } finally {
             await progressSub?.cancel();
           }
+          file = compressedFile;
         } else {
           if (length > maxUploadSize) {
             throw FileTooBigMatrixException(length, maxUploadSize);
@@ -131,8 +150,6 @@ class SendFileDialogState extends State<SendFileDialog> {
             ),
           );
         }
-
-        final label = _labelTextController.text.trim();
 
         try {
           await widget.room.sendFileEvent(
@@ -192,19 +209,15 @@ class SendFileDialogState extends State<SendFileDialog> {
       if (e.code != 'cancelled') {
         scaffoldMessenger.showSnackBar(
           SnackBar(
-            content: Text(L10n.of(context).videoCompressionFailed),
+            content: Text(l10n.videoCompressionFailed),
             duration: const Duration(seconds: 30),
-            action: SnackBarAction(
-              label: L10n.of(context).retryCompression,
-              onPressed: _send,
-            ),
           ),
         );
       }
       return;
     } catch (e) {
       scaffoldMessenger.clearSnackBars();
-      final theme = Theme.of(context);
+      if (!widget.outerContext.mounted || !scaffoldMessenger.mounted) return;
       scaffoldMessenger.showSnackBar(
         SnackBar(
           backgroundColor: theme.colorScheme.errorContainer,

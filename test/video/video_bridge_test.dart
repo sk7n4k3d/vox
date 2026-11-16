@@ -168,6 +168,33 @@ void main() {
   });
 
   group('timeout', () {
+    test('timeout and cancellation do not silently send original video', () {
+      expect(shouldSendOriginalAfterCompressionFailure(
+          const VideoCompressionException('timeout')), isFalse);
+      expect(shouldSendOriginalAfterCompressionFailure(
+          const VideoCompressionException('cancelled')), isFalse);
+      expect(shouldSendOriginalAfterCompressionFailure(
+          const VideoCompressionException('encoder')), isTrue);
+    });
+    test('late done cannot turn a timed out job into a success', () async {
+      bridgeWith((m, a) async => {'jobId': 'late'},
+          timeout: const Duration(milliseconds: 30));
+      await bridge.start('/v.mp4', compress: true);
+      await expectLater(
+        bridge.waitFor('late'),
+        throwsA(isA<VideoCompressionException>()
+            .having((e) => e.code, 'code', 'timeout')),
+      );
+      streamHandler.emit(doneEvent('late'));
+      await pumpEventQueue();
+      expect(await bridge.resultFor('late'), isNull);
+      expect(bridge.lastCompressJobId, isNull);
+      await expectLater(
+        bridge.waitFor('late'),
+        throwsA(isA<VideoCompressionException>()
+            .having((e) => e.code, 'code', 'timeout')),
+      );
+    });
     test('no event at all rejects timeout and cancels native job', () async {
       bridgeWith((m, a) async => {'jobId': 'j1'},
           timeout: const Duration(milliseconds: 60));

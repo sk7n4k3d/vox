@@ -13,14 +13,12 @@ import android.util.Log
 import androidx.core.net.toUri
 import androidx.media3.common.MediaItem
 import androidx.media3.common.MimeTypes
-import androidx.media3.common.OverlaySettings
-import androidx.media3.common.VideoCompositorSettings
-import androidx.media3.common.util.Size
+import androidx.media3.effect.Presentation
 import androidx.media3.transformer.AudioEncoderSettings
 import androidx.media3.transformer.Composition
 import androidx.media3.transformer.DefaultEncoderFactory
 import androidx.media3.transformer.EditedMediaItem
-import androidx.media3.transformer.EditedMediaItemSequence
+import androidx.media3.transformer.Effects
 import androidx.media3.transformer.ExportException
 import androidx.media3.transformer.ExportResult
 import androidx.media3.transformer.ProgressHolder
@@ -36,7 +34,7 @@ import kotlin.math.min
  * boucle à vie sans progression ni annulation sur les fichiers lourds.
  *
  * Moteur : Media3 Transformer (l'encodeur natif d'Android, version 1.9.x —
- * API `Composition`/`ExportResult`). File FIFO sur un HandlerThread dédié ;
+ * API `EditedMediaItem`/`ExportResult`). File FIFO sur un HandlerThread dédié ;
  * un seul Transformer à la fois (le matériel d'encodage est partagé).
  * Progression sondée toutes les 500 ms via ProgressHolder et poussée vers
  * Dart + la notification `video_compression`.
@@ -47,10 +45,7 @@ import kotlin.math.min
  * / cancelled {jobId}. Codes erreur : encoder | unreadable.
  */
 object VideoBridge {
-
-    /** Pousse un event vers Dart ; posé par VideoCompressorPlugin à l'écoute. */
-    @Volatile
-    var emit: ((Map<String, Any?>) -> Unit)? = null
+    internal val events = VideoEventHub()
 }
 
 /**
@@ -128,7 +123,7 @@ class VideoCompressorBridge(private val context: Context) {
 
     /** Les events EventChannel doivent partir du main thread. */
     private fun emit(event: Map<String, Any?>) {
-        main.post { VideoBridge.emit?.invoke(event) }
+        main.post { VideoBridge.events.publish(event) }
     }
 
     /** Enfile le job et renvoie immédiatement son jobId. */
@@ -321,7 +316,11 @@ class VideoCompressorBridge(private val context: Context) {
                         rotation = format.getInteger(MediaFormat.KEY_ROTATION)
                     }
                     if (format.containsKey(MediaFormat.KEY_FRAME_RATE)) {
-                        frameRate = format.getFloat(MediaFormat.KEY_FRAME_RATE)
+                        frameRate = try {
+                            format.getFloat(MediaFormat.KEY_FRAME_RATE)
+                        } catch (_: ClassCastException) {
+                            format.getInteger(MediaFormat.KEY_FRAME_RATE).toFloat()
+                        }
                     }
                 } else if (mime.startsWith("audio/") && audioMime == null) {
                     audioMime = mime
@@ -350,26 +349,23 @@ class VideoCompressorBridge(private val context: Context) {
         probe: Probe,
     ) {
         val outFile = File(outDir, "$jobId.mp4")
-        val (outW, outH) =
+        val (encW, encH) =
             CompressionPlan.outputSize(probe.encWidth, probe.encHeight, probe.rotated)
+        // Les effets s'appliquent AVANT la rotation : la cible de
+        // Presentation est la taille d'affichage, pas la taille encodée.
+        val dispW = if (probe.rotated) encH else encW
+        val dispH = if (probe.rotated) encW else encH
+        val scale = Presentation.createForWidthAndHeight(
+            dispW,
+            dispH,
+            Presentation.LAYOUT_SCALE_TO_FIT,
+        )
         val mediaItem = MediaItem.fromUri(Uri.fromFile(src))
         val edited = EditedMediaItem.Builder(mediaItem)
-            .setRemoveAudio(false)
-            .setFrameRate(CompressionPlan.targetFrameRate(probe.frameRate))
-            .build()
-        val compositor = object : VideoCompositorSettings {
-            override fun getOutputSize(inputSizes: MutableList<out Size>): Size =
-                Size(outW, outH)
-
-            override fun getOverlaySettings(trackId: Int, presentationTimeUs: Long): OverlaySettings =
-                DEFAULT_OVERLAY_SETTINGS
-        }
-        val composition = Composition.Builder(
-            EditedMediaItemSequence.Builder(listOf(edited)).build(),
-        )
-            .setVideoCompositorSettings(compositor)
+            .setEffects(Effects(listOf(), listOf(scale)))
             .build()
         val transformer = Transformer.Builder(context)
+            .setLooper(thread.looper)
             .setVideoMimeType(MimeTypes.VIDEO_H264)
             .setAudioMimeType(MimeTypes.AUDIO_AAC)
             .setEncoderFactory(
@@ -389,7 +385,11 @@ class VideoCompressorBridge(private val context: Context) {
             )
             .addListener(object : Transformer.Listener {
                 override fun onCompleted(composition: Composition, result: ExportResult) {
-                    if (handle.cancelled) return
+                    if (handle.cancelled) {
+                        settleCancelled(jobId)
+                        if (srcIsTemp) src.delete()
+                        return
+                    }
                     settleDone(jobId, File(outDir, "$jobId.mp4"), passthrough = false)
                     if (srcIsTemp) src.delete()
                 }
@@ -410,24 +410,22 @@ class VideoCompressorBridge(private val context: Context) {
             })
             .build()
         handle.transformer = transformer
-        val progressThread = HandlerThread("vox-video-progress").apply { start() }
         try {
             notify.start(File(src.absolutePath).name)
-            transformer.start(composition, outFile.absolutePath)
-            pollProgress(jobId, transformer, progressThread.looper)
+            transformer.start(edited, outFile.absolutePath)
+            pollProgress(jobId, transformer)
         } catch (e: Exception) {
             Log.e(TAG, "transform($jobId)", e)
             if (handle.cancelled) settleCancelled(jobId) else {
                 settleError(jobId, "encoder", e.message ?: "transformer")
             }
-        } finally {
-            progressThread.quitSafely()
         }
     }
 
-    private fun pollProgress(jobId: String, transformer: Transformer, looper: Looper) {
+    /** Sonde sur la thread du job (looper courant) : `getProgress` l'exige. */
+    private fun pollProgress(jobId: String, transformer: Transformer) {
         val holder = ProgressHolder()
-        val polling = Handler(looper)
+        val polling = Handler(Looper.myLooper()!!)
         val runnable = object : Runnable {
             override fun run() {
                 if (isSettled(jobId)) return
@@ -499,7 +497,6 @@ class VideoCompressorBridge(private val context: Context) {
     }
 
     companion object {
-        private val DEFAULT_OVERLAY_SETTINGS = object : OverlaySettings {}
         private const val TAG = "VideoBridge"
         private const val METADATA_WIDTH = MediaMetadataRetriever.METADATA_KEY_VIDEO_WIDTH
         private const val METADATA_HEIGHT = MediaMetadataRetriever.METADATA_KEY_VIDEO_HEIGHT
