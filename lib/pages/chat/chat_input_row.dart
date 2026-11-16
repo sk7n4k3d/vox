@@ -399,8 +399,12 @@ class _EphemeralIndicator extends StatelessWidget {
         final policy =
             EphemeralMessages.instance.policyFor(controller.room.id);
         final override = controller.pendingEphemeralOverride;
-        final effective = override ?? policy;
-        if (!effective.isActive) return const SizedBox.shrink();
+        // Un explicit « Off » par-message doit rester visible (sinon le chip
+        // disparaît et l'utilisateur ne sait plus que la politique est court-
+        // circuitée pour le prochain message).
+        final off = controller.pendingEphemeralOff;
+        final effective = off ? EphemeralDuration.off : (override ?? policy);
+        if (!effective.isActive && !off) return const SizedBox.shrink();
         final theme = Theme.of(context);
         return Padding(
           padding: const EdgeInsets.only(bottom: 8.0),
@@ -417,7 +421,7 @@ class _EphemeralIndicator extends StatelessWidget {
                 ),
                 decoration: BoxDecoration(
                   color: theme.bubbleColor.withValues(
-                    alpha: override != null ? 0.30 : 0.18,
+                    alpha: (override != null || off) ? 0.30 : 0.18,
                   ),
                   borderRadius: BorderRadius.circular(999),
                   border: Border.all(
@@ -434,7 +438,9 @@ class _EphemeralIndicator extends StatelessWidget {
                     ),
                     const SizedBox(width: 3),
                     Text(
-                      _shortLabel(context, effective),
+                      off
+                          ? EphemeralPicker.label(context, effective)
+                          : _shortLabel(context, effective),
                       style: TextStyle(
                         fontSize: 11,
                         fontWeight: FontWeight.w600,

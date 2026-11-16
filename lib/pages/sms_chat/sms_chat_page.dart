@@ -133,6 +133,10 @@ class _SmsChatPageState extends State<SmsChatPage> with WidgetsBindingObserver {
   /// One-shot per-message disappearing override, consumed on the next send.
   EphemeralDuration? _pendingEphemeralOverride;
 
+  /// True when the user explicitly picked « Off » for the next message
+  /// (distinct from null = « pas d'override », qui retombe sur la politique).
+  bool _pendingEphemeralOff = false;
+
   /// Monotonic counter for synthetic ids of stream-incoming messages. Using
   /// `_messages.length` was unsafe: after a delete the length rewinds and a new
   /// incoming could reuse an id, so a later removeWhere would drop two bubbles.
@@ -532,15 +536,21 @@ class _SmsChatPageState extends State<SmsChatPage> with WidgetsBindingObserver {
     // Disappearing messages: arm expiry for the sent SMS/MMS if a policy (or a
     // one-shot per-message override) is active for this thread.
     if (rowId != null && rowId > 0) {
+      final off = _pendingEphemeralOff;
       final override = _pendingEphemeralOverride;
-      await EphemeralMessages.instance.trackSmsMessage(
-        widget.threadId,
-        '$rowId',
-        isMms: hasImage,
-        explicit: override,
-      );
-      if (mounted && override != null) {
-        setState(() => _pendingEphemeralOverride = null);
+      if (!off) {
+        await EphemeralMessages.instance.trackSmsMessage(
+          widget.threadId,
+          '$rowId',
+          isMms: hasImage,
+          explicit: override,
+        );
+      }
+      if (mounted && (override != null || off)) {
+        setState(() {
+          _pendingEphemeralOverride = null;
+          _pendingEphemeralOff = false;
+        });
       }
       // Le rapport de remise (PendingIntent DELIVERED) arrive 1 à 60 s après
       // l'envoi, sans broadcast vers Dart : quelques relectures bornées de la
@@ -1242,8 +1252,9 @@ class _SmsChatPageState extends State<SmsChatPage> with WidgetsBindingObserver {
   Widget _buildEphemeralChip(ThemeData theme, CyberpunkTheme cyber) {
     final convId = EphemeralMessages.smsConvId(widget.threadId);
     final policy = EphemeralMessages.instance.policyFor(convId);
-    final effective = _pendingEphemeralOverride ?? policy;
-    if (!effective.isActive) return const SizedBox.shrink();
+    final off = _pendingEphemeralOff;
+    final effective = off ? EphemeralDuration.off : (_pendingEphemeralOverride ?? policy);
+    if (!effective.isActive && !off) return const SizedBox.shrink();
     return Padding(
       padding: const EdgeInsets.only(bottom: FluffySpacing.sm, left: 8),
       child: InkResponse(
@@ -1253,7 +1264,7 @@ class _SmsChatPageState extends State<SmsChatPage> with WidgetsBindingObserver {
           padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
           decoration: BoxDecoration(
             color: theme.bubbleColor.withValues(
-              alpha: _pendingEphemeralOverride != null ? 0.30 : 0.18,
+              alpha: (_pendingEphemeralOverride != null || off) ? 0.30 : 0.18,
             ),
             borderRadius: BorderRadius.circular(999),
             border: Border.all(color: theme.bubbleColor.withValues(alpha: 0.5)),
@@ -1289,11 +1300,10 @@ class _SmsChatPageState extends State<SmsChatPage> with WidgetsBindingObserver {
       perMessage: true,
     );
     if (chosen == null || !mounted) return;
-    setState(
-      () => _pendingEphemeralOverride = chosen == EphemeralDuration.off
-          ? null
-          : chosen,
-    );
+    setState(() {
+      _pendingEphemeralOff = chosen == EphemeralDuration.off;
+      _pendingEphemeralOverride = _pendingEphemeralOff ? null : chosen;
+    });
   }
 
   /// Ce numero est-il « special » (expediteur alphanumerique genre « Sosh »

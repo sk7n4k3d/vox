@@ -175,10 +175,22 @@ class ChatController extends State<ChatPageWithRoom>
   /// the conversation-level ephemeral policy (if any) applies instead.
   EphemeralDuration? _pendingEphemeralOverride;
 
+  /// True when the user explicitly picked « Off » for the next message:
+  /// distinct from `_pendingEphemeralOverride == null` (« pas d'override »),
+  /// which must keep falling back on the conversation policy. Without this
+  /// sentinel, choosing Off under an active policy silently redacted the
+  /// message anyway (issue audit #1).
+  bool _pendingEphemeralOff = false;
+
   EphemeralDuration? get pendingEphemeralOverride => _pendingEphemeralOverride;
 
+  bool get pendingEphemeralOff => _pendingEphemeralOff;
+
   void setEphemeralOverride(EphemeralDuration? duration) {
-    setState(() => _pendingEphemeralOverride = duration);
+    setState(() {
+      _pendingEphemeralOverride = duration;
+      _pendingEphemeralOff = false;
+    });
   }
 
   bool _scrolledUp = false;
@@ -681,8 +693,9 @@ class ChatController extends State<ChatPageWithRoom>
     }
 
     final ephemeralActive =
-        EphemeralMessages.instance.isActiveFor(roomId) ||
-        _pendingEphemeralOverride != null;
+        !_pendingEphemeralOff &&
+        (EphemeralMessages.instance.isActiveFor(roomId) ||
+            _pendingEphemeralOverride != null);
     final sendFuture = room.sendTextEvent(
       sendController.text,
       inReplyTo: replyEvent,
@@ -703,9 +716,10 @@ class ChatController extends State<ChatPageWithRoom>
           );
         }
       });
-      // One-shot per-message override consumed on send.
-      _pendingEphemeralOverride = null;
     }
+    // One-shot per-message override (duration OR explicit off) consumed on send.
+    _pendingEphemeralOverride = null;
+    _pendingEphemeralOff = false;
     sendController.value = TextEditingValue(
       text: pendingText,
       selection: const TextSelection.collapsed(offset: 0),
@@ -1361,8 +1375,11 @@ class ChatController extends State<ChatPageWithRoom>
       perMessage: true,
     );
     if (chosen == null || !mounted) return;
-    setState(() => _pendingEphemeralOverride =
-        chosen == EphemeralDuration.off ? null : chosen);
+    setState(() {
+      _pendingEphemeralOff = chosen == EphemeralDuration.off;
+      _pendingEphemeralOverride =
+          _pendingEphemeralOff ? null : chosen;
+    });
   }
 
   Future<void> unpinEvent(String eventId) async {
