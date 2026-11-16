@@ -358,7 +358,14 @@ class SmsBridge {
         'address': address,
         'body': body,
       });
-      if (rowId != null) onMessageSent?.call(address, body, false, null);
+      // Convention native (SmsBridge.kt) : rowId NÉGATIF = échec d'envoi avec
+      // ligne provider marquée FAILED. 0 = soumis mais non persisté : compte
+      // comme envoyé. Sans ce garde, un échec (SEND_SMS révoqué) poussait un
+      // message « sortant » fantôme dans le webhook (même correction que
+      // ScheduledSmsBackend.submit, audit #2).
+      if (rowId != null && rowId >= 0) {
+        onMessageSent?.call(address, body, false, null);
+      }
       return rowId;
     } on PlatformException {
       return null;
@@ -572,7 +579,11 @@ class SmsBridge {
         'body': body,
         'imagePath': imagePath,
       });
-      if (rowId != null) onMessageSent?.call(address, body, true, imagePath);
+      // Même convention que sendSms : défensif, le natif ne retourne
+      // normalement jamais de négatif ici (takeIf { it > 0 }).
+      if (rowId != null && rowId >= 0) {
+        onMessageSent?.call(address, body, true, imagePath);
+      }
       return rowId;
     } on PlatformException {
       return null;
