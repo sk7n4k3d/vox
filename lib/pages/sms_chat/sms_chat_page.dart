@@ -350,9 +350,11 @@ class _SmsChatPageState extends State<SmsChatPage> with WidgetsBindingObserver {
     }
     final before = _scroll.hasClients ? _scroll.position.maxScrollExtent : 0.0;
     setState(() {
-      // Insère en tête en évitant les doublons (id déjà présents).
-      final seen = _messages.map((m) => m.id).toSet();
-      _messages.insertAll(0, older.where((m) => !seen.contains(m.id)));
+      // Insère en tête en évitant les doublons — clé (id, isMms) : le `_ID`
+      // d'un MMS ancien peut égaler celui d'un SMS déjà chargé (deux compteurs
+      // indépendants), trier sur l'id nu le filtrerait à jamais.
+      final seen = _messages.map((m) => m.uid).toSet();
+      _messages.insertAll(0, older.where((m) => !seen.contains(m.uid)));
       _sortMessages();
       _hasMore = older.length >= _pageSize;
       _loadingMore = false;
@@ -379,35 +381,65 @@ class _SmsChatPageState extends State<SmsChatPage> with WidgetsBindingObserver {
 
       final incomingId = sms.hasMessageId
           ? '${sms.messageId}'
+          : sms.hasMmsId
+          ? '${sms.mmsId}'
           : '$_incomingPrefix${sms.date}-${_incomingSeq++}';
-      setState(() {
-        _animateInId = incomingId;
-        _messages.add(
-          SmsMessage(
-            // Prefer the real provider rowId when the native side supplies it
-            // (stable + lets a delete target the right row); fall back to a
-            // monotonic synthetic id otherwise.
-            id: incomingId,
-            address: sms.address,
-            body: sms.body,
-            date: sms.date,
-            isFromMe: false,
-            type: 1, // TYPE_INBOX
-            status: -1,
-            read: true,
-          ),
-        );
-        _sortMessages();
-      });
-      _scheduleAnimateInClear(incomingId);
+      final live = SmsMessage(
+        // Prefer the real provider rowId when the native side supplies it
+        // (stable + lets a delete target the right row); fall back to a
+        // monotonic synthetic id otherwise.
+        id: incomingId,
+        address: sms.address,
+        body: sms.body,
+        date: sms.date,
+        isFromMe: false,
+        type: 1, // TYPE_INBOX
+        status: -1,
+        read: true,
+        isMms: sms.isMms,
+      );
+      // Garde anti-rediffusion : un événement revu (`SMS_DELIVERED`/MMS relayé
+      // deux fois) porterait le même (id, isMms) → deux bulles de même clé,
+      // crash du ListView au rebuild et suppression double.
+      final isRepeat = _messages.any((m) => m.uid == live.uid);
+      if (!isRepeat) {
+        setState(() {
+          _animateInId = live.uid;
+          _messages.add(live);
+          _sortMessages();
+        });
+        _scheduleAnimateInClear(live.uid);
+      }
       unawaited(SmsBridge.instance.markRead(widget.threadId));
-      _scrollToBottom();
+      if (!isRepeat) _scrollToBottom();
+      // L'événement MMS ne porte que le texte : les parts média (image, audio,
+      // vidéo) sont ingérées dans le provider juste avant, on les relit ici —
+      // sinon la bulle reste vide jusqu'au prochain rechargement du fil.
+      if (sms.isMms && sms.hasMmsId) {
+        unawaited(_attachLiveMmsMedia(live.uid, sms.mmsId));
+      }
       // Pas de garde d'âge ici (contrairement au chemin Matrix) : le stream
       // `incoming` ne livre que les SMS/MMS reçus en live, jamais l'historique au
       // démarrage — donc aucun déluge d'effets à craindre. Le throttle 3s du
       // contrôleur couvre les arrivées rapprochées.
       _maybePlayEffect(sms.body);
     });
+  }
+
+  /// [messageUid] : l'`uid` de la bulle live (couple id+table), jamais l'id nu —
+  /// un SMS du même fil porte parfois le même `_ID` que ce MMS.
+  Future<void> _attachLiveMmsMedia(String messageUid, int mmsId) async {
+    try {
+      final parts = await SmsBridge.instance.listMmsParts(mmsId);
+      if (!mounted || parts.isEmpty) return;
+      final index = _messages.indexWhere((m) => m.uid == messageUid);
+      if (index < 0 || _messages[index].attachments.isNotEmpty) return;
+      final merged = mergeLiveMmsAttachments(_messages[index], parts);
+      setState(() => _messages[index] = merged);
+      _prefetchMedia([merged]);
+    } catch (_) {
+      // Best-effort : un rechargement du fil retrouvera les parts de toute façon.
+    }
   }
 
   Future<void> _send() async {
@@ -449,14 +481,14 @@ class _SmsChatPageState extends State<SmsChatPage> with WidgetsBindingObserver {
 
     setState(() {
       _sending = true;
-      _animateInId = optimistic.id;
+      _animateInId = optimistic.uid;
       _messages.add(optimistic);
       _sortMessages();
       _composer.clear();
       _hasText = false;
       _pendingImagePath = null;
     });
-    _scheduleAnimateInClear(optimistic.id);
+    _scheduleAnimateInClear(optimistic.uid);
     _scrollToBottom();
     _maybePlayEffect(body);
 
@@ -510,7 +542,45 @@ class _SmsChatPageState extends State<SmsChatPage> with WidgetsBindingObserver {
       if (mounted && override != null) {
         setState(() => _pendingEphemeralOverride = null);
       }
+      // Le rapport de remise (PendingIntent DELIVERED) arrive 1 à 60 s après
+      // l'envoi, sans broadcast vers Dart : quelques relectures bornées de la
+      // dernière page font passer la bulle de « Envoyé » à « Distribué » sans
+      // recharger la conversation ni bouger la pagination.
+      for (final delay in const [3, 10, 30, 90]) {
+        unawaited(
+          Future<void>.delayed(
+            Duration(seconds: delay),
+            () => mounted ? _refreshRecentStatuses() : Future.value(),
+          ),
+        );
+      }
     }
+  }
+
+  /// Replit la dernière page et n'actualise que `type`/`status` des lignes déjà
+  /// affichées, jointées sur leur clé (id, isMms) — jamais la pagination ni le
+  /// scroll. Deux raisons à la jointure désambiguïsée et à la fusion partielle :
+  /// un SMS et un MMS du même fil peuvent porter le même `_ID` (deux compteurs
+  /// AUTOINCREMENT indépendants), et la relecture native réécrit `date`/`body`
+  /// (le `date` MMS est en secondes, la bulle en millisecondes) — remplacer la
+  /// ligne entière ferait muter une bulle visible en son voisin.
+  Future<void> _refreshRecentStatuses() async {
+    final fresh = await SmsBridge.instance.listMessages(
+      widget.threadId,
+      limit: 10,
+    );
+    if (!mounted || fresh.isEmpty) return;
+    final byUid = {for (final m in fresh) m.uid: m};
+    var changed = false;
+    for (var i = _messages.length - 1; i >= 0; i--) {
+      final m = _messages[i];
+      final f = byUid[m.uid];
+      if (f != null && (f.status != m.status || f.type != m.type)) {
+        _messages[i] = m.copyWith(type: f.type, status: f.status);
+        changed = true;
+      }
+    }
+    if (changed && mounted) setState(() {});
   }
 
   /// Long-press on the send button: queue the typed text as a scheduled SMS for
@@ -739,7 +809,7 @@ class _SmsChatPageState extends State<SmsChatPage> with WidgetsBindingObserver {
     if (realId != null && realId > 0) {
       await SmsBridge.instance.deleteMessage(realId, isMms: message.isMms);
     }
-    setState(() => _messages.removeWhere((m) => m.id == message.id));
+    setState(() => _messages.removeWhere((m) => m.uid == message.uid));
     final rowId = await SmsBridge.instance.sendSms(
       widget.address,
       message.body,
@@ -766,7 +836,7 @@ class _SmsChatPageState extends State<SmsChatPage> with WidgetsBindingObserver {
       await SmsBridge.instance.deleteMessage(realId, isMms: message.isMms);
     }
     if (!mounted) return;
-    setState(() => _messages.removeWhere((m) => m.id == message.id));
+    setState(() => _messages.removeWhere((m) => m.uid == message.uid));
   }
 
   /// Header menu → "Supprimer la conversation". Confirms, deletes the whole
@@ -842,7 +912,8 @@ class _SmsChatPageState extends State<SmsChatPage> with WidgetsBindingObserver {
     final confirmed = await showOkCancelAlertDialog(
       context: context,
       title: 'Exporter les médias',
-      message: 'Copier les images et vidéos de cette conversation vers la '
+      message:
+          'Copier les images et vidéos de cette conversation vers la '
           'galerie Android ?',
       okLabel: 'Exporter',
       cancelLabel: 'Annuler',
@@ -1133,7 +1204,7 @@ class _SmsChatPageState extends State<SmsChatPage> with WidgetsBindingObserver {
           // Stable key per message so ListView.builder doesn't reuse one row's
           // State (animation, MMS FutureBuilder) for a different message while
           // recycling during scroll — the root cause of the scroll glitches.
-          key: ValueKey('sms_row_${message.id}'),
+          key: ValueKey('sms_row_${message.uid}'),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
@@ -1150,7 +1221,7 @@ class _SmsChatPageState extends State<SmsChatPage> with WidgetsBindingObserver {
                 nextSameSender: nextSameSender,
                 senderInitial: senderInitial,
                 senderName: senderName,
-                animateIn: message.id == _animateInId,
+                animateIn: message.uid == _animateInId,
                 resolveImagePath: _resolveMmsPart,
                 onOpenLink: _openLink,
                 onLongPress: () => _onMessageLongPress(message),
@@ -1586,6 +1657,20 @@ class _SmsBubble extends StatelessWidget {
       message.type == _SmsChatPageState._typeQueued ||
       message.type == _SmsChatPageState._typeOutbox;
 
+  /// « Distribué » = rapport de remise (SMS-STATUS-REPORT) confirmé par le
+  /// réseau : `type == SENT` et colonne Telephony `status == STATUS_COMPLETE`
+  /// (0). Depuis l'audit VoxOne 2026-11-05, le natif ne pose (et ne laisse
+  /// lire) un 0 que s'il a la preuve de remise de TOUTES les parts d'un
+  /// multipart — un COMPLETE historique ou posé sans preuve (autre app, 1re
+  /// part seule) est dégradé à la lecture en `-1`, la bulle reste « Envoyé ».
+  /// Aucun rapport ≠ échec. Les MMS ne portent jamais ce statut (aucun rapport
+  /// suivi → STATUS_NONE côté natif), et il n'existe aucun accusé de LECTURE
+  /// en SMS classique : ne jamais afficher « Lu » ici.
+  bool get _delivered =>
+      !message.isMms &&
+      message.type == _SmsChatPageState._typeSent &&
+      message.status == 0;
+
   @override
   Widget build(BuildContext context) {
     final own = message.isFromMe;
@@ -1870,6 +1955,9 @@ class _SmsBubble extends StatelessWidget {
     } else if (_pending) {
       statusLabel = 'Envoi…';
       statusColor = muted;
+    } else if (_delivered) {
+      statusLabel = 'Distribué';
+      statusColor = cyber.success;
     } else {
       statusLabel = 'Envoyé';
       statusColor = cyber.success;
@@ -1886,6 +1974,8 @@ class _SmsBubble extends StatelessWidget {
               ? Icons.error_outline_rounded
               : _pending
               ? Icons.schedule_rounded
+              : _delivered
+              ? Icons.done_all_rounded
               : Icons.check_rounded,
           size: 12,
           color: statusColor,
@@ -3405,3 +3495,25 @@ class _MmsImageViewer extends StatelessWidget {
 /// Actions in the SMS composer "+" popup. Kept minimal to what SMS/MMS can
 /// actually do (vs the Matrix room composer's polls/location/files).
 enum _SmsComposerAction { camera, image, ephemeral }
+
+/// Copie [message] avec les [attachments] relus dans le provider. Le message
+/// live posé par `_listenIncoming` ne porte que le texte (l'événement natif
+/// `onMmsReceived` n'a pas les parts) : sans cette fusion, la bulle d'un MMS
+/// reçu conversation ouverte reste vide jusqu'au prochain rechargement.
+SmsMessage mergeLiveMmsAttachments(
+  SmsMessage message,
+  List<SmsAttachment> attachments,
+) =>
+    SmsMessage(
+      id: message.id,
+      address: message.address,
+      body: message.body,
+      date: message.date,
+      isFromMe: message.isFromMe,
+      type: message.type,
+      status: message.status,
+      read: message.read,
+      isMms: true,
+      attachments: attachments,
+    );
+

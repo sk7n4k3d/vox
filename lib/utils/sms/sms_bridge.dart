@@ -87,8 +87,9 @@ class SmsBridge {
   /// listening (cold start from a notification tap). Returns null if none.
   Future<SmsOpenRequest?> takePendingOpenRequest() async {
     try {
-      final m = await _channel
-          .invokeMethod<Map<dynamic, dynamic>>('getPendingSmsIntent');
+      final m = await _channel.invokeMethod<Map<dynamic, dynamic>>(
+        'getPendingSmsIntent',
+      );
       if (m == null) return null;
       return SmsOpenRequest.fromMap(Map<String, dynamic>.from(m));
     } on PlatformException {
@@ -137,8 +138,59 @@ class SmsBridge {
     }
   }
 
+  /// Toutes les permissions SMS runtime sont-elles accordées ?
+  /// (vrai dès que VOX détient le rôle app SMS par défaut)
+  Future<bool> hasSmsPermissions() async {
+    try {
+      return await _channel.invokeMethod<bool>('hasSmsPermissions') ?? false;
+    } on PlatformException {
+      return false;
+    }
+  }
+
+  /// Faut-il (encore) montrer un dialogue système pour les permissions SMS ?
+  /// Vrai seulement après un refus simple : sur refus permanent (« ne plus
+  /// demander ») le système ne montre plus rien — relancer la demande ne
+  /// servirait à rien et harceler l'utilisateur.
+  Future<bool> shouldShowSmsPermissionRationale() async {
+    try {
+      return await _channel.invokeMethod<bool>(
+            'shouldShowSmsPermissionRationale',
+          ) ??
+          false;
+    } on PlatformException {
+      return false;
+    }
+  }
+
+  /// Demande groupée des permissions SMS manquantes (lecture/envoi/réception).
+  /// Résout une fois la réponse de l'utilisateur reçue : true si TOUTES les
+  /// permissions SMS sont accordées au final, false sinon (refus ou aucune
+  /// activité branchée). Timeout de sécurité : si le natif ne répond jamais,
+  /// on relit l'état réel avec [hasSmsPermissions].
+  Future<bool> requestSmsPermissions() async {
+    try {
+      final granted = await _channel
+          .invokeMethod<bool>('requestSmsPermissions')
+          .timeout(
+            const Duration(minutes: 2),
+            onTimeout: () async =>
+                (await _channel.invokeMethod<bool>('hasSmsPermissions')) ??
+                false,
+          );
+      return granted ?? false;
+    } on PlatformException {
+      return false;
+    } on TimeoutException {
+      return false;
+    }
+  }
+
   /// Journal d'appels depuis [sinceMs], du plus récent au plus ancien.
-  Future<List<SmsCall>> listCalls({required int sinceMs, int limit = 200}) async {
+  Future<List<SmsCall>> listCalls({
+    required int sinceMs,
+    int limit = 200,
+  }) async {
     try {
       final raw = await _channel.invokeMethod<List<dynamic>>('listCalls', {
         'sinceMs': sinceMs,
@@ -214,8 +266,9 @@ class SmsBridge {
   /// Doze, so incoming SMS/MMS arrive late or not at all.
   Future<bool> isIgnoringBatteryOptimizations() async {
     try {
-      return await _channel
-              .invokeMethod<bool>('isIgnoringBatteryOptimizations') ??
+      return await _channel.invokeMethod<bool>(
+            'isIgnoringBatteryOptimizations',
+          ) ??
           false;
     } on PlatformException {
       return false;
@@ -227,8 +280,9 @@ class SmsBridge {
   /// accepted — poll [isIgnoringBatteryOptimizations] to confirm).
   Future<bool> requestIgnoreBatteryOptimizations() async {
     try {
-      return await _channel
-              .invokeMethod<bool>('requestIgnoreBatteryOptimizations') ??
+      return await _channel.invokeMethod<bool>(
+            'requestIgnoreBatteryOptimizations',
+          ) ??
           false;
     } on PlatformException {
       return false;
@@ -270,10 +324,11 @@ class SmsBridge {
     int beforeMs = 0,
   }) async {
     try {
-      final raw = await _channel.invokeMethod<List<dynamic>>(
-        'listMessages',
-        {'threadId': threadId, 'limit': limit, 'beforeMs': beforeMs},
-      );
+      final raw = await _channel.invokeMethod<List<dynamic>>('listMessages', {
+        'threadId': threadId,
+        'limit': limit,
+        'beforeMs': beforeMs,
+      });
       return (raw ?? [])
           .map((e) => SmsMessage.fromMap(Map<String, dynamic>.from(e)))
           .toList();
@@ -285,8 +340,13 @@ class SmsBridge {
   /// Callback posé par la couche webhook (évite une dépendance circulaire) :
   /// appelé après chaque envoi réussi, quel que soit l'appelant.
   /// [attachmentPath] porte l'image d'un MMS sortant (null pour un SMS).
-  void Function(String address, String? body, bool isMms, String? attachmentPath)?
-      onMessageSent;
+  void Function(
+    String address,
+    String? body,
+    bool isMms,
+    String? attachmentPath,
+  )?
+  onMessageSent;
 
   /// Sends an SMS. Returns the provider row id (or null on failure).
   /// Sends an SMS. Returns null only if it was NOT handed to the modem; a
@@ -563,8 +623,9 @@ class SmsBridge {
   /// Liste les numéros bloqués : maps {id, number, e164}.
   Future<List<Map<String, dynamic>>> listBlockedNumbers() async {
     try {
-      final raw = await _channel
-          .invokeMethod<List<dynamic>>('listBlockedNumbers');
+      final raw = await _channel.invokeMethod<List<dynamic>>(
+        'listBlockedNumbers',
+      );
       return (raw ?? [])
           .map((e) => Map<String, dynamic>.from(e as Map))
           .toList();
@@ -633,13 +694,13 @@ class SmsCall {
   });
 
   factory SmsCall.fromMap(Map<String, dynamic> m) => SmsCall(
-        id: (m['id'] as num?)?.toInt() ?? 0,
-        number: '${m['number'] ?? ''}',
-        name: m['name'] as String?,
-        type: (m['type'] as num?)?.toInt() ?? 0,
-        date: (m['date'] as num?)?.toInt() ?? 0,
-        duration: (m['duration'] as num?)?.toInt() ?? 0,
-      );
+    id: (m['id'] as num?)?.toInt() ?? 0,
+    number: '${m['number'] ?? ''}',
+    name: m['name'] as String?,
+    type: (m['type'] as num?)?.toInt() ?? 0,
+    date: (m['date'] as num?)?.toInt() ?? 0,
+    duration: (m['duration'] as num?)?.toInt() ?? 0,
+  );
 
   String get title => (name?.isNotEmpty == true) ? name! : number;
 }
@@ -662,11 +723,11 @@ class CallRecording {
   });
 
   factory CallRecording.fromMap(Map<String, dynamic> m) => CallRecording(
-        path: '${m['path'] ?? ''}',
-        name: '${m['name'] ?? ''}',
-        size: (m['size'] as num?)?.toInt() ?? 0,
-        modified: (m['modified'] as num?)?.toInt() ?? 0,
-      );
+    path: '${m['path'] ?? ''}',
+    name: '${m['name'] ?? ''}',
+    size: (m['size'] as num?)?.toInt() ?? 0,
+    modified: (m['modified'] as num?)?.toInt() ?? 0,
+  );
 }
 
 class SmsAttachment {
@@ -681,10 +742,10 @@ class SmsAttachment {
   });
 
   factory SmsAttachment.fromMap(Map<String, dynamic> m) => SmsAttachment(
-        partId: (m['partId'] as num?)?.toInt() ?? 0,
-        mimeType: '${m['mimeType'] ?? ''}',
-        fileName: '${m['fileName'] ?? ''}',
-      );
+    partId: (m['partId'] as num?)?.toInt() ?? 0,
+    mimeType: '${m['mimeType'] ?? ''}',
+    fileName: '${m['fileName'] ?? ''}',
+  );
 
   bool get isImage => mimeType.startsWith('image/');
   bool get isVideo => mimeType.startsWith('video/');
@@ -721,14 +782,14 @@ class SmsConversation {
   });
 
   factory SmsConversation.fromMap(Map<String, dynamic> m) => SmsConversation(
-        threadId: '${m['threadId']}',
-        address: '${m['address'] ?? ''}',
-        displayName: m['displayName'] as String?,
-        snippet: '${m['snippet'] ?? ''}',
-        date: (m['date'] as num?)?.toInt() ?? 0,
-        unreadCount: (m['unreadCount'] as num?)?.toInt() ?? 0,
-        photoPath: m['photoPath'] as String?,
-      );
+    threadId: '${m['threadId']}',
+    address: '${m['address'] ?? ''}',
+    displayName: m['displayName'] as String?,
+    snippet: '${m['snippet'] ?? ''}',
+    date: (m['date'] as num?)?.toInt() ?? 0,
+    unreadCount: (m['unreadCount'] as num?)?.toInt() ?? 0,
+    photoPath: m['photoPath'] as String?,
+  );
 
   String get title => displayName?.isNotEmpty == true ? displayName! : address;
 }
@@ -741,9 +802,9 @@ class SmsContactNumber {
   const SmsContactNumber({required this.number, required this.label});
 
   factory SmsContactNumber.fromMap(Map<String, dynamic> m) => SmsContactNumber(
-        number: '${m['number'] ?? ''}',
-        label: '${m['label'] ?? ''}',
-      );
+    number: '${m['number'] ?? ''}',
+    label: '${m['label'] ?? ''}',
+  );
 }
 
 /// A phone contact (grouped: one entry even with several pro/perso numbers).
@@ -752,19 +813,15 @@ class SmsContact {
   final String? photoPath;
   final List<SmsContactNumber> numbers;
 
-  const SmsContact({
-    required this.name,
-    required this.numbers,
-    this.photoPath,
-  });
+  const SmsContact({required this.name, required this.numbers, this.photoPath});
 
   factory SmsContact.fromMap(Map<String, dynamic> m) => SmsContact(
-        name: '${m['name'] ?? ''}',
-        photoPath: m['photoPath'] as String?,
-        numbers: ((m['numbers'] as List<dynamic>?) ?? [])
-            .map((e) => SmsContactNumber.fromMap(Map<String, dynamic>.from(e)))
-            .toList(),
-      );
+    name: '${m['name'] ?? ''}',
+    photoPath: m['photoPath'] as String?,
+    numbers: ((m['numbers'] as List<dynamic>?) ?? [])
+        .map((e) => SmsContactNumber.fromMap(Map<String, dynamic>.from(e)))
+        .toList(),
+  );
 
   String get display =>
       name.isNotEmpty ? name : (numbers.isNotEmpty ? numbers.first.number : '');
@@ -796,19 +853,42 @@ class SmsMessage {
   });
 
   factory SmsMessage.fromMap(Map<String, dynamic> m) => SmsMessage(
-        id: '${m['id']}',
-        address: '${m['address'] ?? ''}',
-        body: '${m['body'] ?? ''}',
-        date: (m['date'] as num?)?.toInt() ?? 0,
-        isFromMe: m['isFromMe'] == true,
-        type: (m['type'] as num?)?.toInt() ?? 0,
-        status: (m['status'] as num?)?.toInt() ?? -1,
-        read: m['read'] == true,
-        isMms: m['isMms'] == true,
-        attachments: ((m['attachments'] as List<dynamic>?) ?? [])
-            .map((e) => SmsAttachment.fromMap(Map<String, dynamic>.from(e)))
-            .toList(),
-      );
+    id: '${m['id']}',
+    address: '${m['address'] ?? ''}',
+    body: '${m['body'] ?? ''}',
+    date: (m['date'] as num?)?.toInt() ?? 0,
+    isFromMe: m['isFromMe'] == true,
+    type: (m['type'] as num?)?.toInt() ?? 0,
+    status: (m['status'] as num?)?.toInt() ?? -1,
+    read: m['read'] == true,
+    isMms: m['isMms'] == true,
+    attachments: ((m['attachments'] as List<dynamic>?) ?? [])
+        .map((e) => SmsAttachment.fromMap(Map<String, dynamic>.from(e)))
+        .toList(),
+  );
+
+  /// Clé de jointure interne : `Sms._ID` et `Mms._ID` sont deux compteurs
+  /// AUTOINCREMENT indépendants de `mmssms.db` → un SMS et un MMS du même fil
+  /// peuvent porter le même [id]. Joiner sur l'id nu collerait le média d'un
+  /// MMS sur la bulle d'un SMS (ou écraserait l'un par l'autre). [uid]
+  /// namespace par table : le couple (id, isMms) devient la vraie unicité.
+  /// Les ids synthétiques (`incoming-`/`optimistic-`) restent uniques aussi.
+  String get uid => isMms ? 'mms:$id' : 'sms:$id';
+
+  /// Copie ne changeant que le suivi d'état (statut de remise lu au provider),
+  /// jamais le corps, la date ou les pièces déjà affichées.
+  SmsMessage copyWith({int? type, int? status}) => SmsMessage(
+    id: id,
+    address: address,
+    body: body,
+    date: date,
+    isFromMe: isFromMe,
+    type: type ?? this.type,
+    status: status ?? this.status,
+    read: read,
+    isMms: isMms,
+    attachments: attachments,
+  );
 
   List<SmsAttachment> get images =>
       attachments.where((a) => a.isImage).toList();
@@ -854,14 +934,14 @@ class SmsIncoming {
   });
 
   factory SmsIncoming.fromMap(Map<String, dynamic> m) => SmsIncoming(
-        kind: '${m['kind'] ?? 'sms'}',
-        address: '${m['address'] ?? ''}',
-        body: '${m['body'] ?? ''}',
-        date: (m['date'] as num?)?.toInt() ?? 0,
-        threadId: '${m['threadId'] ?? ''}',
-        messageId: (m['messageId'] as num?)?.toInt() ?? -1,
-        mmsId: (m['mmsId'] as num?)?.toInt() ?? -1,
-      );
+    kind: '${m['kind'] ?? 'sms'}',
+    address: '${m['address'] ?? ''}',
+    body: '${m['body'] ?? ''}',
+    date: (m['date'] as num?)?.toInt() ?? 0,
+    threadId: '${m['threadId'] ?? ''}',
+    messageId: (m['messageId'] as num?)?.toInt() ?? -1,
+    mmsId: (m['mmsId'] as num?)?.toInt() ?? -1,
+  );
 
   bool get isMms => kind == 'mms';
 
@@ -886,11 +966,10 @@ class SmsOpenRequest {
   });
 
   factory SmsOpenRequest.fromMap(Map<String, dynamic> m) => SmsOpenRequest(
-        threadId: '${(m['threadId'] as num?)?.toInt() ?? -1}',
-        address: '${m['address'] ?? ''}',
-        voiceReply: m['voiceReply'] == true,
-      );
+    threadId: '${(m['threadId'] as num?)?.toInt() ?? -1}',
+    address: '${m['address'] ?? ''}',
+    voiceReply: m['voiceReply'] == true,
+  );
 
-  bool get isValid =>
-      (int.tryParse(threadId) ?? -1) > 0 || address.isNotEmpty;
+  bool get isValid => (int.tryParse(threadId) ?? -1) > 0 || address.isNotEmpty;
 }

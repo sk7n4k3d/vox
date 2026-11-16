@@ -1,6 +1,9 @@
+import 'dart:async';
+
 import 'package:fluffychat/config/design_tokens.dart';
 import 'package:fluffychat/config/setting_keys.dart';
 import 'package:fluffychat/l10n/l10n.dart';
+import 'package:fluffychat/utils/launch_permissions.dart';
 import 'package:fluffychat/utils/sms/sms_bridge.dart';
 import 'package:fluffychat/widgets/cyber/cyber_widgets.dart';
 import 'package:fluffychat/widgets/matrix.dart';
@@ -95,7 +98,16 @@ class _SmsTestPageState extends State<SmsTestPage> with WidgetsBindingObserver {
                 'appels. Aucune connexion Matrix requise ; vous pourrez en '
                 'ajouter une plus tard.',
             onChanged: (enabled) {
-              if (enabled || !mounted) return;
+              if (!mounted) return;
+              if (enabled) {
+                // Entrée en mode SMS par les Réglages : bon moment pour la
+                // demande de permissions (fire-and-forget). userInitiated :
+                // bascule volontaire, on réévalue même après un cycle tué
+                // (audit F2 : le drapeau posé avant la demande rendait
+                // l'état « jamais soldé » irrattrapable).
+                unawaited(ensureSmsPermissions(userInitiated: true));
+                return;
+              }
               final logged = Matrix.of(
                 context,
               ).widget.clients.any((c) => c.isLogged());

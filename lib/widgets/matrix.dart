@@ -8,6 +8,7 @@ import 'package:fluffychat/pages/chat_list/liquid_glass_app_bar.dart';
 import 'package:fluffychat/utils/audio_playback_controller.dart';
 import 'package:fluffychat/utils/client_manager.dart';
 import 'package:fluffychat/utils/init_with_restore.dart';
+import 'package:fluffychat/utils/launch_permissions.dart';
 import 'package:fluffychat/utils/matrix_sdk_extensions/matrix_file_extension.dart';
 import 'package:fluffychat/utils/media/media_exporter.dart';
 import 'package:fluffychat/utils/platform_infos.dart';
@@ -222,6 +223,12 @@ class MatrixState extends State<Matrix> with WidgetsBindingObserver {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
     initMatrix();
+    // Salve unique de permissions runtime au premier lancement (notifications
+    // + SMS). Après la première frame pour ne pas se superposer au splash ni
+    // empiler les deux dialogues système.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      requestLaunchPermissionsOnce();
+    });
   }
 
   void _registerSubs(String name) {
@@ -479,7 +486,7 @@ class MatrixState extends State<Matrix> with WidgetsBindingObserver {
     final exportBytes = Uint8List.fromList(const Utf8Codec().encode(export));
 
     final exportFileName =
-        'fluffychat-export-${DateFormat(DateFormat.YEAR_MONTH_DAY).format(DateTime.now())}.fluffybackup';
+        'VoxOne-export-${DateFormat(DateFormat.YEAR_MONTH_DAY).format(DateTime.now())}.fluffybackup';
 
     final file = MatrixFile(bytes: exportBytes, name: exportFileName);
     file.save(context);

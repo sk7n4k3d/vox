@@ -84,6 +84,12 @@ object SmsBridge {
     const val ACTION_MMS_SENT = "eu.devlabz.vox.MMS_SENT"
     const val ACTION_MMS_DOWNLOADED = "eu.devlabz.vox.MMS_DOWNLOADED"
     const val EXTRA_ROW_ID = "row_id"
+
+    /** Index de la part (0-based) portant le PendingIntent DELIVERED. */
+    const val EXTRA_PART_INDEX = "part_index"
+
+    /** Nombre total de parts du message (un rapport DELIVERED par part). */
+    const val EXTRA_PART_COUNT = "part_count"
     const val EXTRA_MMS_ID = "mms_id"
     const val EXTRA_TXN_ID = "txn_id"
     const val EXTRA_CONTENT_LOCATION = "content_location"
@@ -362,6 +368,7 @@ object SmsBridge {
                 }
                 val smsOrder = "${Telephony.Sms.DATE} DESC" +
                     if (perSourceLimit > 0) " LIMIT $perSourceLimit" else ""
+                val proofs = SmsDeliveryProofs(context)
                 context.contentResolver.query(
                     Telephony.Sms.CONTENT_URI,
                     arrayOf(
@@ -386,14 +393,24 @@ object SmsBridge {
                     val idxRead = c.getColumnIndexOrThrow(Telephony.Sms.READ)
                     while (c.moveToNext()) {
                         val type = c.getInt(idxType)
+                        val rowId = c.getLong(idxId)
+                        // « Distribué » exige la preuve stockée par VOX (toutes
+                        // les parts remises) : un COMPLETE de l'époque où la
+                        // 1re part suffisait, ou posé par une autre app, est
+                        // indéterminé → lu comme STATUS_NONE (« Envoyé »).
+                        val status = reportedSentStatus(
+                            type = type,
+                            dbStatus = c.getInt(idxStatus),
+                            proven = proofs.isProven(rowId),
+                        )
                         out += mapOf(
-                            "id" to c.getLong(idxId),
+                            "id" to rowId,
                             "address" to (c.getString(idxAddr) ?: ""),
                             "body" to (c.getString(idxBody) ?: ""),
                             "date" to c.getLong(idxDate),
                             "isFromMe" to (type != Telephony.Sms.MESSAGE_TYPE_INBOX),
                             "type" to type,
-                            "status" to c.getInt(idxStatus),
+                            "status" to status,
                             "read" to (c.getInt(idxRead) == 1),
                             "isMms" to false,
                             "attachments" to emptyList<Map<String, Any?>>(),
@@ -482,7 +499,8 @@ object SmsBridge {
                 val mmsId = row["_mmsId"] as Long
                 val box = row["_box"] as Int
                 val isFromMe = box == Telephony.Mms.MESSAGE_BOX_SENT ||
-                    box == Telephony.Mms.MESSAGE_BOX_OUTBOX
+                    box == Telephony.Mms.MESSAGE_BOX_OUTBOX ||
+                    box == Telephony.Mms.MESSAGE_BOX_FAILED
                 val (text, attachments) =
                     partsByMms[mmsId] ?: ("" to emptyList())
                 val subject = (row["_subject"] as? String)
@@ -499,9 +517,17 @@ object SmsBridge {
                     "date" to (row["_date"] as Long) * 1000L,
                     "isFromMe" to isFromMe,
                     // Mappe la box MMS vers une sémantique type proche des SMS pour Dart.
-                    "type" to if (isFromMe) Telephony.Sms.MESSAGE_TYPE_SENT
-                              else Telephony.Sms.MESSAGE_TYPE_INBOX,
-                    "status" to 0,
+                    "type" to when {
+                        box == Telephony.Mms.MESSAGE_BOX_FAILED ->
+                            Telephony.Sms.MESSAGE_TYPE_FAILED
+                        box == Telephony.Mms.MESSAGE_BOX_OUTBOX ->
+                            Telephony.Sms.MESSAGE_TYPE_OUTBOX
+                        isFromMe -> Telephony.Sms.MESSAGE_TYPE_SENT
+                        else -> Telephony.Sms.MESSAGE_TYPE_INBOX
+                    },
+                    // Pas de rapport de remise MMS suivi par VOX : STATUS_NONE,
+                    // jamais 0 (= distribué), pour ne pas inventer un « Distribué ».
+                    "status" to Telephony.Sms.Sent.STATUS_NONE,
                     "read" to ((row["_read"] as Int) == 1),
                     "isMms" to true,
                     "attachments" to attachments,
@@ -554,7 +580,8 @@ object SmsBridge {
                 while (c.moveToNext()) {
                     val partId = c.getLong(idxId)
                     val msgId = c.getLong(idxMsg)
-                    val mime = (c.getString(idxCt) ?: "").substringBefore(';').trim()
+                    val mime = (c.getString(idxCt) ?: "")
+                        .substringBefore(';').trim().lowercase()
                     when {
                         mime == "application/smil" -> { /* présentation, ignorée */ }
                         mime == "text/plain" -> {
@@ -630,7 +657,11 @@ object SmsBridge {
                 val idxData = c.getColumnIndexOrThrow(Telephony.Mms.Part._DATA)
                 while (c.moveToNext()) {
                     val partId = c.getLong(idxId)
-                    val mime = c.getString(idxCt) ?: ""
+                    // Normalisation alignée sur mmsPartsBatch : une part texte
+                    // « text/plain; charset=utf-8 » (passerelles, iOS) doit
+                    // rester du texte, pas finir en pièce fantôme « part_<id> ».
+                    val mime = (c.getString(idxCt) ?: "")
+                        .substringBefore(';').trim().lowercase()
                     when {
                         mime == "application/smil" -> { /* présentation, ignorée */ }
                         mime == "text/plain" -> {
@@ -723,7 +754,12 @@ object SmsBridge {
                 } else {
                     ContentUris.withAppendedId(Telephony.Sms.CONTENT_URI, id)
                 }
-                context.contentResolver.delete(uri, null, null)
+                val deleted = context.contentResolver.delete(uri, null, null)
+                if (!isMms && deleted > 0) {
+                    // La ligne n'existe plus : son suivi de preuve non plus.
+                    runCatching { SmsDeliveryProofs(context).forget(id) }
+                }
+                deleted
             } catch (e: Exception) {
                 Log.e(TAG, "deleteMessage($id, mms=$isMms) failed: ${e.message}")
                 0
@@ -867,9 +903,14 @@ object SmsBridge {
                 val sentIntents = ArrayList<PendingIntent>(parts.size)
                 val deliveredIntents = ArrayList<PendingIntent>(parts.size)
                 for (i in parts.indices) {
-                    sentIntents += buildPendingIntent(context, ACTION_SMS_SENT, rowId, i, 0)
-                    deliveredIntents += buildPendingIntent(context, ACTION_SMS_DELIVERED, rowId, i, 0x40000)
+                    sentIntents += buildPendingIntent(context, ACTION_SMS_SENT, rowId, i, parts.size)
+                    deliveredIntents +=
+                        buildPendingIntent(context, ACTION_SMS_DELIVERED, rowId, i, parts.size)
                 }
+
+                // Les suivis de remise abandonnés (aucun rapport jamais revenu)
+                // s'accumuleraient dans les prefs : purge bornée à l'envoi.
+                runCatching { SmsDeliveryProofs(context).pruneStaleParts() }
 
                 sms.sendMultipartTextMessage(address, null, parts, sentIntents, deliveredIntents)
                 Log.i(TAG, "sendSms → ${redact(address)} (${parts.size} part(s), row=$rowId)")
@@ -937,11 +978,18 @@ object SmsBridge {
         action: String,
         rowId: Long,
         partIndex: Int,
-        @Suppress("UNUSED_PARAMETER") requestCodeOffset: Int,
+        partCount: Int,
     ): PendingIntent {
         val intent = Intent(action).apply {
             setPackage(context.packageName)
             putExtra(EXTRA_ROW_ID, rowId)
+            if (action == ACTION_SMS_DELIVERED) {
+                // Le rapport de remise porte la part qu'il accuse : sans le
+                // total, [SmsSentReceiver] ne peut pas prouver que TOUTES les
+                // parts sont remises et s'abstient d'écrire « Distribué ».
+                putExtra(EXTRA_PART_INDEX, partIndex)
+                putExtra(EXTRA_PART_COUNT, partCount)
+            }
         }
         // requestCode unique par (action, rowId, partIndex). L'ancien
         // `(rowId.toInt() shl 4) + partIndex + offset` débordait l'Int et faisait

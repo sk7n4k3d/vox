@@ -199,7 +199,11 @@ class EphemeralMessages extends ChangeNotifier {
     if (delay == null) return;
     await _enqueue(
       _PendingExpiry(
-        id: 'sms:$threadId|$messageId',
+        // La clé porte la table : `Sms._ID` et `Mms._ID` sont deux compteurs
+        // indépendants → sans `isMms`, un MMS partageant le rowId d'un SMS du
+        // même fil serait pris pour son doublon et n'expire jamais (la
+        // suppression native cible bien la bonne table via smsIsMms).
+        id: 'sms:$threadId:${isMms ? 'mms' : 'sms'}|$messageId',
         smsThreadId: threadId,
         smsIsMms: isMms,
         messageRef: messageId,

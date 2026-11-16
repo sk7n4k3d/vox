@@ -45,6 +45,16 @@ class MainActivity : FlutterFragmentActivity() {
         handleSmsIntent(intent)
     }
 
+    /** Relais des demandes de permissions runtime du pont SMS (bloc SMS/MMS). */
+    override fun onRequestPermissionsResult(
+        requestCode: Int,
+        permissions: Array<out String>,
+        grantResults: IntArray,
+    ) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults)
+        SmsBridgePlugin.handlePermissionResult(requestCode)
+    }
+
     /**
      * Capte un intent qui pointe vers une conversation SMS (tap notif, action
      * "Vocal", ou ouverture sms:/smsto: par une autre app) et le pousse vers

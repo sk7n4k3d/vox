@@ -142,6 +142,14 @@ class SmsBridgePlugin private constructor(
             "isCallLogGranted" -> result.success(isCallLogGranted())
             "requestCallLogPermission" -> result.success(requestCallLogPermission())
 
+            // Permissions SMS runtime (READ/SEND/RECEIVE_SMS + RECEIVE_MMS) :
+            // accordées en bloc par le rôle SMS par défaut, mais à demander
+            // explicitement quand VOX ne le détient pas.
+            "hasSmsPermissions" -> result.success(hasSmsPermissions())
+            "shouldShowSmsPermissionRationale" ->
+                result.success(shouldShowSmsPermissionRationale())
+            "requestSmsPermissions" -> requestSmsPermissions(result)
+
             // Journal d'appels : { id, number, name, type, date, duration }.
             "listCalls" -> launchReply(result) {
                 val sinceMs = call.longArg("sinceMs") ?: 0L
@@ -576,6 +584,130 @@ class SmsBridgePlugin private constructor(
         }
     }
 
+    private val smsPermissionSet = arrayOf(
+        android.Manifest.permission.READ_SMS,
+        android.Manifest.permission.SEND_SMS,
+        android.Manifest.permission.RECEIVE_SMS,
+        android.Manifest.permission.RECEIVE_MMS,
+    )
+
+    /** True si toutes les permissions SMS runtime sont déjà accordées. */
+    private fun hasSmsPermissions(): Boolean = try {
+        smsPermissionSet.all {
+            ContextCompat.checkSelfPermission(context, it) ==
+                PackageManager.PERMISSION_GRANTED
+        }
+    } catch (e: Exception) {
+        Log.w(SmsBridge.TAG, "hasSmsPermissions failed: ${e.message}")
+        false
+    }
+
+    /**
+     * True si l'une des permissions SMS manquantes mérite encore un dialogue
+     * système (déjà refusée au moins une fois sans « ne plus demander »).
+     * False = jamais demandée, tout accordée, ou refus permanent : dans ces
+     * deux derniers cas il ne faut pas relancer la demande à chaque lancement.
+     */
+    private fun shouldShowSmsPermissionRationale(): Boolean = try {
+        val act = activity ?: return false
+        smsPermissionSet.any {
+            ContextCompat.checkSelfPermission(act, it) != PackageManager.PERMISSION_GRANTED &&
+                ActivityCompat.shouldShowRequestPermissionRationale(act, it)
+        }
+    } catch (e: Exception) {
+        Log.w(SmsBridge.TAG, "shouldShowSmsPermissionRationale failed: ${e.message}")
+        false
+    }
+
+    /**
+     * Résultats en attente de la demande groupée de permissions SMS. Complétés
+     * par [onRequestPermissionsResult] (ou par un filet de sécurité
+     * temporisé si le système ne rappelle jamais le callback). Une liste (et
+     * non un seul Result) pour que deux appels concurrents partagent LE MÊME
+     * dialogue sans jamais perdre un Result : bornée, vidée en bloc à chaque
+     * solde.
+     */
+    private val pendingSmsPermResults = mutableListOf<MethodChannel.Result>()
+
+    /** Runnable du filet temporisé en attente (annulé dès que la vraie réponse arrive). */
+    private var smsPermSettleTimeout: Runnable? = null
+
+    /**
+     * Lance la demande système groupée des permissions SMS manquantes et
+     * répond une fois la réponse utilisateur reçue : true si TOUTES les
+     * permissions SMS sont accordées au final, false sinon (refus, ou aucune
+     * activité branchée = rien à afficher). Un appel pendant un appel en
+     * cours ne ROUVRE PAS un second dialogue (audit 2026-11-05 F6 : salve de
+     * lancement + sortie d'intro à ~1 s d'écart) : il rejoint la file des
+     * résultats en attente et sera soldé, comme les autres, par l'état réel
+     * à la fermeture du dialogue.
+     */
+    private fun requestSmsPermissions(result: MethodChannel.Result) {
+        val act = activity
+        if (act == null) {
+            result.success(false)
+            return
+        }
+        if (hasSmsPermissions()) {
+            result.success(true)
+            return
+        }
+        if (pendingSmsPermResults.isNotEmpty()) {
+            // Un dialogue est déjà en vol : on n'en ouvre pas un deuxième.
+            // Ce résultat rejoint la file et sera soldé par l'état réel à la
+            // fermeture (callback système ou filet temporisé).
+            pendingSmsPermResults += result
+            return
+        }
+        val missing = try {
+            smsPermissionSet.filter {
+                ContextCompat.checkSelfPermission(act, it) !=
+                    PackageManager.PERMISSION_GRANTED
+            }.toTypedArray()
+        } catch (e: Exception) {
+            Log.w(SmsBridge.TAG, "requestSmsPermissions failed: ${e.message}")
+            result.success(false)
+            return
+        }
+        if (missing.isEmpty()) {
+            // Course : accordées entre le contrôle et le filtre (rôle SMS).
+            result.success(true)
+            return
+        }
+        pendingSmsPermResults += result
+        try {
+            ActivityCompat.requestPermissions(act, missing, REQ_SMS_PERMISSIONS)
+            // Filet : si le système solde la demande sans jamais rappeler
+            // onRequestPermissionsResult, on répond quand même avec l'état.
+            val timeout = Runnable { settlePendingSmsPermResult() }
+            smsPermSettleTimeout = timeout
+            main.postDelayed(timeout, SMS_PERM_SETTLE_TIMEOUT_MS)
+        } catch (e: Exception) {
+            Log.w(SmsBridge.TAG, "requestSmsPermissions failed: ${e.message}")
+            settlePendingSmsPermResult()
+        }
+    }
+
+    /** Solde TOUS les résultats en attente avec l'état courant des permissions. */
+    private fun settlePendingSmsPermResult() {
+        smsPermSettleTimeout?.let { main.removeCallbacks(it) }
+        smsPermSettleTimeout = null
+        if (pendingSmsPermResults.isEmpty()) return
+        // L'état réel est lu UNE fois, puis la file est vidée AVANT de
+        // répondre : un Result dont success() lève (double réponse) ne peut
+        // ni bloquer les autres ni laisser la file coincée.
+        val granted = hasSmsPermissions()
+        val settled = pendingSmsPermResults.toList()
+        pendingSmsPermResults.clear()
+        settled.forEach { r -> runCatching { r.success(granted) } }
+    }
+
+    /** À appeler depuis MainActivity.onRequestPermissionsResult. */
+    fun onRequestPermissionsResult(requestCode: Int) {
+        if (requestCode != REQ_SMS_PERMISSIONS) return
+        settlePendingSmsPermResult()
+    }
+
     /** True si le réseau actif est un Wi-Fi (« réessayer seulement en Wi-Fi »). */
     private fun isOnWifi(): Boolean = try {
         val cm = context.getSystemService(ConnectivityManager::class.java)
@@ -665,6 +797,11 @@ class SmsBridgePlugin private constructor(
             instance?.bindActivity(activity)
         }
 
+        /** Transfert MainActivity.onRequestPermissionsResult vers l'instance. */
+        fun handlePermissionResult(requestCode: Int) {
+            instance?.onRequestPermissionsResult(requestCode)
+        }
+
         /** Stocke l'intent SMS entrant et, si l'app tourne, le pousse à Flutter. */
         fun setPendingSmsIntent(threadId: Long, address: String?, voiceReply: Boolean) {
             val payload = mapOf(
@@ -682,6 +819,13 @@ class SmsBridgePlugin private constructor(
 
 /** Code de requête de la permission « journal d'appels » (valeur stable, arbitraire). */
 private const val REQ_CALL_LOG = 4211
+
+/** Code de requête du bloc de permissions SMS (valeur stable, arbitraire). */
+private const val REQ_SMS_PERMISSIONS = 4212
+
+/** Filet anti-blocage : solde la réponse de demande de permissions SMS si le
+ *  système n'appelle jamais onRequestPermissionsResult (ms). */
+private const val SMS_PERM_SETTLE_TIMEOUT_MS = 90_000L
 
 /** Extrait un argument numérique de thread (Dart envoie int ou long selon la taille). */
 private fun MethodCall.longArg(name: String): Long? {

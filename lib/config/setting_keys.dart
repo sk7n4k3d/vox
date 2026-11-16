@@ -70,6 +70,17 @@ enum AppSettings<T> {
   // un compte Matrix. Réversible (Réglages → SMS), sans effet une fois un
   // compte Matrix connecté.
   smsOnlyMode<bool>('chat.fluffy.sms_only_mode', false),
+  // Salve unique de permissions runtime au premier démarrage (notifications +
+  // SMS). Le drapeau est persisté AVANT la demande pour ne jamais harceler.
+  permissionsPromptedAtLaunch<bool>(
+    'chat.fluffy.permissions_prompted_at_launch',
+    false,
+  ),
+  // Déjà demandé une fois les permissions SMS runtime ? Sert à distinguer «
+  // jamais demandé » (on demande) de « refus permanent » (on arrête, cf.
+  // shouldShowSmsPermissionRationale). Tant que le mode SMS-only est actif et
+  // les permissions absentes, la relance est permise après un refus simple.
+  smsPermissionsAsked<bool>('chat.fluffy.sms_permissions_asked', false),
   // Aperçus automatiques des liens (cartes avec titre/vignette). Activé par
   // défaut (comportement actuel) ; l'utilisateur peut le couper pour ne pas
   // révéler son IP au simple rendu d'un message contenant une URL.
