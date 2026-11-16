@@ -43,7 +43,9 @@ class SettingsController extends State<Settings> {
       okLabel: L10n.of(context).ok,
       cancelLabel: L10n.of(context).cancel,
       initialText:
-          profile?.displayName ?? Matrix.of(context).client.userID!.localpart,
+          profile?.displayName ??
+          Matrix.of(context).client.userID?.localpart ??
+          '',
     );
     if (input == null) return;
     final matrix = Matrix.of(context);
@@ -192,7 +194,14 @@ class SettingsController extends State<Settings> {
   @override
   Widget build(BuildContext context) {
     final client = Matrix.of(context).client;
-    profileFuture ??= client.getProfileFromUserId(client.userID!);
+    // Sans session (mode SMS-only, ou fenêtre avant la fin de
+    // initWithRestore), userID est null : `userID!` crashait la page entière
+    // (écran gris, reproduit sur mustang 2026-11-16). Sans identité, pas de
+    // profil à charger — profileFuture reste null, la vue sait le gérer.
+    final userId = client.userID;
+    if (userId != null) {
+      profileFuture ??= client.getProfileFromUserId(userId);
+    }
     return SettingsView(this);
   }
 }
