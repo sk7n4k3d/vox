@@ -538,7 +538,11 @@ class _SmsChatPageState extends State<SmsChatPage> with WidgetsBindingObserver {
     if (rowId != null && rowId > 0) {
       final off = _pendingEphemeralOff;
       final override = _pendingEphemeralOverride;
-      if (!off) {
+      // Un SMS en échec ne va PAS dans la file éphémère : sa ligne FAILED est
+      // la seule trace de l'échec et le point d'entrée « Renvoyer ». L'armer
+      // ferait disparaître le message à échéance alors qu'il n'est jamais parti
+      // (audit ultracode #12).
+      if (!off && !failed) {
         await EphemeralMessages.instance.trackSmsMessage(
           widget.threadId,
           '$rowId',
@@ -811,19 +815,43 @@ class _SmsChatPageState extends State<SmsChatPage> with WidgetsBindingObserver {
     }
   }
 
-  /// Re-sends a previously failed SMS: drops the failed bubble (and its
-  /// provider row, sinon elle ressurgit à la relecture) and routes the
-  /// text back through the normal send path.
+  /// Re-sends a previously failed SMS/MMS: drops the failed bubble (and its
+  /// provider row, sinon elle ressurgit à la relecture) and routes the content
+  /// back through the normal send path. Un MMS repart EN MMS — renvoyer son
+  /// seul texte en SMS perdrait l'image (et enverrait un SMS vide si le MMS
+  /// n'avait que l'image) (audit ultracode #11).
   Future<void> _resendMessage(SmsMessage message) async {
     final realId = int.tryParse(message.id);
     if (realId != null && realId > 0) {
       await SmsBridge.instance.deleteMessage(realId, isMms: message.isMms);
     }
     setState(() => _messages.removeWhere((m) => m.uid == message.uid));
-    final rowId = await SmsBridge.instance.sendSms(
-      widget.address,
-      message.body,
-    );
+
+    final int? rowId;
+    if (message.isMms) {
+      final imagePath = message.images.isEmpty
+          ? null
+          : await _resolveMmsPart(message.images.first.partId);
+      final body = message.body.trim();
+      // Rien à renvoyer (image illisible + aucun texte) : mieux vaut un toast
+      // qu'un SMS vide parti chez l'opérateur.
+      if (imagePath == null && body.isEmpty) {
+        if (!mounted) return;
+        HapticFeedback.mediumImpact();
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Média introuvable, renvoi impossible')),
+        );
+        await _load();
+        return;
+      }
+      rowId = await SmsBridge.instance.sendMms(
+        widget.address,
+        body.isEmpty ? null : body,
+        imagePath,
+      );
+    } else {
+      rowId = await SmsBridge.instance.sendSms(widget.address, message.body);
+    }
     if (!mounted) return;
     if (rowId == null) {
       HapticFeedback.mediumImpact();
