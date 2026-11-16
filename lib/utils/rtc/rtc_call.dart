@@ -165,16 +165,16 @@ class RtcCall {
     _setState(CallState.connecting);
     try {
       final credentials = await _credentialsWithRetry();
-      if (_state != CallState.connecting) return _abortIfCeded();
+      if (_terminal || _state != CallState.connecting) return _abortIfCeded();
       final e2ee = _ensureE2ee();
       await _gateway.connect(credentials);
-      if (_state != CallState.connecting) return _abortIfCeded();
+      if (_terminal || _state != CallState.connecting) return _abortIfCeded();
       await _gateway.installOutboundKey(e2ee.ownKeyLatin1, e2ee.ownIndex);
       await _gateway.startMedia(audio: true, video: wantVideo);
       await _gateway.publish();
-      if (_state != CallState.connecting) return _abortIfCeded();
+      if (_terminal || _state != CallState.connecting) return _abortIfCeded();
       await _publishMembership();
-      if (_state != CallState.connecting) return _abortIfCeded();
+      if (_terminal || _state != CallState.connecting) return _abortIfCeded();
       _listenGateway();
       _setState(CallState.ringingOut);
       try {
@@ -199,13 +199,13 @@ class RtcCall {
     _setState(CallState.connecting);
     try {
       final credentials = await _credentialsWithRetry();
-      if (_state != CallState.connecting) return;
+      if (_terminal || _state != CallState.connecting) return;
       final e2ee = _ensureE2ee();
       await _gateway.connect(credentials);
       await _gateway.installOutboundKey(e2ee.ownKeyLatin1, e2ee.ownIndex);
       await _gateway.startMedia(audio: true, video: wantVideo);
       await _gateway.publish();
-      if (_state != CallState.connecting) return;
+      if (_terminal || _state != CallState.connecting) return;
       await _publishMembership();
       final peer = _lastRemote;
       if (peer != null) _shareKeysWith(peer);
