@@ -309,7 +309,12 @@ class WearBridge {
         case MessageTypes.Audio:
           type = 'audio';
           final info = e.content['info'] as Map<String, dynamic>?;
-          final dur = info?['duration'];
+          // Certains clients n'émettent la durée que dans
+          // org.matrix.msc1767.audio.duration (MSC3245) et pas dans
+          // info.duration → la Watch affichait 0:00. Chaîne de fallback.
+          final audio = e.content['org.matrix.msc1767.audio']
+              as Map<String, dynamic>?;
+          final dur = info?['duration'] ?? audio?['duration'];
           if (dur is int) audioDurationMs = dur;
           if (body.isEmpty) body = 'Vocal';
           break;
