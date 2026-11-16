@@ -60,6 +60,7 @@ class FakePublisher implements RtcMembershipPublisher {
   final published = <Map<String, Object?>>[];
   final notifications = <Map<String, Object?>>[];
   int retracted = 0;
+  bool retractThrows = false;
   String? eventId = '\$EvFake';
 
   @override
@@ -69,7 +70,10 @@ class FakePublisher implements RtcMembershipPublisher {
   }
 
   @override
-  Future<void> retract() async => retracted++;
+  Future<void> retract() async {
+    if (retractThrows) throw Exception('M_FORBIDDEN');
+    retracted++;
+  }
 
   @override
   Future<void> notify(Map<String, Object?> content) async =>
@@ -238,6 +242,19 @@ void main() {
     await c.call.hangup();
     expect(c.call.state, CallState.ended);
     expect(c.publisher.retracted, 1);
+    expect(c.gateway.disposals, 1);
+  });
+
+  test('hangup : un retract qui lève ne bloque ni le dispose ni l\'état terminal', () async {
+    // Audit ultracode #14 : avant le fix, l'exception remontait par-dessus
+    // dispose() → micro et room LiveKit fuiteux, état bloqué, et _terminal
+    // interdisait tout nouveau hangup.
+    final c = _makeCall();
+    await c.call.start();
+    await _pump();
+    c.publisher.retractThrows = true;
+    await c.call.hangup();
+    expect(c.call.state, CallState.ended);
     expect(c.gateway.disposals, 1);
   });
 

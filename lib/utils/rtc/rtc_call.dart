@@ -242,8 +242,21 @@ class RtcCall {
     if (_terminal) return;
     _terminal = true;
     _cancelRefresh?.call();
-    await _memberships.retract();
-    await _gateway.dispose();
+    // Un retract qui tombe (homeserver injoignable, 403 après éjection, 429)
+    // ne doit pas laisser le micro et la room LiveKit ouverts : chaque étape
+    // est tentée séparément et l'état terminal est TOUJOURS émis, sinon l'UI
+    // reste collée et _terminal interdit tout nouveau hangup
+    // (audit ultracode #14).
+    try {
+      await _memberships.retract();
+    } on Object catch (e) {
+      Logs().w('[RTC] retrait de présence raté: $e');
+    }
+    try {
+      await _gateway.dispose();
+    } on Object catch (e) {
+      Logs().w('[RTC] libération du média ratée: $e');
+    }
     await _remoteEvents?.cancel();
     _setState(CallState.ended);
   }
@@ -358,7 +371,14 @@ class RtcCall {
     if (_terminal) return;
     _terminal = true;
     _cancelRefresh?.call();
-    await _gateway.dispose();
+    // Même raison que hangup() : le disconnect LiveKit peut lever (timeout si
+    // le SFU ne répond plus) — l'état failed doit quand même être émis pour
+    // que l'UI et RtcService se libèrent (audit ultracode #14).
+    try {
+      await _gateway.dispose();
+    } on Object catch (e) {
+      Logs().w('[RTC] libération du média ratée: $e');
+    }
     await _remoteEvents?.cancel();
     _setState(CallState.failed);
   }
