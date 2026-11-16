@@ -49,10 +49,15 @@ class SettingsController extends State<Settings> {
     );
     if (input == null) return;
     final matrix = Matrix.of(context);
+    // Mode SMS-only (pas de session Matrix) : userID est null et `userID!`
+    // plantait l'édition du pseudo (audit ultracode #6). Sans identité il n'y
+    // a pas de profil Matrix à modifier, on ne fait rien.
+    final userId = matrix.client.userID;
+    if (userId == null) return;
     final success = await showFutureLoadingDialog(
       context: context,
       future: () => matrix.client.setProfileField(
-        matrix.client.userID!,
+        userId,
         'displayname',
         {'displayname': input},
       ),
