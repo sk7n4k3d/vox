@@ -2740,7 +2740,7 @@
     "addAnswerOption": "Add answer option",
     "allowMultipleAnswers": "Allow multiple answers",
     "pollHasBeenEnded": "Poll has been ended",
-    "countVotes": "{count, plural, =1{One vote} other{{count} votes}}",
+    "countVotes": "{count, plural, =0{No votes} =1{One vote} other{{count} votes}}",
     "@countVotes": {
         "type": "int",
         "placeholders": {
@@ -2751,7 +2751,7 @@
     },
     "answersWillBeVisibleWhenPollHasEnded": "Answers will be visible when poll has ended",
     "replyInThread": "Reply in thread",
-    "countReplies": "{count, plural, =1{One reply} other{{count} replies}}",
+    "countReplies": "{count, plural, =0{No replies} =1{One reply} other{{count} replies}}",
     "@countReplies": {
         "type": "int",
         "placeholders": {
