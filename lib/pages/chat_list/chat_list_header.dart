@@ -111,8 +111,15 @@ class ChatListHeader extends StatelessWidget implements PreferredSizeWidget {
                             ),
                             icon: const Icon(Icons.edit_outlined, size: 16),
                             label: Text(
+                              // homeserver! crashait la liste en mode SMS-only
+                              // (pas de session → null) dès qu'on tapait dans
+                              // la recherche (audit ultracode #5, même famille
+                              // que 49ba5b68).
                               controller.searchServer ??
-                                  Matrix.of(context).client.homeserver!.host,
+                                  Matrix.of(
+                                    context,
+                                  ).client.homeserver?.host ??
+                                  L10n.of(context).changeTheHomeserver,
                               maxLines: 2,
                             ),
                           )
