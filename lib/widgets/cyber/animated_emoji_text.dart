@@ -134,9 +134,11 @@ class _EmojiTextItemState extends State<_EmojiTextItem> {
         // Le callback peut être livré après le démontage (batterie de callbacks
         // regroupés hors frame) → sans ce garde, setState sur un State démonté.
         if (!mounted) return;
+        // La sonde n'éteint l'animation qu'en debug drapeau baissé ; en release
+        // (`enabled` false) les emojis doivent s'animer — l'inverse
+        // (`enabled && emojiAnim`) les figeait tous en release (bug 2026-11-16).
         final shouldAnimate = widget.animateWhenVisible &&
-            VoxPerfProbe.enabled &&
-            VoxPerfProbe.emojiAnim &&
+            (!VoxPerfProbe.enabled || VoxPerfProbe.emojiAnim) &&
             info.visibleFraction >= widget.visibilityThreshold;
         if (shouldAnimate != _animating) {
           setState(() => _animating = shouldAnimate);

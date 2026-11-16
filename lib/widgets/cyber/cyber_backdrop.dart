@@ -15,8 +15,12 @@ class CyberScreenBackdrop extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    if (!VoxPerfProbe.enabled || !VoxPerfProbe.screenBackdrop) {
-      // Sonde de profiling : fond coupé (éliminé en release).
+    // Sonde de profiling : fond coupable couvert par ext.vox.perf.screenBackdrop
+    // (éliminé en release). Attention au sens du test : la sonde n'éteint le
+    // fond qu'en debug quand le drapeau est explicitement baissé ; en release
+    // (`enabled` false) le fond doit rester actif — l'inverse (`!enabled ||`)
+    // supprimait tout le fond en release (bug du 2026-11-16).
+    if (VoxPerfProbe.enabled && !VoxPerfProbe.screenBackdrop) {
       return const SizedBox.shrink();
     }
     final isStarlink =

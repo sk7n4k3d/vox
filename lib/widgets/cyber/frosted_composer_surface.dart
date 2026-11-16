@@ -50,8 +50,10 @@ class FrostedComposerSurface extends StatelessWidget {
       child: child,
     );
     // Sonde de profiling : blur du composer coupable potentiel, coupable
-    // couvert par ext.vox.perf.glassBlur (éliminé en release).
-    if (!VoxPerfProbe.enabled || !VoxPerfProbe.glassBlur) {
+    // couvert par ext.vox.perf.glassBlur (éliminé en release). Le blur ne
+    // saute qu'en debug drapeau baissé ; en release il reste actif (l'inverse
+    // `!enabled ||` le tuait en release — bug du 2026-11-16).
+    if (VoxPerfProbe.enabled && !VoxPerfProbe.glassBlur) {
       return ClipRRect(
         borderRadius: BorderRadius.circular(26),
         child: surface,
