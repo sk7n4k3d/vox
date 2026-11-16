@@ -148,6 +148,18 @@ class VoipPlugin with WidgetsBindingObserver implements WebRTCDelegate {
         ongoing: false,
       ),
     );
+    // Sans ce listener, un appel entrant qui se termine pendant qu'on sonne
+    // (l'appelant se retracte → hangup → ended) ne déclenchait aucun
+    // nettoyage : sonnerie + overlay collés jusqu'à tuer l'app
+    // (audit ultracode #3). _rtcConnectAndShow remplacera cette souscription
+    // au décrochage.
+    _rtcStateSub?.cancel();
+    // ignore: cancel_subscriptions
+    _rtcStateSub = call.onStateChanged.listen((s) {
+      if (s == CallState.ended || s == CallState.failed) {
+        unawaited(_endRtcCall());
+      }
+    });
     _showOverlay(
       () => IncomingCallPage(
         callId: call.roomId,
@@ -174,6 +186,9 @@ class VoipPlugin with WidgetsBindingObserver implements WebRTCDelegate {
     final call = rtcService?.currentCall;
     if (call == null) return;
     unawaited(call.hangup());
+    // Nettoyage immédiat (sonnerie, notification, focus audio, overlay) :
+    // ne pas dépendre du seul listener d'état (audit ultracode #3).
+    unawaited(_endRtcCall());
     unawaited(
       MissedCallStore(matrix.store).add(
         MissedCall(
