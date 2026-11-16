@@ -236,8 +236,10 @@ object ScheduledSmsAlarms {
                         if (rowId > 0L) {
                             trackSubmitted(context, rowId, dartId, SmsBridge.partCount(context, body!!))
                         } else {
-                            // Non persisté → pas de callback SENT exploitable.
-                            recordResult(context, dartId, RESULT_SENT)
+                            // rowId négatif = ligne persistée mais envoi en
+                            // échec (convention SmsBridge.sendSms) : le résultat
+                            // doit être FAILED, pas SENT (audit ultracode #2).
+                            recordResult(context, dartId, RESULT_FAILED)
                         }
                     }
                     job.attempts + 1 < MAX_ATTEMPTS -> {

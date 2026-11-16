@@ -85,10 +85,14 @@ class ScheduledSmsBackend {
   /// Native AlarmManager scheduling (Android only).
   bool get supportsNative => defaultTargetPlatform == TargetPlatform.android;
 
-  /// true once the SMS has been handed to the modem (even if the provider
-  /// insert failed — it must then never be resent).
-  Future<bool> submit(String address, String body) async =>
-      await SmsBridge.instance.sendSms(address, body) != null;
+  /// true once the SMS has been handed to the modem. SmsBridge.kt encodes
+  /// « insert ok but send failed » as a NEGATIVE rowId (the provider row is
+  /// marked FAILED) — treating any non-null as success silently dropped
+  /// scheduled SMS whose permission had been revoked (audit ultracode #2).
+  Future<bool> submit(String address, String body) async {
+    final rowId = await SmsBridge.instance.sendSms(address, body);
+    return rowId != null && rowId > 0;
+  }
 
   Future<bool> scheduleNative(ScheduledMessage m) =>
       SmsBridge.instance.scheduleNativeSms(
