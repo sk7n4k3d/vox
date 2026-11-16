@@ -14,6 +14,12 @@ class UserMediaManager {
 
   AudioPlayer? _player;
 
+  /// Incrémenté à chaque stopRingingTone() : permet à _startRingingToneAsync
+  /// d'annuler la sonnerie si un stop est arrivé PENDANT la config audio
+  /// (avant que le player n'existe — sinon le ringtone démarre « après coup »
+  /// et boucle sans fin, audit ultracode #13).
+  int _generation = 0;
+
   /// Non-blocking: fires the ringtone setup on the background queue so the
   /// caller (VoIP.onCallInvite) can immediately move on to handleNewCall
   /// and render the incoming-call overlay without waiting for audio_session
@@ -24,6 +30,8 @@ class UserMediaManager {
 
   Future<void> _startRingingToneAsync() async {
     await stopRingingTone();
+    // Capturé APRÈS le stop initial pour ne pas s'auto-invalider.
+    final generation = _generation;
     try {
       final session = await AudioSession.instance;
       await session.configure(
@@ -45,6 +53,11 @@ class UserMediaManager {
       // Audio session config can fail on some OEMs; fall through to a
       // default player so the user still hears something.
     }
+    if (_generation != generation) {
+      // Un stopRingingTone() est arrivé pendant la config audio : l'appel est
+      // déjà terminé, ne pas démarrer la sonnerie après coup.
+      return;
+    }
     final player = _player = AudioPlayer();
     try {
       await player.setAsset('assets/sounds/phone.ogg');
@@ -58,6 +71,7 @@ class UserMediaManager {
   }
 
   Future<void> stopRingingTone() async {
+    _generation++;
     final player = _player;
     _player = null;
     if (player == null) return;
