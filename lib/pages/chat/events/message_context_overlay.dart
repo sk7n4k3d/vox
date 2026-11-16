@@ -38,18 +38,17 @@ class MessageContextOverlay extends StatefulWidget {
     super.key,
   });
 
-  /// Show the overlay above [bubbleKey]. Returns a future that completes once
-  /// the overlay has been removed.
+  /// Show the overlay above [bubbleContext]. Returns a future that completes
+  /// once the overlay has been removed.
   static Future<void> show({
     required BuildContext context,
     required Event event,
     required ChatController controller,
-    required GlobalKey bubbleKey,
+    required BuildContext? bubbleContext,
     required Widget bubbleContent,
     required bool ownMessage,
   }) async {
-    final renderBox =
-        bubbleKey.currentContext?.findRenderObject() as RenderBox?;
+    final renderBox = bubbleContext?.findRenderObject() as RenderBox?;
     if (renderBox == null || !renderBox.attached) return;
     final offset = renderBox.localToGlobal(Offset.zero);
     final size = renderBox.size;

@@ -211,11 +211,16 @@ class Message extends StatelessWidget {
 
     final enterThread = this.enterThread;
     final sender = event.senderFromMemoryOrFallback;
-    final bubbleKey = GlobalKey();
+    // Le contexte de la bulle, capturé par le Builder plus bas : sert
+    // uniquement au hit-testing (picker de réactions rapides + overlay).
+    // Un GlobalKey recréé ici à chaque build démontait toute la bulle à
+    // chaque rebuild (position du lecteur audio perdue, téléchargement
+    // orphelin, FutureBuilder de réponse qui clignote) — audit ultracode #7.
+    BuildContext? bubbleContext;
 
     void showQuickReactPicker() {
       if (!event.room.canSendDefaultMessages) return;
-      final ctx = bubbleKey.currentContext;
+      final ctx = bubbleContext;
       if (ctx == null) return;
       final renderBox = ctx.findRenderObject() as RenderBox?;
       if (renderBox == null || !renderBox.attached) return;
@@ -244,11 +249,10 @@ class Message extends StatelessWidget {
         ownMessage && !noBubble && !displayEvent.status.isError &&
             cyber != null && !MediaQuery.highContrastOf(context);
 
-    Widget buildBubbleVisual({Key? key}) {
+    Widget buildBubbleVisual() {
       // The bubble surface is now the shared [ChatBubbleSkin] so Matrix and SMS
       // bubbles are identical by construction.
       return ChatBubbleSkin(
-        key: key,
         ownMessage: ownMessage,
         isError: displayEvent.status.isError,
         noBubble: noBubble,
@@ -361,7 +365,7 @@ class Message extends StatelessWidget {
         context: context,
         event: event,
         controller: ctrl,
-        bubbleKey: bubbleKey,
+        bubbleContext: bubbleContext,
         bubbleContent: buildBubbleVisual(),
         ownMessage: ownMessage,
       );
@@ -624,7 +628,12 @@ class Message extends StatelessWidget {
                                   onDoubleTap: longPressSelect
                                       ? null
                                       : showQuickReactPicker,
-                                  child: buildBubbleVisual(key: bubbleKey),
+                                  child: Builder(
+                                    builder: (context) {
+                                      bubbleContext = context;
+                                      return buildBubbleVisual();
+                                    },
+                                  ),
                                 ),
                               ),
                               Align(
