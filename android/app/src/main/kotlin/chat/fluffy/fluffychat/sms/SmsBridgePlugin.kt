@@ -633,6 +633,16 @@ class SmsBridgePlugin private constructor(
     private var smsPermSettleTimeout: Runnable? = null
 
     /**
+     * True du lancement du dialogue système jusqu'au vrai
+     * [onRequestPermissionsResult]. Le filet temporisé solde la file mais NE
+     * clear PAS ce drapeau : si l'utilisateur a encore le dialogue sous les
+     * yeux quand le filet tombe, une nouvelle demande ne doit PAS empiler un
+     * second dialogue par-dessus (bug audit 2026-11-16) — elle rejoint la file
+     * et réarme le filet.
+     */
+    private var smsPermDialogInFlight = false
+
+    /**
      * Lance la demande système groupée des permissions SMS manquantes et
      * répond une fois la réponse utilisateur reçue : true si TOUTES les
      * permissions SMS sont accordées au final, false sinon (refus, ou aucune
@@ -652,11 +662,14 @@ class SmsBridgePlugin private constructor(
             result.success(true)
             return
         }
-        if (pendingSmsPermResults.isNotEmpty()) {
+        if (pendingSmsPermResults.isNotEmpty() || smsPermDialogInFlight) {
             // Un dialogue est déjà en vol : on n'en ouvre pas un deuxième.
             // Ce résultat rejoint la file et sera soldé par l'état réel à la
-            // fermeture (callback système ou filet temporisé).
+            // fermeture (callback système ou filet temporisé). Si le filet a
+            // déjà été consommé (dialogue encore ouvert, file vide), on le
+            // réarme pour que ce résultat ne reste pas pendu.
             pendingSmsPermResults += result
+            if (smsPermSettleTimeout == null) armSmsPermSettleTimeout()
             return
         }
         val missing = try {
@@ -677,15 +690,20 @@ class SmsBridgePlugin private constructor(
         pendingSmsPermResults += result
         try {
             ActivityCompat.requestPermissions(act, missing, REQ_SMS_PERMISSIONS)
+            smsPermDialogInFlight = true
             // Filet : si le système solde la demande sans jamais rappeler
             // onRequestPermissionsResult, on répond quand même avec l'état.
-            val timeout = Runnable { settlePendingSmsPermResult() }
-            smsPermSettleTimeout = timeout
-            main.postDelayed(timeout, SMS_PERM_SETTLE_TIMEOUT_MS)
+            armSmsPermSettleTimeout()
         } catch (e: Exception) {
             Log.w(SmsBridge.TAG, "requestSmsPermissions failed: ${e.message}")
             settlePendingSmsPermResult()
         }
+    }
+
+    private fun armSmsPermSettleTimeout() {
+        val timeout = Runnable { settlePendingSmsPermResult() }
+        smsPermSettleTimeout = timeout
+        main.postDelayed(timeout, SMS_PERM_SETTLE_TIMEOUT_MS)
     }
 
     /** Solde TOUS les résultats en attente avec l'état courant des permissions. */
@@ -705,6 +723,9 @@ class SmsBridgePlugin private constructor(
     /** À appeler depuis MainActivity.onRequestPermissionsResult. */
     fun onRequestPermissionsResult(requestCode: Int) {
         if (requestCode != REQ_SMS_PERMISSIONS) return
+        // Seule la vraie réponse système finit le dialogue ; le filet
+        // temporisé, lui, ne fait que solder la file (voir smsPermDialogInFlight).
+        smsPermDialogInFlight = false
         settlePendingSmsPermResult()
     }
 

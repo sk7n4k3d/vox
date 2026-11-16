@@ -263,9 +263,18 @@ class VideoBridge {
 
   void _settleFailure(String jobId, Object error) {
     _timers.remove(jobId)?.cancel();
+    // Job ids are monotonic and never reused, so failure entries are write-
+    // once — without a bound the map grows for the whole app lifetime (audit
+    // 2026-11-16). Insertion order is preserved, so evicting the oldest keys
+    // only drops states nobody waits on anymore.
     _failures[jobId] = error;
+    while (_failures.length > _maxSettledHistory) {
+      _failures.remove(_failures.keys.first);
+    }
     _settle(_pending.remove(jobId), error: error, result: null);
   }
+
+  static const int _maxSettledHistory = 64;
 
   void _settle(
     Completer<VideoJobResult>? completer, {

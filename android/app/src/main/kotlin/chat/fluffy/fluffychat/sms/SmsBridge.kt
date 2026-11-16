@@ -773,7 +773,27 @@ object SmsBridge {
     suspend fun deleteConversation(context: Context, threadId: Long): Int =
         withContext(Dispatchers.IO) {
             if (threadId <= 0L) return@withContext 0
-            try {
+            // Les preuves de remise (dlv_*) sont indexées par rowId SMS : une
+            // fois la ligne partie, plus moyen de les retrouver → fuite de
+            // clés. On collecte les ids AVANT la suppression pour purger après.
+            val smsIds = try {
+                val ids = mutableListOf<Long>()
+                context.contentResolver.query(
+                    Telephony.Sms.CONTENT_URI,
+                    arrayOf(Telephony.Sms._ID),
+                    "${Telephony.Sms.THREAD_ID}=?",
+                    arrayOf(threadId.toString()),
+                    null,
+                )?.use { c ->
+                    val col = c.getColumnIndexOrThrow(Telephony.Sms._ID)
+                    while (c.moveToNext()) ids += c.getLong(col)
+                }
+                ids
+            } catch (e: Exception) {
+                Log.w(TAG, "deleteConversation($threadId) id scan: ${e.message}")
+                emptyList()
+            }
+            val deleted = try {
                 val uri = ContentUris.withAppendedId(
                     Telephony.Threads.CONTENT_URI,
                     threadId,
@@ -799,6 +819,11 @@ object SmsBridge {
                 }
                 n
             }
+            if (deleted > 0 && smsIds.isNotEmpty()) {
+                val proofs = SmsDeliveryProofs(context)
+                smsIds.forEach { id -> runCatching { proofs.forget(id) } }
+            }
+            deleted
         }
 
     /**

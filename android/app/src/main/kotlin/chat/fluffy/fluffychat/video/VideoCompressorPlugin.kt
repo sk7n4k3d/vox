@@ -103,6 +103,9 @@ class VideoCompressorPlugin private constructor(
                 bridge ?: VideoCompressorBridge(context.applicationContext).also { bridge = it }
             }
 
+        @Volatile
+        private var registered: VideoCompressorPlugin? = null
+
         fun register(context: Context, flutterEngine: FlutterEngine) {
             val newChannel = MethodChannel(
                 flutterEngine.dartExecutor.binaryMessenger, CHANNEL_METHOD)
@@ -110,6 +113,11 @@ class VideoCompressorPlugin private constructor(
                 flutterEngine.dartExecutor.binaryMessenger, CHANNEL_EVENTS)
 
             val plugin = VideoCompressorPlugin(context, newChannel, newEventChannel)
+            // Réutilisation à chaud de l'engine (hot restart, fold plié/déplié) :
+            // sans détachement, l'instance précédente reste abonnée au bus avec
+            // un sink mort → pile-up de listeners et exceptions à chaque event.
+            registered?.let { VideoBridge.events.unsubscribe(it) }
+            registered = plugin
             flutterEngine.addEngineLifecycleListener(object : FlutterEngine.EngineLifecycleListener {
                 override fun onPreEngineRestart() {
                     VideoBridge.events.unsubscribe(plugin)

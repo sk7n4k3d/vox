@@ -103,6 +103,9 @@ class VideoCompressorBridge(private val context: Context) {
 
     private val outDir = File(context.cacheDir, "video").apply { mkdirs() }
     private val jobs = HashMap<String, JobHandle>()
+    /** jobIds en file d'attente (handle pas encore créé) et annulés pendant l'attente. */
+    private val queued = HashSet<String>()
+    private val cancelledWhileQueued = HashSet<String>()
     private var jobCounter = 0L
 
     private class JobHandle(
@@ -129,6 +132,7 @@ class VideoCompressorBridge(private val context: Context) {
     /** Enfile le job et renvoie immédiatement son jobId. */
     fun start(path: String): String {
         val jobId = "v${++jobCounter}"
+        synchronized(jobs) { queued.add(jobId) }
         handler.post { runJob(jobId, path) }
         return jobId
     }
@@ -136,7 +140,11 @@ class VideoCompressorBridge(private val context: Context) {
     fun cancel(jobId: String) {
         val handle = synchronized(jobs) { jobs[jobId] }
         if (handle == null) {
-            // job déjà terminé ou inconnu : rien à couper côté encoder
+            // Job encore en file d'attente (handle pas créé) ou déjà terminé.
+            // En file : on consigne l'annulation pour que runJob le saute à son
+            // tour — sinon le job annulé s'exécuterait quand même et republierait
+            // un terminal après le `cancelled` (bug audit 2026-11-16).
+            synchronized(jobs) { if (jobId in queued) cancelledWhileQueued.add(jobId) }
             settleCancelled(jobId)
             return
         }
@@ -224,6 +232,13 @@ class VideoCompressorBridge(private val context: Context) {
     }
 
     private fun runJob(jobId: String, path: String) {
+        // Annulé pendant son attente en file : cancel() a déjà émis le terminal
+        // `cancelled`, on saute le job sans toucher l'encodeur.
+        val cancelledInQueue = synchronized(jobs) {
+            queued.remove(jobId)
+            cancelledWhileQueued.remove(jobId)
+        }
+        if (cancelledInQueue) return
         val handle = JobHandle()
         synchronized(jobs) { jobs[jobId] = handle }
         notify.currentJobId = jobId
