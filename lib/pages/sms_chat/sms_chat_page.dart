@@ -1734,7 +1734,24 @@ class _SmsBubble extends StatelessWidget {
           ),
           if (showTimestamp || own) ...[
             const SizedBox(height: FluffySpacing.xxs),
-            _metaLine(),
+            // SelectableLinkify captures the long-press across the whole bubble
+            // width (text selection wins the gesture arena), so the action sheet
+            // is unreachable on text-only bubbles — only image/MMS bubbles still
+            // expose it via the bubble-level long-press. The meta line is the
+            // reliable affordance: tap (or long-press) it for the same menu.
+            Semantics(
+              button: true,
+              label: L10n.of(context).more,
+              child: GestureDetector(
+                behavior: HitTestBehavior.opaque,
+                onTap: onLongPress,
+                onLongPress: onLongPress,
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 6),
+                  child: _metaLine(),
+                ),
+              ),
+            ),
           ],
         ],
       ),
