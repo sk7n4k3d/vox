@@ -292,13 +292,19 @@ class PresenceAvatar extends StatelessWidget {
 
 extension on Client {
   Set<String> get interestingPresences {
+    // En mode SMS-only (ou avant la fin de initWithRestore), le client n'a pas
+    // de session : `userID!` plantait et emportait toute la liste des
+    // discussions (écran gris, exception à chaque rebuild — vu sur mustang
+    // le 2026-11-16). Sans identité, aucune présence n'est intéressante.
+    final userId = userID;
+    if (userId == null) return {};
     final allHeroes = rooms
         .map((room) => room.summary.mHeroes)
         .fold(
           <String>{},
           (previousValue, element) => previousValue..addAll(element ?? {}),
         );
-    allHeroes.add(userID!);
+    allHeroes.add(userId);
     return allHeroes;
   }
 }
