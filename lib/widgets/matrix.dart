@@ -359,8 +359,18 @@ class MatrixState extends State<Matrix> with WidgetsBindingObserver {
     onMediaExportSub.remove(name);
     onWebhookMatrixSub[name]?.cancel();
     onWebhookMatrixSub.remove(name);
-    onWebhookSmsSub?.cancel();
-    onWebhookSmsSub = null;
+    // Subscription UIA, oubliée par la correction amont fluffychat#3132 :
+    // sans elle elle survivait au logout de son client (audit ultracode #15).
+    onUiaRequest[name]?.cancel();
+    onUiaRequest.remove(name);
+    // Webhooks SMS : abonnements globaux (SmsBridge est un singleton), pas
+    // par-client. On ne les casse que si plus aucun client n'est connecté,
+    // sinon le logout d'un compte couperait les webhooks SMS des autres
+    // comptes encore connectés, sans rien les réarmer (audit ultracode #16).
+    if (widget.clients.length <= 1) {
+      onWebhookSmsSub?.cancel();
+      onWebhookSmsSub = null;
+    }
   }
 
   void initMatrix() {
@@ -450,6 +460,9 @@ class MatrixState extends State<Matrix> with WidgetsBindingObserver {
       s.cancel();
     }
     for (final s in onWebhookMatrixSub.values) {
+      s.cancel();
+    }
+    for (final s in onUiaRequest.values) {
       s.cancel();
     }
     onWebhookSmsSub?.cancel();
