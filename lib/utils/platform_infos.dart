@@ -51,47 +51,88 @@ abstract class PlatformInfos {
 
   static Future<void> showDialog(BuildContext context) async {
     final version = await PlatformInfos.getVersion();
-    showAboutDialog(
+    if (!context.mounted) return;
+    final l10n = L10n.of(context);
+    // Dialog « À propos » maison (et non showAboutDialog) : l'icône, le nom et
+    // la version sont centrés verticalement au-dessus des actions, et le logo
+    // est la vraie identité VoxOne.
+    await showAdaptiveDialog<void>(
       context: context,
-      children: [
-        Text(L10n.of(context).versionWithNumber(version)),
-        TextButton.icon(
-          onPressed: () => launchUrlString(AppConfig.sourceCodeUrl),
-          icon: const Icon(Icons.source_outlined),
-          label: Text(L10n.of(context).sourceCode),
+      builder: (dialogContext) => AlertDialog(
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                ClipRRect(
+                  borderRadius: BorderRadius.circular(14),
+                  child: Image.asset(
+                    'assets/logo.png',
+                    width: 56,
+                    height: 56,
+                    filterQuality: FilterQuality.medium,
+                  ),
+                ),
+                const SizedBox(width: 16),
+                Flexible(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(
+                        AppSettings.applicationName.value,
+                        style: Theme.of(dialogContext).textTheme.titleMedium,
+                      ),
+                      const SizedBox(height: 2),
+                      Text(
+                        l10n.versionWithNumber(version),
+                        style: Theme.of(dialogContext).textTheme.bodySmall,
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 20),
+            Wrap(
+              alignment: WrapAlignment.center,
+              spacing: 8,
+              runSpacing: 4,
+              children: [
+                TextButton.icon(
+                  onPressed: () => launchUrlString(AppConfig.sourceCodeUrl),
+                  icon: const Icon(Icons.source_outlined),
+                  label: Text(l10n.sourceCode),
+                ),
+                TextButton.icon(
+                  onPressed: () {
+                    Navigator.of(dialogContext).pop();
+                    context.go('/logs');
+                  },
+                  icon: const Icon(Icons.list_outlined),
+                  label: Text(l10n.logs),
+                ),
+                TextButton.icon(
+                  onPressed: () {
+                    Navigator.of(dialogContext).pop();
+                    context.go('/configs');
+                  },
+                  icon: const Icon(Icons.settings_applications_outlined),
+                  label: Text(l10n.advancedConfigs),
+                ),
+              ],
+            ),
+          ],
         ),
-        Builder(
-          builder: (innerContext) {
-            return TextButton.icon(
-              onPressed: () {
-                context.go('/logs');
-                Navigator.of(innerContext).pop();
-              },
-              icon: const Icon(Icons.list_outlined),
-              label: Text(L10n.of(context).logs),
-            );
-          },
-        ),
-        Builder(
-          builder: (innerContext) {
-            return TextButton.icon(
-              onPressed: () {
-                context.go('/configs');
-                Navigator.of(innerContext).pop();
-              },
-              icon: const Icon(Icons.settings_applications_outlined),
-              label: Text(L10n.of(context).advancedConfigs),
-            );
-          },
-        ),
-      ],
-      applicationIcon: Image.asset(
-        'assets/logo.png',
-        width: 64,
-        height: 64,
-        filterQuality: FilterQuality.medium,
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(),
+            child: Text(l10n.close),
+          ),
+        ],
       ),
-      applicationName: AppSettings.applicationName.value,
     );
   }
 }

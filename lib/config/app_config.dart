@@ -33,18 +33,19 @@ abstract class AppConfig {
   static const String appOpenUrlScheme = 'im.fluffychat';
   static const String appSsoUrlScheme = 'im.fluffychat.auth';
 
-  static const String sourceCodeUrl =
-      'https://github.com/krille-chan/fluffychat';
-  static const String supportUrl =
-      'https://github.com/krille-chan/fluffychat/issues';
-  static const String changelogUrl = 'https://fluffy.chat/en/changelog/';
+  // VoxOne — miroir public vérifié du dépôt (le dépôt amont FluffyChat reste
+  // crédité dans le README et l'écran Licences).
+  static const String sourceCodeUrl = 'https://github.com/sk7n4k3d/vox';
+  static const String supportUrl = 'https://github.com/sk7n4k3d/vox/issues';
+  static const String changelogUrl =
+      'https://github.com/sk7n4k3d/vox/blob/main/CHANGELOG.md';
 
   static const Set<String> defaultReactions = {'👍', '❤️', '😂', '😮', '😢'};
 
   static final Uri newIssueUrl = Uri(
     scheme: 'https',
     host: 'github.com',
-    path: '/krille-chan/fluffychat/issues/new',
+    path: '/sk7n4k3d/vox/issues/new',
   );
 
   static final Uri homeserverList = Uri(
