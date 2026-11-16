@@ -61,7 +61,8 @@ void main() {
       findsOneWidget,
       reason: "le nom de l'app doit être affiché",
     );
-    expect(find.textContaining('Version:'), findsOneWidget);
+    // Typographie FR : espace avant le deux-points (« Version : 2.5.1 »).
+    expect(find.textContaining('Version :'), findsOneWidget);
     expect(find.text('Code source'), findsOneWidget);
     expect(find.text('Fermer'), findsOneWidget);
     final logo = tester.widget<Image>(find.byType(Image).first);

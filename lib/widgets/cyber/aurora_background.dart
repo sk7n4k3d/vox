@@ -1,5 +1,8 @@
+import 'dart:async';
 import 'dart:math' as math;
+import 'dart:ui' as ui;
 
+import 'package:fluffychat/config/cyberpunk_theme_extension.dart';
 import 'package:fluffychat/widgets/cyber/cyber_fx.dart';
 import 'package:fluffychat/widgets/cyber/cyber_widgets.dart';
 import 'package:flutter/material.dart';
@@ -9,19 +12,42 @@ import 'package:flutter/material.dart';
 /// Replaces the previous full-screen `AuroraEffect` fragment shader — which
 /// recomputed every pixel of the viewport on every frame and tanked the frame
 /// budget behind the timeline (violating the CYBERCORE perf contract: no shader
-/// behind a scrolling list). This variant paints the aurora ONCE into a
-/// [RepaintBoundary] and animates it with a single [Transform] (rotation +
-/// drift), so the GPU only applies a matrix per frame: the blobs are never
-/// re-rasterised.
+/// behind a scrolling list).
 ///
-/// Honours reduce-motion: the backdrop renders statically with no animation and
-/// no ticker.
+/// ## Comment on évite de saturer le thread raster (mesuré 2026-11-16)
+///
+/// Deux pièges successifs, chacun mesuré sur Pixel 10 Pro XL :
+///
+/// 1. Un `CustomPaint` derrière la timeline est **re-joué à chaque image
+///    produite** (le display list d'un RepaintBoundary n'est pas une texture :
+///    l'engine rejoue les 4 dégradés radiaux plein écran ~7 ms, y compris
+///    pendant le scroll). Un ticker `repeat()` à 120 Hz produit 120 images/s
+///    => ~90 % du thread raster EN REPOS derrière une conversation, et le
+///    scroll rame (« rame dans les conversations », mesuré : 88 % raster au
+///    repos, frames présentées toutes les 30-80 ms).
+/// 2. Quantifier l'offset à 24 fps ne suffit PAS : le ticker produit quand même
+///    une image par vsync, et chaque image rejoue la scène complète.
+///
+/// D'où le design actuel :
+/// - le calque est **pré-rasterisé UNE fois dans un [ui.Image]** (les dégradés
+///   ne sont peints qu'au changement de thème/taille) ; chaque image ne coûte
+///   plus qu'un blit de texture (~0,5 ms) ;
+/// - la dérive est cadencée par un [Timer.periodic] à [_fps] images/s (8) et
+///   non par un ticker vsync : entre deux pas, AUCUNE image n'est programmée,
+///   le raster dort (0 % au repos). À 22 px de dérive sur 60 s, 8 img/s reste
+///   visuellement continu (0,37 px/pas).
+///
+/// Honours reduce-motion: renders the static image with no timer.
 class AuroraBackground extends StatefulWidget {
   /// Opacity applied to the whole backdrop (default matches the previous 0.22).
   final double opacity;
 
-  /// Duration of one full cycle of the drift/rotation loop.
+  /// Duration of one full cycle of the drift loop.
   final Duration period;
+
+  /// Cadence de la dérive ambiante. La dérive est lente (22 px / 60 s) : 8
+  /// images/s suffisent et laissent le budget raster à la timeline.
+  static const int fps = 8;
 
   const AuroraBackground({
     this.opacity = 0.22,
@@ -33,101 +59,121 @@ class AuroraBackground extends StatefulWidget {
   State<AuroraBackground> createState() => _AuroraBackgroundState();
 }
 
-class _AuroraBackgroundState extends State<AuroraBackground>
-    with SingleTickerProviderStateMixin {
-  AnimationController? _ctrl;
+class _AuroraBackgroundState extends State<AuroraBackground> {
+  ui.Image? _image;
+  Timer? _drift;
+  int _step = 0;
+
+  // Signature de la dernière image pré-rasterisée (taille + thème).
+  Size _imageSize = Size.zero;
+  Color? _c1, _c2, _c3;
 
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
-    // Ticker lifecycle follows reduce-motion: never keep one alive when the OS
-    // asks us to minimise animation.
-    final reduced = CyberMotion.reduced(context);
-    if (reduced) {
-      _ctrl?.dispose();
-      _ctrl = null;
+    // Le timer suit reduce-motion : aucun cadencement quand l'OS demande la
+    // sobriété animée.
+    if (CyberMotion.reduced(context)) {
+      _drift?.cancel();
+      _drift = null;
     } else {
-      _ctrl ??= AnimationController(vsync: this, duration: widget.period)
-        ..repeat();
+      _drift ??= Timer.periodic(
+        Duration(milliseconds: 1000 ~/ AuroraBackground.fps),
+        (_) {
+          if (!mounted) return;
+          setState(() => _step = (_step + 1) % _stepsPerCycle());
+        },
+      );
     }
   }
 
   @override
   void dispose() {
-    _ctrl?.dispose();
+    _drift?.cancel();
+    _image?.dispose();
     super.dispose();
+  }
+
+  int _stepsPerCycle() =>
+      (widget.period.inMicroseconds * AuroraBackground.fps / 1000000)
+          .round()
+          .clamp(1, 1 << 30);
+
+  /// Déplacement seul (une rotation ferait grossir les bornes du calque et
+  /// forcerait un repaint complet) ; positions déterministes du pas.
+  Offset _offsetFor(int step) {
+    final t = step / _stepsPerCycle() * 2 * math.pi;
+    return Offset(math.sin(t) * 22, math.cos(t * 0.7) * 18);
+  }
+
+  ui.Image _render(Size size, double dpr, CyberpunkTheme cyber) {
+    final recorder = ui.PictureRecorder();
+    final canvas = Canvas(recorder);
+    _AuroraPainter(
+      cyan: cyber.cyan,
+      violet: cyber.violet,
+      magenta: cyber.magenta,
+      opacity: widget.opacity,
+    ).paint(canvas, size);
+    final picture = recorder.endRecording();
+    final image = picture.toImageSync(
+      (size.width * dpr).ceil(),
+      (size.height * dpr).ceil(),
+    );
+    picture.dispose();
+    return image;
   }
 
   @override
   Widget build(BuildContext context) {
     final cyber = CyberColors.of(context);
-    // Mesuré au doigt sur Pixel : le calque était peint à l'échelle 1,6 puis
-    // pivoté à chaque frame. Sa taille dépassait ce que le cache raster accepte,
-    // donc le CustomPaint était INTÉGRALEMENT repeint à chaque image — 165 ms de
-    // raster par frame, 4 à 9 fps en conversation. On peint désormais le calque
-    // à la taille de l'écran (les taches radiales débordent déjà d'elles-mêmes,
-    // elles finissent transparentes) et on ne le translate que de quelques
-    // pixels : le cache tient, le coût par frame tombe à ~4 ms.
-    final painted = RepaintBoundary(
-      child: CustomPaint(
-        isComplex: true,
-        willChange: false,
-        painter: _AuroraPainter(
-          cyan: cyber.cyan,
-          violet: cyber.violet,
-          magenta: cyber.magenta,
-        ),
-      ),
-    );
-
-    final ctrl = _ctrl;
-    if (ctrl == null) {
-      // Reduce-motion: static, no ticker, no transform rebuild per frame.
-      return Opacity(opacity: widget.opacity, child: painted);
-    }
-
-    return Opacity(
-      opacity: widget.opacity,
-      child: AnimatedBuilder(
-        animation: ctrl,
-        // Child is hoisted: the aurora layer is painted once and only wrapped in
-        // the Transform below, never rebuilt by the ticker.
-        child: painted,
-        builder: (context, child) {
-          // Cadence ambiante plafonnée à 24 images/s : la dérive lente n'a que
-          // faire des 120 Hz de l'écran et chaque image composée en plus prend
-          // son budget sur le fil de la conversation (mesuré : thread raster
-          // saturé au repos derrière une timeline).offset quantifié =>
-          // Transform inchangé => aucune recomposition les autres images.
-          final stepsPerCycle = (widget.period.inMicroseconds * 24 / 1000000)
-              .round();
-          final q = stepsPerCycle <= 0
-              ? ctrl.value
-              : (ctrl.value * stepsPerCycle).floor() / stepsPerCycle;
-          final t = q * 2 * math.pi;
-          // Déplacement seul : une rotation ferait grossir les bornes du calque
-          // (donc échec du cache) et forcerait un repaint complet par frame.
-          final dx = math.sin(t) * 22;
-          final dy = math.cos(t * 0.7) * 18;
-          return Transform.translate(offset: Offset(dx, dy), child: child);
-        },
-      ),
+    final dpr = MediaQuery.devicePixelRatioOf(context);
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final size = Size(constraints.maxWidth, constraints.maxHeight);
+        if (size.isEmpty) return const SizedBox.shrink();
+        if (_image == null ||
+            _imageSize != size ||
+            _c1 != cyber.cyan ||
+            _c2 != cyber.violet ||
+            _c3 != cyber.magenta) {
+          _image?.dispose();
+          _image = _render(size, dpr, cyber);
+          _imageSize = size;
+          _c1 = cyber.cyan;
+          _c2 = cyber.violet;
+          _c3 = cyber.magenta;
+        }
+        return Transform.translate(
+          offset: _offsetFor(_step),
+          child: SizedBox(
+            width: size.width,
+            height: size.height,
+            child: RawImage(image: _image, fit: BoxFit.fill),
+          ),
+        );
+      },
     );
   }
 }
 
 /// Paints the aurora as a handful of soft radial gradients — cheap polygon
-/// fills instead of a per-pixel fragment shader. The [CustomPaint] is sized to
-/// the viewport; the parent scales it up so the blobs bleed past the edges.
+/// fills instead of a per-pixel fragment shader. Invoked ONCE per theme/size
+/// into the cached [ui.Image], never per frame.
 class _AuroraPainter extends CustomPainter {
   final Color cyan;
   final Color violet;
   final Color magenta;
 
+  /// Global opacity baked into every alpha (replaces the former full-screen
+  /// `Opacity` wrapper, whose offscreen layer cost a recomposite per frame).
+  final double opacity;
+
   const _AuroraPainter({
     required this.cyan,
     required this.violet,
     required this.magenta,
+    this.opacity = 1.0,
   });
 
   @override
@@ -138,8 +184,8 @@ class _AuroraPainter extends CustomPainter {
         begin: Alignment.topCenter,
         end: Alignment.bottomCenter,
         colors: [
-          cyan.withValues(alpha: 0.05),
-          violet.withValues(alpha: 0.08),
+          cyan.withValues(alpha: 0.05 * opacity),
+          violet.withValues(alpha: 0.08 * opacity),
           Colors.transparent,
         ],
       ).createShader(Offset.zero & size);
@@ -165,8 +211,8 @@ class _AuroraPainter extends CustomPainter {
     final paint = Paint()
       ..shader = RadialGradient(
         colors: [
-          color.withValues(alpha: 0.30 * intensity),
-          color.withValues(alpha: 0.12 * intensity),
+          color.withValues(alpha: 0.30 * intensity * opacity),
+          color.withValues(alpha: 0.12 * intensity * opacity),
           Colors.transparent,
         ],
         stops: const [0.0, 0.5, 1.0],
@@ -176,5 +222,8 @@ class _AuroraPainter extends CustomPainter {
 
   @override
   bool shouldRepaint(_AuroraPainter old) =>
-      old.cyan != cyan || old.violet != violet || old.magenta != magenta;
+      old.cyan != cyan ||
+      old.violet != violet ||
+      old.magenta != magenta ||
+      old.opacity != opacity;
 }
