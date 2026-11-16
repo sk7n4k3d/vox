@@ -38,8 +38,8 @@
     <locale android:name="nl"/>
     <locale android:name="pl"/>
     <locale android:name="pt"/>
-    <locale android:name="pt"/>
-    <locale android:name="pt"/>
+    <locale android:name="pt-BR"/>
+    <locale android:name="pt-PT"/>
     <locale android:name="ro"/>
     <locale android:name="ru"/>
     <locale android:name="sk"/>
@@ -54,7 +54,7 @@
     <locale android:name="uk"/>
     <locale android:name="uz"/>
     <locale android:name="vi"/>
-    <locale android:name="yue"/>
+    <locale android:name="yue-Hant"/>
     <locale android:name="zh"/>
-    <locale android:name="zh"/>
+    <locale android:name="zh-Hant"/>
 </locale-config>

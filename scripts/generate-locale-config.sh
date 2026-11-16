@@ -19,8 +19,11 @@ echo '<locale-config xmlns:android="http://schemas.android.com/apk/res/android">
 
 # Search for ARB files and extract language codes
 for file in "$l10n_dir"/intl_*.arb; do
-  # Extract language code
-  language_code=$(basename "$file" | cut -d'_' -f2 | cut -d'.' -f1)
+  # Extraire le tag complet : garder les sous-tags région/script (pt-BR,
+  # zh-Hant…). L'ancien cut -d'_' -f2 écrêtait tout après la langue :
+  # pt×3, zh×2, yue nu — Android livrait la première occurrence et les
+  # variantes restaient introuvables (audit ultracode #18).
+  language_code=$(basename "$file" .arb | sed 's/^intl_//' | tr '_' '-')
   # Write language code to the XML file
   echo "    <locale android:name=\"$language_code\"/>" >> "$xml_file"
 done
