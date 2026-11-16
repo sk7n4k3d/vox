@@ -423,6 +423,10 @@ class ChatController extends State<ChatPageWithRoom>
       threadId: activeThreadId,
     );
     final start = events.indexOf(event);
+    // L'event peut avoir disparu de la timeline filtrée entre le build et le
+    // tap (changement de client d'envoi, redaction masquée) : indexOf vaut
+    // alors -1 et events[-1] lèverait un RangeError (audit ultracode #9).
+    if (start < 0) return;
     setState(() {
       for (var i = start; i < events.length; i++) {
         final event = events[i];
@@ -595,7 +599,15 @@ class ChatController extends State<ChatPageWithRoom>
           eventId: eventId,
           public: AppSettings.sendPublicReadReceipts.value,
         )
-        .then((_) {
+        // Erreur réseau (réseau coupé, homeserver 5xx, timeout) : il faut
+        // quand même libérer le champ, sinon le garde du début de la méthode
+        // bloque tous les marqueurs suivants pour la vie de la page
+        // (audit ultracode #8). Le catchError évite aussi la rejection non
+        // traitée.
+        .catchError((Object e) {
+          Logs().w('Unable to set read marker', e);
+        })
+        .whenComplete(() {
           _setReadMarkerFuture = null;
         });
     if (eventId == null || eventId == timeline.room.lastEvent?.eventId) {
