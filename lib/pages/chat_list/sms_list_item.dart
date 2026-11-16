@@ -51,6 +51,51 @@ class SmsListItem extends StatelessWidget {
         : (title.trim().isEmpty ? '#' : title.trim()[0].toUpperCase());
     final unread = conversation.unreadCount > 0;
 
+    // Avatar disc with a violet ring to mark the SMS channel. Shows
+    // the real contact photo when available (and not locked), else a
+    // gradient initial.
+    final avatarDisc = Container(
+      width: 54,
+      height: 54,
+      alignment: Alignment.center,
+      decoration: BoxDecoration(
+        shape: BoxShape.circle,
+        gradient: LinearGradient(
+          colors: [
+            cyber.violet.withValues(alpha: 0.35),
+            cyber.magenta.withValues(alpha: 0.25),
+          ],
+        ),
+        border: Border.all(
+          color: cyber.violet.withValues(alpha: 0.6),
+          width: 1.5,
+        ),
+      ),
+      clipBehavior: Clip.antiAlias,
+      child: (!isHidden &&
+              conversation.photoPath != null &&
+              conversation.photoPath!.isNotEmpty)
+          ? Image.file(
+              File(conversation.photoPath!),
+              width: 54,
+              height: 54,
+              fit: BoxFit.cover,
+              cacheWidth: (MediaQuery.devicePixelRatioOf(context) * 54).round(),
+              errorBuilder: (context, error, stack) => Text(
+                initial,
+                style: FluffyTypography.headlineM.copyWith(
+                  color: theme.colorScheme.onSurface,
+                ),
+              ),
+            )
+          : Text(
+              initial,
+              style: FluffyTypography.headlineM.copyWith(
+                color: theme.colorScheme.onSurface,
+              ),
+            ),
+    );
+
     return Material(
       color: Colors.transparent,
       child: InkWell(
@@ -63,52 +108,30 @@ class SmsListItem extends StatelessWidget {
           ),
           child: Row(
             children: [
-              // Avatar disc with a violet ring to mark the SMS channel. Shows
-              // the real contact photo when available (and not locked), else a
-              // gradient initial.
-              Container(
-                width: 54,
-                height: 54,
-                alignment: Alignment.center,
-                decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  gradient: LinearGradient(
-                    colors: [
-                      cyber.violet.withValues(alpha: 0.35),
-                      cyber.magenta.withValues(alpha: 0.25),
-                    ],
-                  ),
-                  border: Border.all(
-                    color: cyber.violet.withValues(alpha: 0.6),
-                    width: 1.5,
-                  ),
+              // Shared element transition (parité avec les lignes Matrix,
+              // cf. chat_list_item.dart) : l'avatar vole de sa ligne jusqu'à
+              // l'app bar de la conversation. Inactif si la conversation est
+              // verrouillée : la ligne affiche un placeholder, on ne va pas
+              // révéler le vrai avatar pendant le vol.
+              if (isHidden)
+                avatarDisc
+              else
+                Hero(
+                  tag: 'avatar_sms_${conversation.threadId}',
+                  flightShuttleBuilder: (
+                    flightContext,
+                    animation,
+                    direction,
+                    fromContext,
+                    toContext,
+                  ) {
+                    // Le subtree de destination gagne le vol (anneau 40 dp de
+                    // l'app bar), Flutter se charge de l'échelle du rect.
+                    final toHero = toContext.widget as Hero;
+                    return toHero.child;
+                  },
+                  child: avatarDisc,
                 ),
-                clipBehavior: Clip.antiAlias,
-                child: (!isHidden &&
-                        conversation.photoPath != null &&
-                        conversation.photoPath!.isNotEmpty)
-                    ? Image.file(
-                        File(conversation.photoPath!),
-                        width: 54,
-                        height: 54,
-                        fit: BoxFit.cover,
-                        cacheWidth:
-                            (MediaQuery.devicePixelRatioOf(context) * 54)
-                                .round(),
-                        errorBuilder: (context, error, stack) => Text(
-                          initial,
-                          style: FluffyTypography.headlineM.copyWith(
-                            color: theme.colorScheme.onSurface,
-                          ),
-                        ),
-                      )
-                    : Text(
-                        initial,
-                        style: FluffyTypography.headlineM.copyWith(
-                          color: theme.colorScheme.onSurface,
-                        ),
-                      ),
-              ),
               const SizedBox(width: FluffySpacing.md),
               Expanded(
                 child: Column(

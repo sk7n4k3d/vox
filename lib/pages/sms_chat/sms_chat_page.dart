@@ -1120,6 +1120,7 @@ class _SmsChatPageState extends State<SmsChatPage> with WidgetsBindingObserver {
   PreferredSizeWidget _buildAppBar(ThemeData theme, CyberpunkTheme cyber) {
     return _SmsLiquidGlassAppBar(
       height: _kSmsAppBarHeight,
+      threadId: widget.threadId,
       title: _title,
       subtitle: _subtitle,
       initial: _initial(),
@@ -2419,6 +2420,7 @@ class _SmsLiquidGlassAppBar extends StatelessWidget
   final String title;
   final String subtitle;
   final String initial;
+  final String threadId;
   final String? photoPath;
   final CyberpunkTheme cyber;
   final VoidCallback onBack;
@@ -2435,6 +2437,7 @@ class _SmsLiquidGlassAppBar extends StatelessWidget
     required this.title,
     required this.subtitle,
     required this.initial,
+    required this.threadId,
     required this.photoPath,
     required this.cyber,
     required this.onBack,
@@ -2482,11 +2485,16 @@ class _SmsLiquidGlassAppBar extends StatelessWidget
                     ).backButtonTooltip,
                   ),
                   // Contact photo (or gradient initial fallback) in a 40dp
-                  // ring — parity with the Matrix room app-bar avatar.
-                  _SmsAvatarWithRing(
-                    initial: initial,
-                    photoPath: photoPath,
-                    cyber: cyber,
+                  // ring — parity with the Matrix room app-bar avatar, Hero
+                  // inclus : l'avatar arrive en volant depuis sa ligne dans
+                  // la liste des conversations (tag posé par SmsListItem).
+                  Hero(
+                    tag: 'avatar_sms_$threadId',
+                    child: _SmsAvatarWithRing(
+                      initial: initial,
+                      photoPath: photoPath,
+                      cyber: cyber,
+                    ),
                   ),
                   const SizedBox(width: 12),
                   Expanded(
